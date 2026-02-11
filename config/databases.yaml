@@ -1,0 +1,11 @@
+# Database Connections
+
+databases:
+  - name: sales_db
+    description: Transactional data (customers, orders, payments)
+  
+  - name: products_db
+    description: Product catalog (products, sellers, order_items)
+  
+  - name: analytics_db
+    description: Derived analytics (segments, metrics)

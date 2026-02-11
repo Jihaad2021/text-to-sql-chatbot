@@ -1,0 +1,16 @@
+{
+  "test_suite": "POC Test Queries v1.0",
+  "total_queries": 20,
+  "queries": [
+    {
+      "id": "Q001",
+      "question": "Show all customers",
+      "expected_sql": "SELECT * FROM customers LIMIT 100;",
+      "intent": "simple_select",
+      "tables": ["customers"],
+      "database": "sales_db",
+      "difficulty": "simple",
+      "expected_accuracy": 1.0
+    }
+  ]
+}

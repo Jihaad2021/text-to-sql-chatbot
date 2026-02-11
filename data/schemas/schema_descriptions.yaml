@@ -1,0 +1,51 @@
+# Schema Descriptions for RAG
+
+sales_db:
+  customers:
+    description: >
+      Customer master data including buyer/client information,
+      contact details, and location.
+    columns:
+      customer_id: Unique identifier for each customer
+      name: Customer/client/buyer name
+      email: Contact email
+      city: Location, city, area
+      state: State, province, region
+    relationships:
+      - "Referenced by orders.customer_id (1:N)"
+    common_queries:
+      - "list customers"
+      - "customers in Jakarta"
+
+  orders:
+    description: >
+      Sales transactions, purchase records, order history.
+    columns:
+      order_id: Unique order identifier
+      customer_id: Links to customers
+      order_date: Purchase timestamp
+      total_amount: Order value
+      status: Order state
+    relationships:
+      - "FK to customers.customer_id"
+      - "Referenced by payments.order_id"
+    common_queries:
+      - "sales this month"
+      - "order history"
+
+  payments:
+    description: >
+      Payment transactions, revenue data.
+    columns:
+      payment_id: Payment identifier
+      order_id: Links to orders
+      payment_method: Payment type
+      payment_value: Actual revenue
+      payment_date: Payment timestamp
+    relationships:
+      - "FK to orders.order_id"
+    common_queries:
+      - "total revenue"
+      - "payments by method"
+
+# TODO: Add products_db and analytics_db schemas
