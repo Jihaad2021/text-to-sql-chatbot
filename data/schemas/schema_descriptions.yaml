@@ -4,48 +4,172 @@ sales_db:
   customers:
     description: >
       Customer master data including buyer/client information,
-      contact details, and location.
+      contact details, and geographic location. Used for customer analysis,
+      segmentation, and demographic queries.
     columns:
       customer_id: Unique identifier for each customer
-      name: Customer/client/buyer name
-      email: Contact email
-      city: Location, city, area
-      state: State, province, region
+      customer_unique_id: Global unique customer identifier
+      customer_name: Customer/client/buyer full name
+      customer_email: Contact email address
+      customer_city: City, location, geographic area
+      customer_state: State, province, region
+      customer_zip_code: Postal code
+      customer_created_at: Registration date, signup timestamp
     relationships:
       - "Referenced by orders.customer_id (1:N)"
+      - "Referenced by customer_segments.customer_id (1:1, cross-DB)"
     common_queries:
       - "list customers"
       - "customers in Jakarta"
+      - "customers from Surabaya"
+      - "how many customers"
+      - "customer count by city"
 
   orders:
     description: >
-      Sales transactions, purchase records, order history.
+      Sales transactions, purchase records, order history with dates and status.
+      Contains all order lifecycle information from purchase to delivery.
     columns:
       order_id: Unique order identifier
-      customer_id: Links to customers
-      order_date: Purchase timestamp
-      total_amount: Order value
-      status: Order state
+      customer_id: Foreign key to customers table
+      order_status: Current order state (delivered, shipped, processing, cancelled)
+      order_purchase_timestamp: Order creation date, purchase date
+      order_approved_at: Order approval timestamp
+      order_delivered_timestamp: Delivery completion date
+      order_estimated_delivery_date: Expected delivery date
     relationships:
       - "FK to customers.customer_id"
-      - "Referenced by payments.order_id"
+      - "Referenced by payments.order_id (1:1)"
+      - "Referenced by order_items.order_id (1:N, cross-DB)"
     common_queries:
-      - "sales this month"
+      - "orders this month"
       - "order history"
+      - "recent orders"
+      - "orders by status"
+      - "delivered orders"
 
   payments:
     description: >
-      Payment transactions, revenue data.
+      Payment transactions, revenue data, financial records. Use payment_value
+      for all revenue and sales calculations.
     columns:
-      payment_id: Payment identifier
-      order_id: Links to orders
-      payment_method: Payment type
-      payment_value: Actual revenue
-      payment_date: Payment timestamp
+      payment_id: Payment transaction identifier
+      order_id: Links to orders table
+      payment_sequential: Payment sequence number for multi-payment orders
+      payment_type: Payment method (credit_card, boleto, debit_card, voucher)
+      payment_installments: Number of installments for payment plan
+      payment_value: Actual payment amount, revenue value (use for sales calculations)
     relationships:
       - "FK to orders.order_id"
     common_queries:
       - "total revenue"
-      - "payments by method"
+      - "sales by payment method"
+      - "revenue this month"
+      - "total sales"
+      - "average payment value"
 
-# TODO: Add products_db and analytics_db schemas
+products_db:
+  products:
+    description: >
+      Product catalog with item details, categories, and physical dimensions.
+      Contains all available products for sale.
+    columns:
+      product_id: Unique product identifier
+      product_category_name: Product category (Electronics, Fashion, Home, Beauty, Sports, Books, Toys)
+      product_name_length: Length of product name (metadata)
+      product_description_length: Length of product description (metadata)
+      product_photos_qty: Number of product photos
+      product_weight_g: Product weight in grams
+      product_length_cm: Product length in centimeters
+      product_height_cm: Product height in centimeters
+      product_width_cm: Product width in centimeters
+    relationships:
+      - "Referenced by order_items.product_id (1:N)"
+    common_queries:
+      - "list products"
+      - "products in Electronics category"
+      - "how many products"
+      - "products by category"
+      - "heaviest products"
+
+  sellers:
+    description: >
+      Seller/vendor information, merchant data, supplier location information.
+      Contains all registered sellers on the platform.
+    columns:
+      seller_id: Unique seller identifier
+      seller_zip_code: Seller postal code
+      seller_city: Seller city, location
+      seller_state: Seller state, province
+    relationships:
+      - "Referenced by order_items.seller_id (1:N)"
+    common_queries:
+      - "list sellers"
+      - "sellers in Jakarta"
+      - "how many sellers"
+      - "sellers by location"
+      - "top sellers"
+
+  order_items:
+    description: >
+      Order line items, product-order relationship, individual items within orders.
+      Links orders to products and sellers with pricing information.
+    columns:
+      order_id: Links to orders in sales_db (cross-database reference)
+      order_item_id: Sequential item number within order
+      product_id: Links to products table
+      seller_id: Links to sellers table
+      shipping_limit_date: Last date for shipping
+      price: Item unit price
+      freight_value: Shipping cost for this item
+    relationships:
+      - "FK to products.product_id"
+      - "FK to sellers.seller_id"
+      - "order_id references sales_db.orders.order_id (cross-DB)"
+    common_queries:
+      - "items in order"
+      - "products sold by seller"
+      - "best selling products"
+      - "items with high shipping cost"
+
+analytics_db:
+  customer_segments:
+    description: >
+      Customer segmentation, RFM analysis, customer lifetime value calculations.
+      Derived analytics for customer categorization (VIP, Regular, Occasional).
+    columns:
+      customer_id: Links to customers in sales_db (cross-database reference)
+      rfm_score: RFM (Recency, Frequency, Monetary) score (1-5)
+      segment: Customer segment category (VIP, Regular, Occasional)
+      lifetime_value: Total customer lifetime value, total spending
+      total_orders: Total number of orders placed by customer
+      avg_order_value: Average order value for customer
+      last_purchase_date: Date of most recent purchase
+      updated_at: Last update timestamp for this record
+    relationships:
+      - "customer_id references sales_db.customers.customer_id (cross-DB)"
+    common_queries:
+      - "VIP customers"
+      - "customer segments distribution"
+      - "high lifetime value customers"
+      - "customers by segment"
+      - "top customers by LTV"
+
+  daily_metrics:
+    description: >
+      Daily aggregated business metrics, KPIs, summary statistics.
+      Pre-calculated daily totals for quick reporting and trend analysis.
+    columns:
+      date: Metric date (one row per day)
+      total_sales: Total revenue for the day
+      total_orders: Number of orders placed that day
+      avg_order_value: Average order value for the day
+      new_customers: Number of new customers registered that day
+      returning_customers: Number of returning customers who ordered that day
+    relationships: []
+    common_queries:
+      - "daily sales"
+      - "sales trend"
+      - "revenue last 7 days"
+      - "average daily revenue"
+      - "new customers per day"

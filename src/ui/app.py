@@ -170,6 +170,15 @@ if ask_button and user_question:
                 with tab1:
                     st.subheader("📊 Hasil Query")
                     
+                    # ✨ NEW: Show insights first (natural language explanation)
+                    if result.get('insights'):
+                        st.markdown("### 💡 Insights")
+                        st.info(result['insights'])
+                        st.markdown("---")
+                    
+                    # Then show data table
+                    st.markdown("### 📋 Data Detail")
+                    
                     if result['data'] and len(result['data']) > 0:
                         # Convert to DataFrame for better display
                         df = pd.DataFrame(result['data'])
