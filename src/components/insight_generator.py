@@ -137,16 +137,28 @@ RESULTS ({row_count} rows):
 
 Generate insights that:
 1. **Directly answer the user's question** in clear Indonesian
-2. **Format numbers properly**:
-- Currency: "Rp 1.234.567" or "Rp 1,2 juta"
-- Large numbers: Use "juta", "miliar" for readability
-- Percentages: "25%" or "25 persen"
+2. **Format numbers properly - BE VERY CAREFUL WITH SCALE**:
+   - CRITICAL: Check magnitude before formatting!
+   - Under 1 million: "Rp 500.000" or "Rp 500 ribu"
+   - 1 million to 999 million: "Rp 252,3 juta" (NOT miliar!)
+   - 1 billion and above: "Rp 1,2 miliar"
+   
+   **Examples of CORRECT formatting:**
+   - 252,263,971 = "Rp 252,3 juta" (NOT miliar!)
+   - 1,308,666,175 = "Rp 1,3 miliar" (correct)
+   - 50,000,000 = "Rp 50 juta" (NOT miliar!)
+   - 5,000,000,000 = "Rp 5 miliar" (correct)
+   
+   **Rule: Only use "miliar" if value >= 1,000,000,000 (9 zeros)**
+   **Rule: Use "juta" if value >= 1,000,000 and < 1,000,000,000**
+   
+   - Percentages: "25%" or "25 persen"
 3. **Highlight key findings**:
-- Use "tertinggi", "terendah", "rata-rata" for emphasis
-- Point out notable patterns or trends
+   - Use "tertinggi", "terendah", "rata-rata" for emphasis
+   - Point out notable patterns or trends
 4. **Be conversational but professional**:
-- Use "Anda memiliki...", "Terdapat...", "Hasil menunjukkan..."
-- Avoid overly technical jargon
+   - Use "Anda memiliki...", "Terdapat...", "Hasil menunjukkan..."
+   - Avoid overly technical jargon
 5. **Keep it concise**: 2-4 sentences typically enough
 6. **Ground in data**: Only state what's in the results, don't speculate
 
@@ -156,14 +168,15 @@ IMPORTANT RULES:
 - Never imply causality without evidence
 - Don't make recommendations unless query asks for them
 - Highlight data limitations if relevant
+- **CRITICAL: Always double-check number scale before using "miliar"!**
 
 **CRITICAL - NO DATA SCENARIO:**
 If results are empty (0 rows) or query returns NULL/zero values:
 - DON'T just say "tidak ada data"
 - Instead, provide helpful context:
-* Explain WHEN data might be available (date ranges if time-based query)
-* Suggest what user can query instead
-* Example: "Data untuk bulan Januari tidak tersedia. Data yang ada mencakup periode Februari-November 2024. Coba query untuk bulan-bulan tersebut."
+  * Explain WHEN data might be available (date ranges if time-based query)
+  * Suggest what user can query instead
+  * Example: "Data untuk bulan Januari tidak tersedia. Data yang ada mencakup periode Februari-November 2024. Coba query untuk bulan-bulan tersebut."
 
 **TIME-BASED QUERIES:**
 If query asks for specific month/date but returns nothing:

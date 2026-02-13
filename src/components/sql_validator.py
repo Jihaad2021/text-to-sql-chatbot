@@ -245,18 +245,33 @@ class SQLValidator:
         """Layer 3: Validate referenced tables are in whitelist"""
         errors = []
         
-        # Extract table names (simple regex)
-        # Matches: FROM table_name, JOIN table_name
-        pattern = r'\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
-        matches = re.findall(pattern, sql, re.IGNORECASE)
+        # Extract table names from FROM and JOIN clauses
+        # Improved pattern to handle table aliases
+        # Matches: FROM table_name [alias], JOIN table_name [alias]
+        pattern = r'\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:[a-zA-Z_][a-zA-Z0-9_]*)?'
         
-        for table_name in matches:
-            table_lower = table_name.lower()
-            if table_lower not in self.allowed_tables:
-                errors.append(f"TABLE: Unknown table '{table_name}' (not in whitelist)")
+        # Get all potential table references
+        sql_lines = sql.split('\n')
+        
+        for line in sql_lines:
+            # Skip WHERE, EXTRACT, functions
+            if any(keyword in line.upper() for keyword in ['WHERE', 'EXTRACT', 'CURRENT_DATE', 'SELECT', 'ORDER BY', 'GROUP BY', 'HAVING']):
+                continue
+            
+            # Find FROM/JOIN clauses only
+            if 'FROM' in line.upper() or 'JOIN' in line.upper():
+                # Extract just the table name (first word after FROM/JOIN)
+                match = re.search(r'\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)', line, re.IGNORECASE)
+                if match:
+                    table_name = match.group(1)
+                    table_lower = table_name.lower()
+                    
+                    # Only check if it's not an alias (single letter often = alias)
+                    if len(table_name) > 1 and table_lower not in self.allowed_tables:
+                        errors.append(f"TABLE: Unknown table '{table_name}' (not in whitelist)")
         
         return errors
-    
+  
     def _validate_logic_ai(self, sql: str, user_query: str) -> dict:
         """Layer 4: AI logic validation using Claude"""
         
