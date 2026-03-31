@@ -2,266 +2,161 @@
 Component 1: Intent Classifier
 
 Classifies user queries into intent categories and detects ambiguous queries.
-Uses Claude Sonnet 4 for intelligent classification.
+Results are used by SQL Generator to determine query strategy.
 
-Type: Agentic
+Type: Agentic (LLM-based)
+Inherits: LLMBaseAgent
+
+Reads from state:
+    - state.query
+
+Writes to state:
+    - state.intent (dict: category, confidence, reason, sql_strategy)
+    - state.needs_clarification (bool)
+    - state.clarification_reason (str, if ambiguous)
+
+Example:
+    >>> classifier = IntentClassifier()
+    >>> state = AgentState(query="berapa total customer?")
+    >>> state = classifier.run(state)
+    >>> print(state.intent)
+    {
+        "category": "aggregation",
+        "confidence": 0.95,
+        "reason": "Query asks for count/total",
+        "sql_strategy": "Use aggregate functions (COUNT/SUM/AVG) with GROUP BY if needed"
+    }
 """
 
-from anthropic import Anthropic
-import os
-from dotenv import load_dotenv
-import time
-from enum import Enum
+from src.core.llm_base_agent import LLMBaseAgent
+from src.models.agent_state import AgentState
+from src.utils.exceptions import IntentClassificationError
 
-load_dotenv()
 
-class QueryIntent(str, Enum):
-    """Query intent categories"""
-    SIMPLE_SELECT = "simple_select"           # Basic SELECT queries
-    FILTERED_QUERY = "filtered_query"         # SELECT with WHERE
-    AGGREGATION = "aggregation"               # COUNT, SUM, AVG, etc.
-    MULTI_TABLE_JOIN = "multi_table_join"     # JOIN queries
-    COMPLEX_ANALYTICS = "complex_analytics"   # Complex queries with subqueries
-    AMBIGUOUS = "ambiguous"                   # Unclear, needs clarification
+# Valid intent categories
+INTENT_CATEGORIES = {
+    "simple_select": "Basic SELECT query, no filters or aggregations",
+    "filtered_query": "SELECT with WHERE clause filters",
+    "aggregation": "Requires COUNT, SUM, AVG, MIN, MAX",
+    "multi_table_join": "Requires JOIN across multiple tables",
+    "complex_analytics": "Advanced analytics with subqueries, trends, grouping",
+    "ambiguous": "Unclear query that needs clarification"
+}
 
-class IntentResult:
-    """Result of intent classification"""
-    def __init__(
-        self,
-        intent: QueryIntent,
-        confidence: float,
-        reason: str = "",
-        classification_time_ms: float = 0
-    ):
-        self.intent = intent
-        self.confidence = confidence
-        self.reason = reason
-        self.classification_time_ms = classification_time_ms
-    
-    def needs_clarification(self) -> bool:
-        """Check if query needs clarification"""
-        return self.intent == QueryIntent.AMBIGUOUS or self.confidence < 0.7
+# Strategy hint per category (passed to SQL Generator via state.intent)
+INTENT_SQL_STRATEGY = {
+    "simple_select": "Use basic SELECT with LIMIT 100",
+    "filtered_query": "Use SELECT with WHERE clause",
+    "aggregation": "Use aggregate functions (COUNT/SUM/AVG) with GROUP BY if needed",
+    "multi_table_join": "Use JOIN across relevant tables",
+    "complex_analytics": "Use subqueries, CTEs, or window functions if needed",
+    "ambiguous": "Cannot generate SQL - needs clarification"
+}
 
-class IntentClassifier:
+
+class IntentClassifier(LLMBaseAgent):
     """
-    Classify user query intent using Claude Sonnet 4.
-    
-    Helps detect:
-    - Ambiguous queries that need clarification
-    - Query complexity level
-    - Expected operation type
+    Classify user query intent using Claude.
+
+    Determines:
+    - Query category (simple_select, aggregation, etc.)
+    - Whether query needs clarification
+    - SQL generation strategy hint for SQL Generator
     """
-    
+
     def __init__(self):
-        """Initialize Intent Classifier with Claude client"""
-        
-        # Get API key
-        api_key = os.getenv('ANTHROPIC_API_KEY')
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not found in .env file")
-        
-        # Initialize Claude client
-        self.client = Anthropic(api_key=api_key)
-        self.model = "claude-sonnet-4-20250514"
-        
-        print(f"✓ IntentClassifier initialized")
-        print(f"  - Model: {self.model}")
-    
-    def classify(self, user_query: str) -> IntentResult:
+        super().__init__(name="intent_classifier", version="1.0.0")
+
+    def execute(self, state: AgentState) -> AgentState:
         """
-        Classify user query intent.
-        
+        Classify intent of user query.
+
         Args:
-            user_query: User's natural language question
-        
+            state: Pipeline state with state.query
+
         Returns:
-            IntentResult with intent, confidence, and reason
+            Updated state with intent classification results
         """
-        start_time = time.time()
-        
-        # Build prompt
-        prompt = self._build_prompt(user_query)
-        
-        try:
-            # Call Claude
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=500,
-                temperature=0,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            # Parse response
-            result_text = response.content[0].text.strip()
-            intent_result = self._parse_response(result_text)
-            
-            elapsed_ms = (time.time() - start_time) * 1000
-            intent_result.classification_time_ms = elapsed_ms
-            
-            return intent_result
-        
-        except Exception as e:
-            print(f"✗ Intent classification failed: {str(e)}")
-            elapsed_ms = (time.time() - start_time) * 1000
-            
-            # Default to ambiguous on error
-            return IntentResult(
-                intent=QueryIntent.AMBIGUOUS,
-                confidence=0.0,
-                reason=f"Classification error: {str(e)}",
-                classification_time_ms=elapsed_ms
-            )
-    
-    def _build_prompt(self, user_query: str) -> str:
-        """Build classification prompt"""
-        
-        prompt = f"""You are a SQL query intent classifier for an e-commerce database analytics system.
+        prompt = self._build_prompt(state.query)
+        response = self._call_llm(prompt, max_tokens=500, temperature=0)
+        intent = self._parse_response(response)
 
-Classify the following user query into ONE of these categories:
+        # Write to state
+        state.intent = intent
+        state.needs_clarification = (
+            intent["category"] == "ambiguous" or intent["confidence"] < 0.7
+        )
 
-1. simple_select - Basic data retrieval (e.g., "show all customers", "list products")
-   Examples: "Show customers", "List orders", "Display products"
+        if state.needs_clarification:
+            state.clarification_reason = intent["reason"]
 
-2. filtered_query - Queries with specific filters (e.g., "customers from Jakarta", "orders above 1000")
-   Examples: "Customers in Jakarta", "Orders over Rp 1 million", "Products in Electronics category"
+        self.log(
+            f"Intent: {intent['category']} "
+            f"(confidence: {intent['confidence']:.2f}, "
+            f"needs_clarification: {state.needs_clarification})"
+        )
 
-3. aggregation - Queries needing COUNT, SUM, AVG, MIN, MAX (e.g., "how many customers?", "total revenue")
-   Examples: "How many customers?", "Total sales", "Average order value", "Count orders"
+        return state
 
-4. multi_table_join - Queries requiring data from multiple tables (e.g., "top customers by spending")
-   Examples: "Top customers by revenue", "Products sold by each seller", "Customer order history"
+    def _build_prompt(self, query: str) -> str:
+        """Build classification prompt."""
 
-5. complex_analytics - Advanced analytics with grouping, trends, comparisons
-   Examples: "Monthly revenue trend", "Customer segmentation", "Year-over-year growth"
+        categories_text = "\n".join([
+            f"{i+1}. {cat} - {desc}"
+            for i, (cat, desc) in enumerate(INTENT_CATEGORIES.items())
+        ])
 
-6. ambiguous - Unclear or incomplete queries that need clarification
-   Examples: "Show me the data", "What about sales?", "Give me info", "Tell me more"
+        return f"""You are a SQL query intent classifier for an e-commerce analytics system.
 
-USER QUERY: "{user_query}"
+Classify the user query into ONE of these categories:
+
+{categories_text}
+
+USER QUERY: "{query}"
 
 Respond in this EXACT format:
-INTENT: [intent_category]
+INTENT: [category]
 CONFIDENCE: [0.0 to 1.0]
 REASON: [brief explanation]
 
 Rules:
-- If query is vague, unclear, or lacks specificity → classify as "ambiguous"
-- If confidence is below 0.7 → classify as "ambiguous"
-- Be strict: when in doubt, mark as ambiguous
-- Consider Indonesian and English queries
-- Focus on what SQL operation would be needed
+- Mark as "ambiguous" if query is vague or unclear
+- Mark as "ambiguous" if confidence < 0.7
+- Consider both Indonesian and English queries
 
 Your response:"""
-        
-        return prompt
-    
-    def _parse_response(self, response_text: str) -> IntentResult:
-        """Parse Claude's classification response"""
-        
-        lines = response_text.strip().split('\n')
-        
-        intent_str = ""
+
+    def _parse_response(self, response: str) -> dict:
+        """Parse Claude response into intent dict."""
+
+        intent_str = "ambiguous"
         confidence = 0.0
         reason = ""
-        
-        for line in lines:
+
+        for line in response.strip().split("\n"):
             line = line.strip()
-            
             if line.startswith("INTENT:"):
                 intent_str = line.replace("INTENT:", "").strip().lower()
             elif line.startswith("CONFIDENCE:"):
-                conf_str = line.replace("CONFIDENCE:", "").strip()
                 try:
-                    confidence = float(conf_str)
-                except:
+                    confidence = float(line.replace("CONFIDENCE:", "").strip())
+                except ValueError:
                     confidence = 0.5
             elif line.startswith("REASON:"):
                 reason = line.replace("REASON:", "").strip()
-        
-        # Map string to enum
-        intent_mapping = {
-            "simple_select": QueryIntent.SIMPLE_SELECT,
-            "filtered_query": QueryIntent.FILTERED_QUERY,
-            "aggregation": QueryIntent.AGGREGATION,
-            "multi_table_join": QueryIntent.MULTI_TABLE_JOIN,
-            "complex_analytics": QueryIntent.COMPLEX_ANALYTICS,
-            "ambiguous": QueryIntent.AMBIGUOUS
-        }
-        
-        intent = intent_mapping.get(intent_str, QueryIntent.AMBIGUOUS)
-        
-        # Force ambiguous if confidence too low
+
+        # Validate category
+        if intent_str not in INTENT_CATEGORIES:
+            intent_str = "ambiguous"
+
+        # Force ambiguous if low confidence
         if confidence < 0.7:
-            intent = QueryIntent.AMBIGUOUS
-            if not reason:
-                reason = f"Low confidence ({confidence:.2f}) - needs clarification"
-        
-        return IntentResult(
-            intent=intent,
-            confidence=confidence,
-            reason=reason
-        )
+            intent_str = "ambiguous"
+            reason = reason or f"Low confidence ({confidence:.2f})"
 
-
-# Test function
-def test_intent_classifier():
-    """Test Intent Classifier with various queries"""
-    print("\n" + "="*60)
-    print("TESTING INTENT CLASSIFIER")
-    print("="*60 + "\n")
-    
-    # Initialize
-    classifier = IntentClassifier()
-    
-    # Test queries
-    test_queries = [
-        # Clear queries
-        ("How many customers are there?", QueryIntent.AGGREGATION),
-        ("Show all customers", QueryIntent.SIMPLE_SELECT),
-        ("Customers from Jakarta", QueryIntent.FILTERED_QUERY),
-        ("Top 5 customers by spending", QueryIntent.MULTI_TABLE_JOIN),
-        ("Monthly revenue trend", QueryIntent.COMPLEX_ANALYTICS),
-        
-        # Ambiguous queries
-        ("Show me the data", QueryIntent.AMBIGUOUS),
-        ("Tell me about sales", QueryIntent.AMBIGUOUS),
-        ("What?", QueryIntent.AMBIGUOUS),
-    ]
-    
-    print("Testing various query types:\n")
-    
-    success_count = 0
-    
-    for i, (query, expected_intent) in enumerate(test_queries, 1):
-        print(f"Test {i}: {query}")
-        print("-" * 60)
-        
-        result = classifier.classify(query)
-        
-        match = "✓" if result.intent == expected_intent else "✗"
-        
-        print(f"{match} Intent: {result.intent.value}")
-        print(f"  Confidence: {result.confidence:.2f}")
-        print(f"  Expected: {expected_intent.value}")
-        print(f"  Reason: {result.reason}")
-        print(f"  Time: {result.classification_time_ms:.0f}ms")
-        
-        if result.needs_clarification():
-            print(f"  ⚠️  Needs clarification!")
-        
-        if result.intent == expected_intent:
-            success_count += 1
-        
-        print()
-    
-    print("="*60)
-    accuracy = (success_count / len(test_queries)) * 100
-    print(f"ACCURACY: {success_count}/{len(test_queries)} ({accuracy:.0f}%)")
-    print("="*60 + "\n")
-
-
-if __name__ == "__main__":
-    # Run tests
-    test_intent_classifier()
+        return {
+            "category": intent_str,
+            "confidence": confidence,
+            "reason": reason,
+            "sql_strategy": INTENT_SQL_STRATEGY[intent_str]
+        }
