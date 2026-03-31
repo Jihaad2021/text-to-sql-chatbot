@@ -1,0 +1,330 @@
+{
+  "databases": [
+    "sales_db",
+    "products_db",
+    "analytics_db"
+  ],
+  "schemas": [
+    {
+      "db_name": "sales_db",
+      "schema": "public",
+      "tables": [
+        {
+          "table": "customers",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "text"
+            },
+            {
+              "name": "customer_unique_id",
+              "type": "text"
+            },
+            {
+              "name": "customer_name",
+              "type": "text"
+            },
+            {
+              "name": "customer_email",
+              "type": "text"
+            },
+            {
+              "name": "customer_city",
+              "type": "text"
+            },
+            {
+              "name": "customer_state",
+              "type": "text"
+            },
+            {
+              "name": "customer_zip_code",
+              "type": "bigint"
+            },
+            {
+              "name": "customer_created_at",
+              "type": "text"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
+          "table": "orders",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "text"
+            },
+            {
+              "name": "customer_id",
+              "type": "text"
+            },
+            {
+              "name": "order_status",
+              "type": "text"
+            },
+            {
+              "name": "order_purchase_timestamp",
+              "type": "timestamp without time zone"
+            },
+            {
+              "name": "order_approved_at",
+              "type": "text"
+            },
+            {
+              "name": "order_delivered_timestamp",
+              "type": "text"
+            },
+            {
+              "name": "order_estimated_delivery_date",
+              "type": "text"
+            }
+          ],
+          "foreign_keys": [
+            {
+              "column": "customer_id",
+              "references": {
+                "schema": "public",
+                "table": "customers",
+                "column": "customer_id"
+              }
+            }
+          ]
+        },
+        {
+          "table": "payments",
+          "columns": [
+            {
+              "name": "payment_id",
+              "type": "text"
+            },
+            {
+              "name": "order_id",
+              "type": "text"
+            },
+            {
+              "name": "payment_sequential",
+              "type": "bigint"
+            },
+            {
+              "name": "payment_type",
+              "type": "text"
+            },
+            {
+              "name": "payment_installments",
+              "type": "bigint"
+            },
+            {
+              "name": "payment_value",
+              "type": "double precision"
+            }
+          ],
+          "foreign_keys": [
+            {
+              "column": "order_id",
+              "references": {
+                "schema": "public",
+                "table": "orders",
+                "column": "order_id"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "db_name": "products_db",
+      "schema": "public",
+      "tables": [
+        {
+          "table": "products",
+          "columns": [
+            {
+              "name": "product_id",
+              "type": "text"
+            },
+            {
+              "name": "product_category_name",
+              "type": "text"
+            },
+            {
+              "name": "product_name_length",
+              "type": "bigint"
+            },
+            {
+              "name": "product_description_length",
+              "type": "bigint"
+            },
+            {
+              "name": "product_photos_qty",
+              "type": "bigint"
+            },
+            {
+              "name": "product_weight_g",
+              "type": "bigint"
+            },
+            {
+              "name": "product_length_cm",
+              "type": "bigint"
+            },
+            {
+              "name": "product_height_cm",
+              "type": "bigint"
+            },
+            {
+              "name": "product_width_cm",
+              "type": "bigint"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
+          "table": "order_items",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "text"
+            },
+            {
+              "name": "order_item_id",
+              "type": "bigint"
+            },
+            {
+              "name": "product_id",
+              "type": "text"
+            },
+            {
+              "name": "seller_id",
+              "type": "text"
+            },
+            {
+              "name": "shipping_limit_date",
+              "type": "text"
+            },
+            {
+              "name": "price",
+              "type": "double precision"
+            },
+            {
+              "name": "freight_value",
+              "type": "double precision"
+            }
+          ],
+          "foreign_keys": [
+            {
+              "column": "product_id",
+              "references": {
+                "schema": "public",
+                "table": "products",
+                "column": "product_id"
+              }
+            },
+            {
+              "column": "seller_id",
+              "references": {
+                "schema": "public",
+                "table": "sellers",
+                "column": "seller_id"
+              }
+            }
+          ]
+        },
+        {
+          "table": "sellers",
+          "columns": [
+            {
+              "name": "seller_id",
+              "type": "text"
+            },
+            {
+              "name": "seller_zip_code",
+              "type": "bigint"
+            },
+            {
+              "name": "seller_city",
+              "type": "text"
+            },
+            {
+              "name": "seller_state",
+              "type": "text"
+            }
+          ],
+          "foreign_keys": []
+        }
+      ]
+    },
+    {
+      "db_name": "analytics_db",
+      "schema": "public",
+      "tables": [
+        {
+          "table": "customer_segments",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "text"
+            },
+            {
+              "name": "rfm_score",
+              "type": "bigint"
+            },
+            {
+              "name": "segment",
+              "type": "text"
+            },
+            {
+              "name": "lifetime_value",
+              "type": "double precision"
+            },
+            {
+              "name": "total_orders",
+              "type": "bigint"
+            },
+            {
+              "name": "avg_order_value",
+              "type": "double precision"
+            },
+            {
+              "name": "last_purchase_date",
+              "type": "text"
+            },
+            {
+              "name": "updated_at",
+              "type": "text"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
+          "table": "daily_metrics",
+          "columns": [
+            {
+              "name": "date",
+              "type": "text"
+            },
+            {
+              "name": "total_sales",
+              "type": "bigint"
+            },
+            {
+              "name": "total_orders",
+              "type": "bigint"
+            },
+            {
+              "name": "avg_order_value",
+              "type": "bigint"
+            },
+            {
+              "name": "new_customers",
+              "type": "bigint"
+            },
+            {
+              "name": "returning_customers",
+              "type": "bigint"
+            }
+          ],
+          "foreign_keys": []
+        }
+      ]
+    }
+  ]
+}

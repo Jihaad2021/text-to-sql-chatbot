@@ -1,0 +1,308 @@
+databases:
+  - "sales_db"
+  - "products_db"
+  - "analytics_db"
+
+schemas:
+  - db_name: "sales_db"
+    schema: "public"
+    description: |
+      This sales database stores customer information, order transactions, and payment records to answer queries about sales performance, revenue analysis, customer purchasing behavior, transaction history, payment status, and business metrics using terms like sales, transaksi, penjualan, income, purchases, buyers, and financial data.
+    tables:
+      - table: "customers"
+        description: |
+          This table stores customer information and profiles with customer_id as the primary key, containing essential attributes like unique identifiers, names, email addresses, and geographic location details including city, state, and zip code along with account creation timestamps. It answers business questions about customer demographics, geographic distribution, account registration patterns, and customer lookup operations, supporting searches for terms like clients, buyers, users, pelanggan, konsumen, member, subscriber, and location-based queries for cities, states, regions, wilayah, daerah, and postal codes.
+        columns:
+          - name: "customer_id"
+            description: |
+              The customer_id column holds unique text identifiers for customers serving as the primary key, commonly used for filtering specific customers, joining with order tables, and grouping sales data by customer.
+            type: "text"
+          - name: "customer_unique_id"
+            description: |
+              The customer_unique_id column stores a unique text identifier for each customer that serves as the primary key and is commonly used for joining with other tables, filtering specific customers, and ensuring data integrity across the customer database.
+            type: "text"
+          - name: "customer_name"
+            description: |
+              The customer_name column stores the full name of each customer as text and is commonly used for filtering specific customers, grouping sales data by customer identity, and joining with order tables to display customer information in reports (nama pelanggan).
+            type: "text"
+          - name: "customer_email"
+            description: |
+              The customer_email column stores the email address of each customer as text and is commonly used for filtering specific customers, joining with order or communication tables, and grouping customers for email marketing analysis (email in Indonesian).
+            type: "text"
+          - name: "customer_city"
+            description: |
+              The customer_city column stores the city name where each customer is located (kota) and is commonly used for filtering customers by geographic location, grouping sales data by city for regional analysis, and aggregating metrics like customer counts or revenue by urban area.
+            type: "text"
+          - name: "customer_state"
+            description: |
+              The customer_state column stores the state or province name where each customer is located as text values, commonly used for filtering customers by geographic region, grouping sales data by state for regional analysis, and joining with location-based tables for demographic insights (provinsi).
+            type: "text"
+          - name: "customer_zip_code"
+            description: |
+              The customer_zip_code column stores postal code numbers as integers for customer addresses, commonly used for filtering customers by geographic location, grouping sales data by postal regions, and joining with geographic or demographic tables for location-based analysis (kode pos).
+            type: "bigint"
+          - name: "customer_created_at"
+            description: |
+              The customer_created_at column stores the timestamp when a customer account was created as text format and is commonly used for filtering customers by registration date ranges, grouping customers by time periods for cohort analysis, and aggregating customer acquisition metrics over time (tanggal dibuat).
+            type: "text"
+      - table: "orders"
+        description: |
+          This table stores customer order transactions with order_id as the primary key, tracking essential order lifecycle attributes including customer_id, order_status, purchase timestamp, approval time, delivery timestamp, and estimated delivery date. It answers business questions about order tracking, delivery performance, customer purchase patterns, and order fulfillment metrics, supporting searches for terms like orders, purchases, transactions, deliveries, pesanan, pembelian, pengiriman, status pesanan, and waktu pengiriman.
+        columns:
+          - name: "order_id"
+            description: |
+              The order_id column holds unique text identifiers for each order record serving as the primary key, commonly used for filtering specific orders, joining with other tables like order items or payments, and grouping order-related data in analytical queries.
+            type: "text"
+          - name: "customer_id"
+            description: |
+              The customer_id column stores unique text identifiers for customers who placed orders and serves as a foreign key for joining with customer tables, commonly used for filtering orders by specific customers and grouping orders for customer-level aggregations (pelanggan).
+            type: "text"
+          - name: "order_status"
+            description: |
+              The order_status column holds text values representing the current state of an order (such as pending, approved, delivered, canceled) and is commonly used for filtering orders by their processing stage and grouping orders for status-based analytics (status).
+            type: "text"
+          - name: "order_purchase_timestamp"
+            description: |
+              The order_purchase_timestamp column stores the exact date and time when a customer placed their order, commonly used for filtering orders by date ranges, grouping sales data by time periods, and calculating delivery timeframes by joining with delivery timestamps (tanggal pembelian).
+            type: "timestamp without time zone"
+          - name: "order_approved_at"
+            description: |
+              The order_approved_at column stores the timestamp when an order was approved as text, commonly used for filtering orders by approval date ranges, grouping sales by approval periods, and calculating time-based metrics like approval processing times (tanggal persetujuan).
+            type: "text"
+          - name: "order_delivered_timestamp"
+            description: |
+              The order_delivered_timestamp column stores the actual delivery date and time as text when an order was delivered to the customer, commonly used for filtering orders by delivery periods, calculating delivery performance metrics, and grouping orders by delivery timeframes (tanggal pengiriman).
+            type: "text"
+          - name: "order_estimated_delivery_date"
+            description: |
+              The order_estimated_delivery_date column stores the predicted delivery date as text for each order and is commonly used for filtering orders by expected delivery timeframes, grouping orders by delivery periods, and calculating delivery performance metrics (tanggal estimasi pengiriman).
+            type: "text"
+        foreign_keys:
+          - column: "customer_id"
+            references:
+              schema: "public"
+              table:  "customers"
+              column: "customer_id"
+      - table: "payments"
+        description: |
+          This table stores payment transaction records with payment_id as the primary key, capturing essential attributes like order_id, payment type, installment details, and monetary values for each payment made by customers.
+          
+          It answers business questions about payment methods, transaction amounts, installment patterns, and revenue analysis, supporting queries about pembayaran (payments), metode bayar (payment methods), cicilan (installments), and nilai transaksi (transaction values).
+        columns:
+          - name: "payment_id"
+            description: |
+              The payment_id column holds unique text identifiers for individual payments that serves as the primary key for filtering specific payment records and joining with other payment-related tables in the sales database.
+            type: "text"
+          - name: "order_id"
+            description: |
+              The order_id column stores text identifiers that link payments to their corresponding orders, serving as a foreign key for joining with order tables and commonly used for filtering and grouping payment data by specific orders.
+            type: "text"
+          - name: "payment_sequential"
+            description: |
+              The payment_sequential column stores a sequential number indicating the order of payments within a transaction and is commonly used for filtering and ordering payment records chronologically, serving as a sequence identifier for multiple payment installments (urutan pembayaran).
+            type: "bigint"
+          - name: "payment_type"
+            description: |
+              The payment_type column stores the method of payment used for transactions (such as credit card, debit card, or cash) as text values, commonly used for filtering and grouping payment data by payment method (metode pembayaran).
+            type: "text"
+          - name: "payment_installments"
+            description: |
+              The payment_installments column stores the number of installment payments (cicilan) as a bigint value and is commonly used for filtering payment plans, grouping transactions by installment count, and aggregating payment statistics to analyze customer payment preferences.
+            type: "bigint"
+          - name: "payment_value"
+            description: |
+              The payment_value column stores the monetary amount of each payment transaction as a double precision number, commonly used for aggregating total revenue, filtering by payment ranges, and calculating financial metrics in sales analysis queries (nilai pembayaran).
+            type: "double precision"
+        foreign_keys:
+          - column: "order_id"
+            references:
+              schema: "public"
+              table:  "orders"
+              column: "order_id"
+
+  - db_name: "products_db"
+    schema: "public"
+    description: |
+      This products database stores e-commerce marketplace data including product catalogs, sales transactions, order details, and seller information to answer queries about inventory, revenue, sales performance, purchase history, merchant analytics, and product demand across the platform.
+    tables:
+      - table: "products"
+        description: |
+          This table stores product catalog information with product_id as the primary key, containing essential product attributes including category classification, name and description text lengths, photo quantities, weight in grams, and physical dimensions in centimeters.
+          
+          It answers business questions about product characteristics, inventory analysis, shipping calculations, and catalog management, supporting searches for items, barang, produk, kategori, dimensi, berat, foto, and ukuran.
+        columns:
+          - name: "product_id"
+            description: |
+              The product_id column stores unique text identifiers for each product serving as the primary key, commonly used for filtering specific products, joining with other tables like orders or reviews, and grouping product-related data (id_produk).
+            type: "text"
+          - name: "product_category_name"
+            description: |
+              The product_category_name column stores the category name that each product belongs to as text values (kategori), commonly used for filtering products by category, grouping sales data by product type, and joining with category-related tables to analyze product performance across different market segments.
+            type: "text"
+          - name: "product_name_length"
+            description: |
+              The product_name_length column stores the character count of product names as a bigint value and is commonly used for filtering products by name length ranges, grouping products by name length categories, and calculating aggregate statistics like average or maximum name lengths across product categories (panjang nama produk).
+            type: "bigint"
+          - name: "product_description_length"
+            description: |
+              The product_description_length column stores the character count of product descriptions as a bigint metric that is commonly used for filtering products by description detail level, grouping products into description length categories, and aggregating statistics about product information completeness (panjang deskripsi).
+            type: "bigint"
+          - name: "product_photos_qty"
+            description: |
+              The product_photos_qty column stores the count of photos associated with each product as a bigint value, commonly used for filtering products by photo availability, grouping products by photo count ranges, and aggregating statistics on product photo quantities (jumlah foto).
+            type: "bigint"
+          - name: "product_weight_g"
+            description: |
+              The product_weight_g column stores the weight of products in grams (berat) as a bigint value and is commonly used for filtering products by weight ranges, grouping products into weight categories, and calculating aggregate statistics like average or total weight across product categories.
+            type: "bigint"
+          - name: "product_length_cm"
+            description: |
+              The product_length_cm column stores the length measurement of products in centimeters as a bigint value (panjang), commonly used for filtering products by size dimensions, grouping items by length ranges, and calculating shipping costs or storage requirements.
+            type: "bigint"
+          - name: "product_height_cm"
+            description: |
+              The product_height_cm column stores the height measurement of products in centimeters as a bigint value (tinggi), commonly used for filtering products by size dimensions, grouping items by height ranges, and calculating volume or shipping metrics in product analysis queries.
+            type: "bigint"
+          - name: "product_width_cm"
+            description: |
+              The product_width_cm column stores the width measurement of products in centimeters as a bigint value (lebar), commonly used for filtering products by size dimensions, grouping items by width ranges, and calculating volume or shipping metrics in product analysis queries.
+            type: "bigint"
+      - table: "order_items"
+        description: |
+          This table stores individual line items within customer orders, with order_item_id as the primary key and key attributes including the associated order_id, product_id, seller_id, item price, and shipping costs (freight_value). It answers business questions about order composition, product sales performance, seller revenue analysis, and shipping cost breakdowns, supporting queries about item details, barang pesanan, harga produk, biaya pengiriman, and penjual performance.
+        columns:
+          - name: "order_id"
+            description: |
+              The order_id column stores text identifiers that reference specific orders and serves as a foreign key for joining with order tables, commonly used for filtering and grouping order items by their parent order.
+            type: "text"
+          - name: "order_item_id"
+            description: |
+              The order_item_id column holds unique bigint identifiers for individual items within orders, serves as the primary key for the order_items table, and is used for joining with other tables to retrieve specific order item details and for filtering queries when analyzing particular line items.
+            type: "bigint"
+          - name: "product_id"
+            description: |
+              The product_id column stores text identifiers for products within order items and serves as a foreign key for joining with product tables, commonly used in filtering and grouping operations to analyze sales by product (produk).
+            type: "text"
+          - name: "seller_id"
+            description: |
+              The seller_id column stores text identifiers of sellers who fulfill order items and is commonly used for filtering orders by specific sellers, grouping sales data by seller, joining with seller information tables, and aggregating seller performance metrics like total sales or order counts.
+            type: "text"
+          - name: "shipping_limit_date"
+            description: |
+              The shipping_limit_date column stores the maximum date by which an order item must be shipped as text format, commonly used for filtering orders by shipping deadlines, grouping items by shipping timeframes, and calculating shipping performance metrics (batas tanggal pengiriman).
+            type: "text"
+          - name: "price"
+            description: |
+              The price column stores the monetary value of individual items in orders as a double precision number, commonly used for filtering by price ranges, aggregating total order values, and calculating revenue metrics (harga).
+            type: "double precision"
+          - name: "freight_value"
+            description: |
+              The freight_value column stores the shipping cost amount as a double precision number for each order item, commonly used for calculating total order costs through aggregation functions like SUM and filtering expensive shipments, serving as a cost metric (biaya pengiriman).
+            type: "double precision"
+        foreign_keys:
+          - column: "product_id"
+            references:
+              schema: "public"
+              table:  "products"
+              column: "product_id"
+          - column: "seller_id"
+            references:
+              schema: "public"
+              table:  "sellers"
+              column: "seller_id"
+      - table: "sellers"
+        description: |
+          This table stores information about sellers or merchants in an e-commerce platform, with seller_id as the primary key and including their geographic location details such as zip code, city, and state.
+          
+          It answers business questions about seller distribution, location-based analytics, and geographic performance metrics, supporting searches for terms like merchants, vendors, penjual, pedagang, lokasi penjual, wilayah, kota, and regional seller analysis.
+        columns:
+          - name: "seller_id"
+            description: |
+              The seller_id column holds unique text identifiers for each seller and serves as the primary key for filtering specific sellers and joining with other tables that reference sellers.
+            type: "text"
+          - name: "seller_zip_code"
+            description: |
+              The seller_zip_code column stores the postal code as a bigint for each seller's location and is commonly used for filtering sellers by geographic area, grouping sales by postal regions, or joining with shipping/logistics tables to calculate delivery zones (kode pos).
+            type: "bigint"
+          - name: "seller_city"
+            description: |
+              The seller_city column stores the city name where each seller is located (kota) and is commonly used for filtering sellers by geographic location, grouping sales data by city for regional analysis, and joining with other location-based tables for geographic insights.
+            type: "text"
+          - name: "seller_state"
+            description: |
+              The seller_state column stores the state or province name where each seller is located as text, commonly used for filtering sellers by geographic region, grouping sales data by state for regional analysis, and joining with location-based tables for geographic insights (provinsi).
+            type: "text"
+
+  - db_name: "analytics_db"
+    schema: "public"
+    description: |
+      This analytics database stores customer segmentation data and daily business performance metrics to answer queries about customer groups, daily revenue, sales trends, transaction volumes, performance indicators, and business intelligence reporting across different customer segments and time periods.
+    tables:
+      - table: "customer_segments"
+        description: |
+          This table stores customer segmentation data with customer_id as the primary key, containing RFM analysis scores, segment classifications, lifetime value metrics, order statistics, and purchase timing information for each customer.
+          
+          It answers business questions about customer classification, value analysis, purchase behavior patterns, and retention metrics, supporting queries about pelanggan segments, customer lifetime value, buying frequency, average transaction size, and recency analysis for targeted marketing and customer relationship management.
+        columns:
+          - name: "customer_id"
+            description: |
+              The customer_id column stores unique text identifiers for customers and serves as the primary key for joining with other customer-related tables, commonly used in WHERE clause filters and GROUP BY operations for customer segmentation analysis.
+            type: "text"
+          - name: "rfm_score"
+            description: |
+              The rfm_score column stores a numerical RFM (Recency, Frequency, Monetary) scoring value as a bigint that quantifies customer behavior patterns and is commonly used for filtering high-value customers, grouping customers into behavioral segments, and aggregating to calculate average segment scores (skor).
+            type: "bigint"
+          - name: "segment"
+            description: |
+              The segment column stores customer categorization labels (such as "VIP", "Regular", "At Risk") used for filtering customers by behavioral groups and grouping analytics by customer type in marketing and retention analysis queries (segmen).
+            type: "text"
+          - name: "lifetime_value"
+            description: |
+              The lifetime_value column stores the total monetary value a customer has generated over their entire relationship with the business as a double precision number, commonly used for filtering high-value customers, grouping customers into value tiers, and calculating aggregate metrics like average customer worth across segments (nilai seumur hidup).
+            type: "double precision"
+          - name: "total_orders"
+            description: |
+              The total_orders column stores the cumulative count of orders placed by each customer as a bigint metric, commonly used for filtering high-value customers, grouping customers by purchase frequency ranges, and aggregating to calculate average orders per segment (total pesanan).
+            type: "bigint"
+          - name: "avg_order_value"
+            description: |
+              The avg_order_value column stores the average monetary value of orders placed by each customer as a double precision number, commonly used for filtering high-value customers, grouping customers into spending tiers, and calculating segment-level aggregations in customer analytics queries (nilai rata-rata pesanan).
+            type: "double precision"
+          - name: "last_purchase_date"
+            description: |
+              The last_purchase_date column stores the date of a customer's most recent purchase as text and is commonly used for filtering customers by recency, grouping customers into time-based cohorts, and calculating customer retention metrics in RFM analysis (tanggal pembelian terakhir).
+            type: "text"
+          - name: "updated_at"
+            description: |
+              The updated_at column stores the timestamp when customer segment data was last modified as text, commonly used for filtering recent updates and tracking data freshness in customer analytics queries (tanggal_diperbarui).
+            type: "text"
+      - table: "daily_metrics"
+        description: |
+          This table stores daily business performance metrics with date as the primary key, tracking key attributes including total sales revenue, order counts, average order values, and customer acquisition data for each day.
+          
+          It answers business questions about daily sales performance, order trends, customer behavior patterns, and revenue analysis, supporting searches for terms like daily sales, penjualan harian, order volume, nilai rata-rata pesanan, new customer acquisition, pelanggan baru, returning customers, and pelanggan kembali.
+        columns:
+          - name: "date"
+            description: |
+              The date column stores daily date values in text format and serves as the primary key for filtering time periods, grouping metrics by day, and joining with other time-based tables in daily sales analytics (tanggal).
+            type: "text"
+          - name: "total_sales"
+            description: |
+              The total_sales column stores the aggregate sales amount in bigint format for each day and is commonly used for filtering by sales thresholds, grouping by sales ranges, and calculating sum/average aggregations across date periods to analyze daily revenue performance (total_penjualan).
+            type: "bigint"
+          - name: "total_orders"
+            description: |
+              The total_orders column stores the count of orders placed on each date as a bigint metric that is commonly used for aggregation operations like SUM and AVG to analyze order volume trends and can be filtered or grouped by date ranges for daily, weekly, or monthly reporting (total pesanan).
+            type: "bigint"
+          - name: "avg_order_value"
+            description: |
+              The avg_order_value column stores the average monetary value per order in bigint format and serves as a key performance metric that can be filtered for trend analysis, grouped by time periods, and aggregated to calculate overall averages across different date ranges (nilai rata-rata pesanan).
+            type: "bigint"
+          - name: "new_customers"
+            description: |
+              The new_customers column stores the count of first-time customers acquired on each date as a bigint metric that is commonly used for aggregation operations like SUM and AVG to analyze customer acquisition trends, and for filtering in time-series comparisons alongside its sibling metrics (pelanggan_baru).
+            type: "bigint"
+          - name: "returning_customers"
+            description: |
+              The returning_customers column stores the count of customers who made repeat purchases on a given day as a bigint value, commonly used for filtering by customer retention thresholds, grouping by time periods for trend analysis, and aggregating to calculate total or average returning customer metrics across date ranges (pelanggan kembali).
+            type: "bigint"
