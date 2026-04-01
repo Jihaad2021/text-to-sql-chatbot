@@ -110,8 +110,13 @@ class SchemaRetriever(BaseAgent):
                 message="No relevant tables found for query"
             )
 
-        # Auto-detect database from top 3 results
-        state.database = self._detect_database(retrieved_tables)
+        # Auto-detect database only if using default
+        detected_db = self._detect_database(retrieved_tables)
+        db_names_in_results = [t.db_name for t in retrieved_tables]
+        if state.database not in db_names_in_results:
+            state.database = detected_db
+            self.log(f"Switched to detected database: {detected_db}")
+
         state.retrieved_tables = retrieved_tables
 
         self.log(

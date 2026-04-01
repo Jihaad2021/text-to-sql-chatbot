@@ -82,7 +82,7 @@ class SQLValidator(LLMBaseAgent):
 
         for attempt in range(self.max_retries + 1):
             errors, warnings = self._validate(current_sql, state.query)
-
+            
             if not errors:
                 state.validated_sql = current_sql
                 if fixes_applied:
@@ -159,7 +159,10 @@ class SQLValidator(LLMBaseAgent):
         sql_upper = sql.upper()
 
         for keyword in self.dangerous_keywords:
-            if keyword in sql_upper:
+            # Pakai word boundary agar tidak match nama kolom
+            # contoh: customer_created_at tidak match CREATE
+            pattern = r'\b' + keyword + r'\b'
+            if re.search(pattern, sql_upper):
                 errors.append(f"SECURITY: Dangerous keyword '{keyword}' not allowed")
 
         if '--' in sql or '/*' in sql or '*/' in sql:
@@ -168,7 +171,7 @@ class SQLValidator(LLMBaseAgent):
         if ';' in sql.strip().rstrip(';'):
             errors.append("SECURITY: Multiple statements not allowed")
 
-        if not sql_upper.strip().startswith('SELECT'):
+        if not (sql_upper.strip().startswith('SELECT') or sql_upper.strip().startswith('WITH')):
             errors.append("SECURITY: Only SELECT queries are allowed")
 
         return errors
@@ -176,6 +179,13 @@ class SQLValidator(LLMBaseAgent):
     def _validate_tables(self, sql: str) -> List[str]:
         """Layer 3: Table whitelist validation."""
         errors = []
+
+        # Extract CTE names to skip them
+        cte_names = set(re.findall(
+            r'\bWITH\s+(\w+)\s+AS\s*\(',
+            sql,
+            re.IGNORECASE
+        ))
 
         # Extract all table names from FROM and JOIN clauses
         matches = re.findall(
@@ -185,9 +195,12 @@ class SQLValidator(LLMBaseAgent):
         )
 
         for table_name in matches:
-            # Skip SQL keywords that may appear after FROM/JOIN
+            # Skip SQL keywords
             skip_words = {'select', 'where', 'extract', 'current_date', 'lateral', 'unnest'}
             if table_name.lower() in skip_words:
+                continue
+            # Skip CTE names
+            if table_name.lower() in {c.lower() for c in cte_names}:
                 continue
             if len(table_name) > 1 and table_name.lower() not in self.allowed_tables:
                 errors.append(f"TABLE: Unknown table '{table_name}'")

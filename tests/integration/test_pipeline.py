@@ -71,24 +71,27 @@ def mock_collection():
     }
     return collection
 
-
 @pytest.fixture
 def all_agents(mock_engine, mock_collection):
     """Initialize all agents with mocked dependencies."""
-    with patch("src.core.llm_base_agent.Anthropic"):
-        with patch("src.components.schema_retriever.chromadb.PersistentClient"):
-            with patch("src.components.schema_retriever.embedding_functions.OpenAIEmbeddingFunction"):
-                with patch.object(QueryExecutor, "_create_engines", return_value={"sales_db": mock_engine}):
-                    with patch("builtins.open", side_effect=FileNotFoundError):
-                        return {
-                            "intent": IntentClassifier(),
-                            "retriever": SchemaRetriever.__new__(SchemaRetriever),
-                            "evaluator": RetrievalEvaluator(),
-                            "generator": SQLGenerator(),
-                            "validator": SQLValidator(enable_ai_validation=False),
-                            "executor": QueryExecutor(),
-                            "insight": InsightGenerator()
-                        }
+    with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock())):
+     with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock())):
+      with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock())):
+       with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock())):
+        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock())):
+         with patch("src.components.schema_retriever.chromadb.PersistentClient"):
+          with patch("src.components.schema_retriever.embedding_functions.OpenAIEmbeddingFunction"):
+           with patch.object(QueryExecutor, "_create_engines", return_value={"sales_db": mock_engine}):
+            with patch("builtins.open", side_effect=FileNotFoundError):
+                return {
+                    "intent": IntentClassifier(),
+                    "retriever": SchemaRetriever.__new__(SchemaRetriever),
+                    "evaluator": RetrievalEvaluator(),
+                    "generator": SQLGenerator(),
+                    "validator": SQLValidator(enable_ai_validation=False),
+                    "executor": QueryExecutor(),
+                    "insight": InsightGenerator()
+                }
 
 
 def run_pipeline(agents: dict, state: AgentState) -> AgentState:

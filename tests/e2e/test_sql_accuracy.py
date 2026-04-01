@@ -36,7 +36,7 @@ SIMPLE_QUERIES = [
         "description": "Simple select all"
     },
     {
-        "query": "berapa total revenue keseluruhan?",
+        "query": "berapa total nilai pembayaran dari semua transaksi?",
         "expected_sql_contains": ["SUM", "payment_value"],
         "expected_intent": "aggregation",
         "description": "Total revenue"
@@ -51,7 +51,7 @@ FILTERED_QUERIES = [
         "description": "Filter by city"
     },
     {
-        "query": "orders dengan status delivered",
+        "query": "tampilkan semua orders yang statusnya delivered",
         "expected_sql_contains": ["WHERE", "orders", "delivered"],
         "expected_intent": "filtered_query",
         "description": "Filter by status"
@@ -155,8 +155,8 @@ class TestJoinQueriesAccuracy:
     @pytest.mark.parametrize("test_case", JOIN_QUERIES)
     def test_join_query_accuracy(self, real_agents, test_case):
         """Join queries should generate SQL with JOIN clause."""
-        state = run_full_pipeline(real_agents, test_case["query"])
-
+        state = run_full_pipeline(real_agents, test_case["query"], database="sales_db")
+        
         print(f"\n{'='*60}")
         print(f"Description: {test_case['description']}")
         print(f"Query      : {test_case['query']}")

@@ -10,7 +10,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from src.components.intent_classifier import IntentClassifier, INTENT_CATEGORIES
 from src.models.agent_state import AgentState
@@ -19,9 +19,8 @@ from src.models.agent_state import AgentState
 @pytest.fixture
 def classifier():
     """Initialize IntentClassifier with mocked Anthropic client."""
-    with patch("src.core.llm_base_agent.Anthropic"):
+    with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock())):
         return IntentClassifier()
-
 
 # ========================================
 # Test: Clear Intent Classification

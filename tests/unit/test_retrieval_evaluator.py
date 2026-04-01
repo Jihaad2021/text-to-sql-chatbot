@@ -10,7 +10,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from src.components.retrieval_evaluator import RetrievalEvaluator
 from src.models.agent_state import AgentState
@@ -21,7 +21,7 @@ from src.utils.exceptions import RetrievalEvaluationError
 @pytest.fixture
 def evaluator():
     """Initialize RetrievalEvaluator with mocked Anthropic client."""
-    with patch("src.core.llm_base_agent.Anthropic"):
+    with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock())):
         return RetrievalEvaluator()
 
 

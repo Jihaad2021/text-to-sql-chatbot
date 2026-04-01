@@ -120,7 +120,7 @@ class TestRealFullPipeline:
 
     def test_simple_count_query(self, real_agents):
         """Simple count query should return numeric result."""
-        state = run_full_pipeline(real_agents, "tampilkan customer dari Jakarta")
+        state = run_full_pipeline(real_agents, "berapa total customer?")
 
         print(f"\nQuery    : {state.query}")
         print(f"Intent   : {state.intent['category']}")

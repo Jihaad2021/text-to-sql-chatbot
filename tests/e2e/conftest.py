@@ -30,49 +30,49 @@ from src.components.insight_generator import InsightGenerator
 # Real Agent Fixtures
 # ========================================
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def real_intent_classifier():
     """Real IntentClassifier with Anthropic API."""
     return IntentClassifier()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def real_schema_retriever():
     """Real SchemaRetriever with ChromaDB."""
     return SchemaRetriever()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def real_retrieval_evaluator():
     """Real RetrievalEvaluator with Anthropic API."""
     return RetrievalEvaluator()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def real_sql_generator():
     """Real SQLGenerator with Anthropic API."""
     return SQLGenerator()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def real_sql_validator():
     """Real SQLValidator (AI validation disabled for speed)."""
     return SQLValidator(enable_ai_validation=False)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def real_query_executor():
     """Real QueryExecutor with PostgreSQL."""
     return QueryExecutor()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def real_insight_generator():
     """Real InsightGenerator with Anthropic API."""
     return InsightGenerator()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def real_agents(
     real_intent_classifier,
     real_schema_retriever,

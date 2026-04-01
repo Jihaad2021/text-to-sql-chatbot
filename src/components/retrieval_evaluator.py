@@ -67,7 +67,11 @@ class RetrievalEvaluator(LLMBaseAgent):
         essential, optional, excluded = self._parse_response(response, retrieved)
 
         # Use essential + optional as evaluated tables
-        state.evaluated_tables = essential + optional
+        all_relevant = essential + optional
+        state.evaluated_tables = [
+            t for t in all_relevant
+            if t.db_name == state.database
+]
 
         self.log(
             f"Evaluation complete: {len(essential)} essential, "

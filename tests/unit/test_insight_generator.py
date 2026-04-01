@@ -10,7 +10,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from src.components.insight_generator import InsightGenerator
 from src.models.agent_state import AgentState
@@ -20,7 +20,7 @@ from src.utils.exceptions import InsightGenerationError
 @pytest.fixture
 def generator():
     """Initialize InsightGenerator with mocked Anthropic client."""
-    with patch("src.core.llm_base_agent.Anthropic"):
+    with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock())):
         return InsightGenerator()
 
 

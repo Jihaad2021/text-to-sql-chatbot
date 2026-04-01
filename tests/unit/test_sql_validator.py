@@ -11,7 +11,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from src.components.sql_validator import SQLValidator
 from src.models.agent_state import AgentState
@@ -21,16 +21,14 @@ from src.utils.exceptions import SQLValidationError
 @pytest.fixture
 def validator():
     """Initialize SQLValidator with AI validation disabled."""
-    with patch("src.core.llm_base_agent.Anthropic"):
+    with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock())):
         return SQLValidator(enable_ai_validation=False)
-
 
 @pytest.fixture
 def validator_with_ai():
     """Initialize SQLValidator with AI validation enabled."""
-    with patch("src.core.llm_base_agent.Anthropic"):
+    with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock())):
         return SQLValidator(enable_ai_validation=True)
-
 
 def make_state(sql: str, query: str = "test query") -> AgentState:
     """Helper to create state with SQL."""
