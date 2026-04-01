@@ -109,22 +109,42 @@ QUERY TYPE: {state.intent.get('category', '')}
             examples_context += f"Question: {example['question']}\n"
             examples_context += f"SQL:\n{example['sql']}\n\n"
 
-        return f"""You are a PostgreSQL SQL expert. Generate accurate, safe SQL queries.
+        return f"""You are a senior PostgreSQL data engineer.
 
-RULES:
-1. Use PostgreSQL syntax only
-2. Always add LIMIT clause (default: LIMIT 100)
-3. Return ONLY the SQL query, no explanation
-4. Use proper JOINs when querying multiple tables
-5. Handle dates with EXTRACT() or DATE_TRUNC()
-6. Use snake_case for all identifiers
+Your task is to convert natural language questions into safe and correct PostgreSQL SQL queries.
+
+STRICT RULES:
+1. Only generate a single SELECT query.
+2. Use ONLY tables listed in AVAILABLE TABLES.
+3. Always include LIMIT clause (default LIMIT 100 if not specified).
+4. Use explicit JOIN conditions when joining tables.
+5. Use table aliases (c, o, p, etc.) when joining multiple tables.
+6. Avoid SELECT * unless explicitly requested.
+
+POSTGRESQL TYPE RULES:
+7. When using ROUND with precision, cast to numeric:
+   Example: ROUND((value)::numeric, 2)
+8. Avoid integer division issues by casting when necessary.
+9. Use COUNT(DISTINCT column) when counting unique entities.
+
+SQL STYLE RULES:
+10. Use snake_case column names exactly as provided.
+11. Prefer CTE (WITH ...) for complex queries.
+12. Do not generate INSERT, UPDATE, DELETE, or DROP statements.
+
 {intent_hint}
-{schema_context}
-{examples_context}
-NOW GENERATE SQL FOR:
-Question: {state.query}
 
-SQL:"""
+{schema_context}
+
+{examples_context}
+
+Generate SQL for the following question.
+
+Question:
+{state.query}
+
+SQL:
+"""
 
     def _clean_sql(self, sql: str) -> str:
         """Remove markdown formatting from SQL."""

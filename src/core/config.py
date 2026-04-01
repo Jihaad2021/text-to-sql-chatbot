@@ -10,7 +10,7 @@ load_dotenv()
 
 class Config:
     # LLM
-    MODEL = "claude-sonnet-4-20250514"
+    MODEL = os.getenv("LLM_MODEL", None)
     MAX_TOKENS = 1000
 
     # Query Executor
