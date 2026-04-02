@@ -1,33 +1,36 @@
-# Core
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-python-dotenv==1.0.0
-pydantic==2.5.0
-pyyaml==6.0.1
+# ─────────────────────────────────────────────────────────────
+# TEXT-TO-SQL CHATBOT — Requirements
+# ─────────────────────────────────────────────────────────────
+# Install: pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────
 
-# LLM & Embeddings
-anthropic==0.18.1
-openai==1.12.0
+# ─── LLM Providers ───────────────────────────────────────────
+anthropic>=0.40.0           # Anthropic Claude
+openai>=1.0.0               # OpenAI GPT + Gemini (OpenAI-compatible)
+groq>=1.0.0                 # Groq (Llama, Mixtral)
 
-# Vector Database
-chromadb==0.4.22
+# ─── API & Web ────────────────────────────────────────────────
+fastapi>=0.100.0            # REST API framework
+uvicorn>=0.20.0             # ASGI server
+streamlit>=1.31.0           # Web UI
 
-# Database
-sqlalchemy==2.0.25
-psycopg2-binary==2.9.9
-pandas==2.2.0
+# ─── Database ─────────────────────────────────────────────────
+sqlalchemy>=2.0.0           # SQL ORM & connection
+psycopg2-binary>=2.9.0      # PostgreSQL driver
 
-# SQL Parsing
-sqlparse==0.4.4
+# ─── Vector Database ──────────────────────────────────────────
+chromadb>=0.4.0             # Vector database for RAG
 
-# UI
-streamlit==1.31.0
+# ─── Data Processing ──────────────────────────────────────────
+pandas>=2.0.0               # CSV loading & data manipulation
+pydantic>=2.0.0             # Data validation & models
 
-# Testing
-pytest==7.4.3
-pytest-cov==4.1.0
-requests==2.31.0
+# ─── SQL & Config ─────────────────────────────────────────────
+sqlparse>=0.4.0             # SQL parsing & validation
+pyyaml>=6.0.0               # YAML config files
+python-dotenv>=1.0.0        # .env file loading
 
-# Utils
-python-json-logger==2.0.7
-Faker==22.6.0
+# ─── Testing ──────────────────────────────────────────────────
+pytest>=7.0.0               # Test framework
+pytest-mock>=3.0.0          # Mocking for tests
+Faker>=10.0.0               # Fake data generation

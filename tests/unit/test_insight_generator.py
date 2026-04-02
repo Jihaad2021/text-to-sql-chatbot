@@ -20,7 +20,7 @@ from src.utils.exceptions import InsightGenerationError
 @pytest.fixture
 def generator():
     """Initialize InsightGenerator with mocked Anthropic client."""
-    with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock())):
+    with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
         return InsightGenerator()
 
 

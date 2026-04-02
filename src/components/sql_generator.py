@@ -120,6 +120,7 @@ STRICT RULES:
 4. Use explicit JOIN conditions when joining tables.
 5. Use table aliases (c, o, p, etc.) when joining multiple tables.
 6. Avoid SELECT * unless explicitly requested.
+7. Do NOT prefix table names with database name (e.g. use 'payments' not 'sales_db.payments')
 
 POSTGRESQL TYPE RULES:
 7. When using ROUND with precision, cast to numeric:

@@ -19,7 +19,7 @@ from src.models.agent_state import AgentState
 @pytest.fixture
 def classifier():
     """Initialize IntentClassifier with mocked Anthropic client."""
-    with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock())):
+    with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
         return IntentClassifier()
 
 # ========================================

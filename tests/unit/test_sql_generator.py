@@ -20,7 +20,7 @@ from src.utils.exceptions import SQLGenerationError
 @pytest.fixture
 def generator():
     """Initialize SQLGenerator with mocked LLM client."""
-    with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock())):
+    with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
         with patch("builtins.open", side_effect=FileNotFoundError):
             return SQLGenerator()
 

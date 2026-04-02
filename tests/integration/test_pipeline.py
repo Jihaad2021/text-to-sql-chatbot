@@ -74,11 +74,11 @@ def mock_collection():
 @pytest.fixture
 def all_agents(mock_engine, mock_collection):
     """Initialize all agents with mocked dependencies."""
-    with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock())):
-     with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock())):
-      with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock())):
-       with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock())):
-        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock())):
+    with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+     with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+      with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+       with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
          with patch("src.components.schema_retriever.chromadb.PersistentClient"):
           with patch("src.components.schema_retriever.embedding_functions.OpenAIEmbeddingFunction"):
            with patch.object(QueryExecutor, "_create_engines", return_value={"sales_db": mock_engine}):

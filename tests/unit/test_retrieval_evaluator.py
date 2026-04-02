@@ -21,7 +21,7 @@ from src.utils.exceptions import RetrievalEvaluationError
 @pytest.fixture
 def evaluator():
     """Initialize RetrievalEvaluator with mocked Anthropic client."""
-    with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock())):
+    with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
         return RetrievalEvaluator()
 
 

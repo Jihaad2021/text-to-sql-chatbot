@@ -21,13 +21,13 @@ from src.utils.exceptions import SQLValidationError
 @pytest.fixture
 def validator():
     """Initialize SQLValidator with AI validation disabled."""
-    with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock())):
+    with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
         return SQLValidator(enable_ai_validation=False)
 
 @pytest.fixture
 def validator_with_ai():
     """Initialize SQLValidator with AI validation enabled."""
-    with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock())):
+    with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
         return SQLValidator(enable_ai_validation=True)
 
 def make_state(sql: str, query: str = "test query") -> AgentState:
