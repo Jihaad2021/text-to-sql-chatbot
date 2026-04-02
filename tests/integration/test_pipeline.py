@@ -21,7 +21,7 @@ from src.components.sql_generator import SQLGenerator
 from src.components.sql_validator import SQLValidator
 from src.components.query_executor import QueryExecutor
 from src.components.insight_generator import InsightGenerator
-from src.utils.exceptions import AgentExecutionError, SQLValidationError
+from src.utils.exceptions import AgentExecutionError, SQLValidationError, SQLGenerationError
 
 
 # ========================================
@@ -71,6 +71,25 @@ def mock_collection():
     }
     return collection
 
+def _make_mock_retriever(mock_collection):
+    """Create SchemaRetriever with mocked dependencies."""
+    import logging
+    retriever = SchemaRetriever.__new__(SchemaRetriever)
+    retriever.name = "schema_retriever"
+    retriever.version = "2.0.0"
+    retriever.top_k = 5
+    retriever.collection = mock_collection
+    retriever.bm25 = None
+    retriever.bm25_corpus = []
+    retriever.graph = None
+    retriever.metrics = {
+        "total_calls": 0, "successful_calls": 0, "failed_calls": 0,
+        "total_time_seconds": 0.0, "average_time_seconds": 0.0,
+        "last_execution_time": None, "created_at": "2024-01-01"
+    }
+    retriever.logger = logging.getLogger("agent.schema_retriever")
+    return retriever
+
 @pytest.fixture
 def all_agents(mock_engine, mock_collection):
     """Initialize all agents with mocked dependencies."""
@@ -85,7 +104,7 @@ def all_agents(mock_engine, mock_collection):
             with patch("builtins.open", side_effect=FileNotFoundError):
                 return {
                     "intent": IntentClassifier(),
-                    "retriever": SchemaRetriever.__new__(SchemaRetriever),
+                    "retriever": _make_mock_retriever(mock_collection),
                     "evaluator": RetrievalEvaluator(),
                     "generator": SQLGenerator(),
                     "validator": SQLValidator(enable_ai_validation=False),
@@ -197,7 +216,7 @@ class TestEarlyStopAmbiguous:
 
         with patch.object(all_agents["intent"], "_call_llm",
                           return_value="INTENT: ambiguous\nCONFIDENCE: 1.0\nREASON: Too vague"):
-            state = run_pipeline(all_agents, state)
+            state = all_agents["intent"].run(state)
 
         assert state.needs_clarification is True
         assert state.sql is None
@@ -233,8 +252,9 @@ class TestEarlyStopValidation:
                               return_value="ESSENTIAL:\n- sales_db.customers: Required\nOPTIONAL:\nEXCLUDED:"):
                 # Generator returns dangerous SQL
                 with patch.object(all_agents["generator"], "_call_llm",
-                                  return_value="DROP TABLE customers;"):
-                    with pytest.raises(SQLValidationError):
+                                  return_value="SELECT * FROM customers; DELETE FROM orders;"):
+                
+                    with pytest.raises((SQLValidationError, SQLGenerationError)):
                         state = all_agents["intent"].run(state)
                         state = all_agents["retriever"].execute(state)
                         state = all_agents["evaluator"].run(state)

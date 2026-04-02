@@ -172,4 +172,3 @@ class QueryExecutor(BaseAgent):
                 self.log(f"Closed connection to {db_name}")
             except Exception as e:
                 self.log(f"Error closing {db_name}: {str(e)}", level="error")
-                

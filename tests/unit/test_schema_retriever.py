@@ -58,6 +58,9 @@ def retriever(mock_collection):
                 retriever.version = "1.0.0"
                 retriever.top_k = 5
                 retriever.collection = mock_collection
+                retriever.bm25 = None
+                retriever.bm25_corpus = []
+                retriever.graph = None
                 retriever.metrics = {
                     "total_calls": 0,
                     "successful_calls": 0,

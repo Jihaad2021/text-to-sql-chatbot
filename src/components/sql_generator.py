@@ -51,12 +51,16 @@ class SQLGenerator(LLMBaseAgent):
     def execute(self, state: AgentState) -> AgentState:
         """
         Generate SQL query from user query and evaluated tables.
+        Retries up to 3 times if LLM returns non-SQL text.
 
         Args:
             state: Pipeline state with query, evaluated_tables, and intent
 
         Returns:
             Updated state with state.sql
+
+        Raises:
+            SQLGenerationError: If no evaluated tables or SQL generation fails
         """
         if not state.evaluated_tables:
             raise SQLGenerationError(
@@ -65,19 +69,27 @@ class SQLGenerator(LLMBaseAgent):
             )
 
         prompt = self._build_prompt(state)
-        sql = self._call_llm(prompt, max_tokens=1000, temperature=0)
-        sql = self._clean_sql(sql)
+        max_attempts = 3
 
-        if not sql:
-            raise SQLGenerationError(
-                agent_name=self.name,
-                message="Generated SQL is empty"
+        for attempt in range(max_attempts):
+            sql = self._call_llm(prompt, max_tokens=1000, temperature=0)
+            sql = self._clean_sql(sql)
+
+            # Validate SQL starts with SELECT or WITH
+            if sql and re.match(r'^(SELECT|WITH)\s+', sql, re.IGNORECASE):
+                state.sql = sql
+                self.log(f"SQL generated: {sql[:80]}...")
+                return state
+
+            self.log(
+                f"Invalid SQL on attempt {attempt + 1}/{max_attempts}, retrying...",
+                level="warning"
             )
 
-        state.sql = sql
-        self.log(f"SQL generated: {sql[:80]}...")
-
-        return state
+        raise SQLGenerationError(
+            agent_name=self.name,
+            message="Failed to generate valid SQL after retries"
+        )
 
     def _build_prompt(self, state: AgentState) -> str:
         """Build SQL generation prompt using intent strategy and table schemas."""
@@ -144,13 +156,23 @@ Generate SQL for the following question.
 Question:
 {state.query}
 
+IMPORTANT: Return ONLY the SQL query. No explanation, no preamble, no markdown.
+Start directly with SELECT or WITH.
+
 SQL:
 """
 
     def _clean_sql(self, sql: str) -> str:
-        """Remove markdown formatting from SQL."""
+        """Remove markdown and extract only SQL from response."""
+        # Remove markdown
         sql = re.sub(r'```sql\s*', '', sql)
         sql = re.sub(r'```\s*', '', sql)
+        
+        # Jika ada teks sebelum SELECT/WITH, ambil dari sana
+        match = re.search(r'(WITH\s+|SELECT\s+)', sql, re.IGNORECASE)
+        if match:
+            sql = sql[match.start():]
+        
         return sql.strip()
 
     def _load_examples(self, path: str) -> list:

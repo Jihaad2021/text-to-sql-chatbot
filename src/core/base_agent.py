@@ -105,7 +105,7 @@ class BaseAgent(ABC):
         Raises:
             AgentExecutionError: If execution fails
         """
-        start_time = time.time()
+        start_time = time.perf_counter()
         state.current_stage = self.name
 
         try:
@@ -113,19 +113,22 @@ class BaseAgent(ABC):
 
             updated_state = self.execute(state)
 
-            execution_time = time.time() - start_time
-            updated_state.add_timing(self.name, execution_time * 1000)
+            execution_time = time.perf_counter() - start_time
+            
+            # ✅ simpan dalam DETIK (bukan ms)
+            updated_state.add_timing(self.name, execution_time)
+            
             self._update_metrics(success=True, execution_time=execution_time)
 
-            self.log(f"Completed in {execution_time:.2f}s")
+            self.log(f"Completed in {execution_time:.6f}s")
 
             return updated_state
 
         except Exception as e:
-            execution_time = time.time() - start_time
+            execution_time = time.perf_counter() - start_time
             self._update_metrics(success=False, execution_time=execution_time)
 
-            self.log(f"Failed after {execution_time:.2f}s: {str(e)}", level="error")
+            self.log(f"Failed after {execution_time:.6f}s: {str(e)}", level="error")
 
             state.add_error(f"[{self.name}] {str(e)}")
 

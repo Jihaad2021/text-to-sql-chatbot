@@ -1,0 +1,1096 @@
+{
+  "directed": true,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "type": "database",
+      "name": "sales_db",
+      "id": "sales_db"
+    },
+    {
+      "type": "schema",
+      "name": "public",
+      "db": "sales_db",
+      "id": "sales_db.public"
+    },
+    {
+      "type": "table",
+      "name": "customers",
+      "db": "sales_db",
+      "schema": "public",
+      "description": "This table stores customer information and profiles with customer_id as the primary key, containing essential attributes like unique identifiers, names, email addresses, and geographic location details including city, state, and zip code along with account creation timestamps. It answers business questions about customer demographics, geographic distribution, account registration patterns, and customer lookup operations, supporting searches for terms like clients, buyers, users, pelanggan, konsumen, member, subscriber, and location-based queries for cities, states, regions, wilayah, daerah, and postal codes.",
+      "columns": [
+        "customer_id",
+        "customer_unique_id",
+        "customer_name",
+        "customer_email",
+        "customer_city",
+        "customer_state",
+        "customer_zip_code",
+        "customer_created_at"
+      ],
+      "id": "sales_db.public.customers"
+    },
+    {
+      "type": "column",
+      "name": "customer_id",
+      "data_type": "text",
+      "description": "The customer_id column holds unique text identifiers for customers serving as the primary key, commonly used for filtering specific customers, joining with order tables, and grouping sales data by customer.",
+      "table": "customers",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.customers.customer_id"
+    },
+    {
+      "type": "column",
+      "name": "customer_unique_id",
+      "data_type": "text",
+      "description": "The customer_unique_id column stores a unique text identifier for each customer that serves as the primary key and is commonly used for joining with other tables, filtering specific customers, and ensuring data integrity across the customer database.",
+      "table": "customers",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.customers.customer_unique_id"
+    },
+    {
+      "type": "column",
+      "name": "customer_name",
+      "data_type": "text",
+      "description": "The customer_name column stores the full name of each customer as text and is commonly used for filtering specific customers, grouping sales data by customer identity, and joining with order tables to display customer information in reports (nama pelanggan).",
+      "table": "customers",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.customers.customer_name"
+    },
+    {
+      "type": "column",
+      "name": "customer_email",
+      "data_type": "text",
+      "description": "The customer_email column stores the email address of each customer as text and is commonly used for filtering specific customers, joining with order or communication tables, and grouping customers for email marketing analysis (email in Indonesian).",
+      "table": "customers",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.customers.customer_email"
+    },
+    {
+      "type": "column",
+      "name": "customer_city",
+      "data_type": "text",
+      "description": "The customer_city column stores the city name where each customer is located (kota) and is commonly used for filtering customers by geographic location, grouping sales data by city for regional analysis, and aggregating metrics like customer counts or revenue by urban area.",
+      "table": "customers",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.customers.customer_city"
+    },
+    {
+      "type": "column",
+      "name": "customer_state",
+      "data_type": "text",
+      "description": "The customer_state column stores the state or province name where each customer is located as text values, commonly used for filtering customers by geographic region, grouping sales data by state for regional analysis, and joining with location-based tables for demographic insights (provinsi).",
+      "table": "customers",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.customers.customer_state"
+    },
+    {
+      "type": "column",
+      "name": "customer_zip_code",
+      "data_type": "bigint",
+      "description": "The customer_zip_code column stores postal code numbers as integers for customer addresses, commonly used for filtering customers by geographic location, grouping sales data by postal regions, and joining with geographic or demographic tables for location-based analysis (kode pos).",
+      "table": "customers",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.customers.customer_zip_code"
+    },
+    {
+      "type": "column",
+      "name": "customer_created_at",
+      "data_type": "text",
+      "description": "The customer_created_at column stores the timestamp when a customer account was created as text format and is commonly used for filtering customers by registration date ranges, grouping customers by time periods for cohort analysis, and aggregating customer acquisition metrics over time (tanggal dibuat).",
+      "table": "customers",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.customers.customer_created_at"
+    },
+    {
+      "type": "table",
+      "name": "orders",
+      "db": "sales_db",
+      "schema": "public",
+      "description": "This table stores customer order transactions with order_id as the primary key, tracking essential order lifecycle attributes including customer_id, order_status, purchase timestamp, approval time, delivery timestamp, and estimated delivery date. It answers business questions about order tracking, delivery performance, customer purchase patterns, and order fulfillment metrics, supporting searches for terms like orders, purchases, transactions, deliveries, pesanan, pembelian, pengiriman, status pesanan, and waktu pengiriman.",
+      "columns": [
+        "order_id",
+        "customer_id",
+        "order_status",
+        "order_purchase_timestamp",
+        "order_approved_at",
+        "order_delivered_timestamp",
+        "order_estimated_delivery_date"
+      ],
+      "id": "sales_db.public.orders"
+    },
+    {
+      "type": "column",
+      "name": "order_id",
+      "data_type": "text",
+      "description": "The order_id column holds unique text identifiers for each order record serving as the primary key, commonly used for filtering specific orders, joining with other tables like order items or payments, and grouping order-related data in analytical queries.",
+      "table": "orders",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.orders.order_id"
+    },
+    {
+      "type": "column",
+      "name": "customer_id",
+      "data_type": "text",
+      "description": "The customer_id column stores unique text identifiers for customers who placed orders and serves as a foreign key for joining with customer tables, commonly used for filtering orders by specific customers and grouping orders for customer-level aggregations (pelanggan).",
+      "table": "orders",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.orders.customer_id"
+    },
+    {
+      "type": "column",
+      "name": "order_status",
+      "data_type": "text",
+      "description": "The order_status column holds text values representing the current state of an order (such as pending, approved, delivered, canceled) and is commonly used for filtering orders by their processing stage and grouping orders for status-based analytics (status).",
+      "table": "orders",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.orders.order_status"
+    },
+    {
+      "type": "column",
+      "name": "order_purchase_timestamp",
+      "data_type": "timestamp without time zone",
+      "description": "The order_purchase_timestamp column stores the exact date and time when a customer placed their order, commonly used for filtering orders by date ranges, grouping sales data by time periods, and calculating delivery timeframes by joining with delivery timestamps (tanggal pembelian).",
+      "table": "orders",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.orders.order_purchase_timestamp"
+    },
+    {
+      "type": "column",
+      "name": "order_approved_at",
+      "data_type": "text",
+      "description": "The order_approved_at column stores the timestamp when an order was approved as text, commonly used for filtering orders by approval date ranges, grouping sales by approval periods, and calculating time-based metrics like approval processing times (tanggal persetujuan).",
+      "table": "orders",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.orders.order_approved_at"
+    },
+    {
+      "type": "column",
+      "name": "order_delivered_timestamp",
+      "data_type": "text",
+      "description": "The order_delivered_timestamp column stores the actual delivery date and time as text when an order was delivered to the customer, commonly used for filtering orders by delivery periods, calculating delivery performance metrics, and grouping orders by delivery timeframes (tanggal pengiriman).",
+      "table": "orders",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.orders.order_delivered_timestamp"
+    },
+    {
+      "type": "column",
+      "name": "order_estimated_delivery_date",
+      "data_type": "text",
+      "description": "The order_estimated_delivery_date column stores the predicted delivery date as text for each order and is commonly used for filtering orders by expected delivery timeframes, grouping orders by delivery periods, and calculating delivery performance metrics (tanggal estimasi pengiriman).",
+      "table": "orders",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.orders.order_estimated_delivery_date"
+    },
+    {
+      "type": "table",
+      "name": "payments",
+      "db": "sales_db",
+      "schema": "public",
+      "description": "This table stores payment transaction records with payment_id as the primary key, capturing essential attributes like order_id, payment type, installment details, and monetary values for each payment made by customers.\n\nIt answers business questions about payment methods, transaction amounts, installment patterns, and revenue analysis, supporting queries about pembayaran (payments), metode bayar (payment methods), cicilan (installments), and nilai transaksi (transaction values).",
+      "columns": [
+        "payment_id",
+        "order_id",
+        "payment_sequential",
+        "payment_type",
+        "payment_installments",
+        "payment_value"
+      ],
+      "id": "sales_db.public.payments"
+    },
+    {
+      "type": "column",
+      "name": "payment_id",
+      "data_type": "text",
+      "description": "The payment_id column holds unique text identifiers for individual payments that serves as the primary key for filtering specific payment records and joining with other payment-related tables in the sales database.",
+      "table": "payments",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.payments.payment_id"
+    },
+    {
+      "type": "column",
+      "name": "order_id",
+      "data_type": "text",
+      "description": "The order_id column stores text identifiers that link payments to their corresponding orders, serving as a foreign key for joining with order tables and commonly used for filtering and grouping payment data by specific orders.",
+      "table": "payments",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.payments.order_id"
+    },
+    {
+      "type": "column",
+      "name": "payment_sequential",
+      "data_type": "bigint",
+      "description": "The payment_sequential column stores a sequential number indicating the order of payments within a transaction and is commonly used for filtering and ordering payment records chronologically, serving as a sequence identifier for multiple payment installments (urutan pembayaran).",
+      "table": "payments",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.payments.payment_sequential"
+    },
+    {
+      "type": "column",
+      "name": "payment_type",
+      "data_type": "text",
+      "description": "The payment_type column stores the method of payment used for transactions (such as credit card, debit card, or cash) as text values, commonly used for filtering and grouping payment data by payment method (metode pembayaran).",
+      "table": "payments",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.payments.payment_type"
+    },
+    {
+      "type": "column",
+      "name": "payment_installments",
+      "data_type": "bigint",
+      "description": "The payment_installments column stores the number of installment payments (cicilan) as a bigint value and is commonly used for filtering payment plans, grouping transactions by installment count, and aggregating payment statistics to analyze customer payment preferences.",
+      "table": "payments",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.payments.payment_installments"
+    },
+    {
+      "type": "column",
+      "name": "payment_value",
+      "data_type": "double precision",
+      "description": "The payment_value column stores the monetary amount of each payment transaction as a double precision number, commonly used for aggregating total revenue, filtering by payment ranges, and calculating financial metrics in sales analysis queries (nilai pembayaran).",
+      "table": "payments",
+      "db": "sales_db",
+      "schema": "public",
+      "id": "sales_db.public.payments.payment_value"
+    },
+    {
+      "type": "database",
+      "name": "products_db",
+      "id": "products_db"
+    },
+    {
+      "type": "schema",
+      "name": "public",
+      "db": "products_db",
+      "id": "products_db.public"
+    },
+    {
+      "type": "table",
+      "name": "products",
+      "db": "products_db",
+      "schema": "public",
+      "description": "This table stores product catalog information with product_id as the primary key, containing essential product attributes including category classification, name and description text lengths, photo quantities, weight in grams, and physical dimensions in centimeters.\n\nIt answers business questions about product characteristics, inventory analysis, shipping calculations, and catalog management, supporting searches for items, barang, produk, kategori, dimensi, berat, foto, and ukuran.",
+      "columns": [
+        "product_id",
+        "product_category_name",
+        "product_name_length",
+        "product_description_length",
+        "product_photos_qty",
+        "product_weight_g",
+        "product_length_cm",
+        "product_height_cm",
+        "product_width_cm"
+      ],
+      "id": "products_db.public.products"
+    },
+    {
+      "type": "column",
+      "name": "product_id",
+      "data_type": "text",
+      "description": "The product_id column stores unique text identifiers for each product serving as the primary key, commonly used for filtering specific products, joining with other tables like orders or reviews, and grouping product-related data (id_produk).",
+      "table": "products",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.products.product_id"
+    },
+    {
+      "type": "column",
+      "name": "product_category_name",
+      "data_type": "text",
+      "description": "The product_category_name column stores the category name that each product belongs to as text values (kategori), commonly used for filtering products by category, grouping sales data by product type, and joining with category-related tables to analyze product performance across different market segments.",
+      "table": "products",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.products.product_category_name"
+    },
+    {
+      "type": "column",
+      "name": "product_name_length",
+      "data_type": "bigint",
+      "description": "The product_name_length column stores the character count of product names as a bigint value and is commonly used for filtering products by name length ranges, grouping products by name length categories, and calculating aggregate statistics like average or maximum name lengths across product categories (panjang nama produk).",
+      "table": "products",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.products.product_name_length"
+    },
+    {
+      "type": "column",
+      "name": "product_description_length",
+      "data_type": "bigint",
+      "description": "The product_description_length column stores the character count of product descriptions as a bigint metric that is commonly used for filtering products by description detail level, grouping products into description length categories, and aggregating statistics about product information completeness (panjang deskripsi).",
+      "table": "products",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.products.product_description_length"
+    },
+    {
+      "type": "column",
+      "name": "product_photos_qty",
+      "data_type": "bigint",
+      "description": "The product_photos_qty column stores the count of photos associated with each product as a bigint value, commonly used for filtering products by photo availability, grouping products by photo count ranges, and aggregating statistics on product photo quantities (jumlah foto).",
+      "table": "products",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.products.product_photos_qty"
+    },
+    {
+      "type": "column",
+      "name": "product_weight_g",
+      "data_type": "bigint",
+      "description": "The product_weight_g column stores the weight of products in grams (berat) as a bigint value and is commonly used for filtering products by weight ranges, grouping products into weight categories, and calculating aggregate statistics like average or total weight across product categories.",
+      "table": "products",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.products.product_weight_g"
+    },
+    {
+      "type": "column",
+      "name": "product_length_cm",
+      "data_type": "bigint",
+      "description": "The product_length_cm column stores the length measurement of products in centimeters as a bigint value (panjang), commonly used for filtering products by size dimensions, grouping items by length ranges, and calculating shipping costs or storage requirements.",
+      "table": "products",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.products.product_length_cm"
+    },
+    {
+      "type": "column",
+      "name": "product_height_cm",
+      "data_type": "bigint",
+      "description": "The product_height_cm column stores the height measurement of products in centimeters as a bigint value (tinggi), commonly used for filtering products by size dimensions, grouping items by height ranges, and calculating volume or shipping metrics in product analysis queries.",
+      "table": "products",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.products.product_height_cm"
+    },
+    {
+      "type": "column",
+      "name": "product_width_cm",
+      "data_type": "bigint",
+      "description": "The product_width_cm column stores the width measurement of products in centimeters as a bigint value (lebar), commonly used for filtering products by size dimensions, grouping items by width ranges, and calculating volume or shipping metrics in product analysis queries.",
+      "table": "products",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.products.product_width_cm"
+    },
+    {
+      "type": "table",
+      "name": "order_items",
+      "db": "products_db",
+      "schema": "public",
+      "description": "This table stores individual line items within customer orders, with order_item_id as the primary key and key attributes including the associated order_id, product_id, seller_id, item price, and shipping costs (freight_value). It answers business questions about order composition, product sales performance, seller revenue analysis, and shipping cost breakdowns, supporting queries about item details, barang pesanan, harga produk, biaya pengiriman, and penjual performance.",
+      "columns": [
+        "order_id",
+        "order_item_id",
+        "product_id",
+        "seller_id",
+        "shipping_limit_date",
+        "price",
+        "freight_value"
+      ],
+      "id": "products_db.public.order_items"
+    },
+    {
+      "type": "column",
+      "name": "order_id",
+      "data_type": "text",
+      "description": "The order_id column stores text identifiers that reference specific orders and serves as a foreign key for joining with order tables, commonly used for filtering and grouping order items by their parent order.",
+      "table": "order_items",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.order_items.order_id"
+    },
+    {
+      "type": "column",
+      "name": "order_item_id",
+      "data_type": "bigint",
+      "description": "The order_item_id column holds unique bigint identifiers for individual items within orders, serves as the primary key for the order_items table, and is used for joining with other tables to retrieve specific order item details and for filtering queries when analyzing particular line items.",
+      "table": "order_items",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.order_items.order_item_id"
+    },
+    {
+      "type": "column",
+      "name": "product_id",
+      "data_type": "text",
+      "description": "The product_id column stores text identifiers for products within order items and serves as a foreign key for joining with product tables, commonly used in filtering and grouping operations to analyze sales by product (produk).",
+      "table": "order_items",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.order_items.product_id"
+    },
+    {
+      "type": "column",
+      "name": "seller_id",
+      "data_type": "text",
+      "description": "The seller_id column stores text identifiers of sellers who fulfill order items and is commonly used for filtering orders by specific sellers, grouping sales data by seller, joining with seller information tables, and aggregating seller performance metrics like total sales or order counts.",
+      "table": "order_items",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.order_items.seller_id"
+    },
+    {
+      "type": "column",
+      "name": "shipping_limit_date",
+      "data_type": "text",
+      "description": "The shipping_limit_date column stores the maximum date by which an order item must be shipped as text format, commonly used for filtering orders by shipping deadlines, grouping items by shipping timeframes, and calculating shipping performance metrics (batas tanggal pengiriman).",
+      "table": "order_items",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.order_items.shipping_limit_date"
+    },
+    {
+      "type": "column",
+      "name": "price",
+      "data_type": "double precision",
+      "description": "The price column stores the monetary value of individual items in orders as a double precision number, commonly used for filtering by price ranges, aggregating total order values, and calculating revenue metrics (harga).",
+      "table": "order_items",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.order_items.price"
+    },
+    {
+      "type": "column",
+      "name": "freight_value",
+      "data_type": "double precision",
+      "description": "The freight_value column stores the shipping cost amount as a double precision number for each order item, commonly used for calculating total order costs through aggregation functions like SUM and filtering expensive shipments, serving as a cost metric (biaya pengiriman).",
+      "table": "order_items",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.order_items.freight_value"
+    },
+    {
+      "type": "table",
+      "name": "sellers",
+      "db": "products_db",
+      "schema": "public",
+      "description": "This table stores information about sellers or merchants in an e-commerce platform, with seller_id as the primary key and including their geographic location details such as zip code, city, and state.\n\nIt answers business questions about seller distribution, location-based analytics, and geographic performance metrics, supporting searches for terms like merchants, vendors, penjual, pedagang, lokasi penjual, wilayah, kota, and regional seller analysis.",
+      "columns": [
+        "seller_id",
+        "seller_zip_code",
+        "seller_city",
+        "seller_state"
+      ],
+      "id": "products_db.public.sellers"
+    },
+    {
+      "type": "column",
+      "name": "seller_id",
+      "data_type": "text",
+      "description": "The seller_id column holds unique text identifiers for each seller and serves as the primary key for filtering specific sellers and joining with other tables that reference sellers.",
+      "table": "sellers",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.sellers.seller_id"
+    },
+    {
+      "type": "column",
+      "name": "seller_zip_code",
+      "data_type": "bigint",
+      "description": "The seller_zip_code column stores the postal code as a bigint for each seller's location and is commonly used for filtering sellers by geographic area, grouping sales by postal regions, or joining with shipping/logistics tables to calculate delivery zones (kode pos).",
+      "table": "sellers",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.sellers.seller_zip_code"
+    },
+    {
+      "type": "column",
+      "name": "seller_city",
+      "data_type": "text",
+      "description": "The seller_city column stores the city name where each seller is located (kota) and is commonly used for filtering sellers by geographic location, grouping sales data by city for regional analysis, and joining with other location-based tables for geographic insights.",
+      "table": "sellers",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.sellers.seller_city"
+    },
+    {
+      "type": "column",
+      "name": "seller_state",
+      "data_type": "text",
+      "description": "The seller_state column stores the state or province name where each seller is located as text, commonly used for filtering sellers by geographic region, grouping sales data by state for regional analysis, and joining with location-based tables for geographic insights (provinsi).",
+      "table": "sellers",
+      "db": "products_db",
+      "schema": "public",
+      "id": "products_db.public.sellers.seller_state"
+    },
+    {
+      "type": "database",
+      "name": "analytics_db",
+      "id": "analytics_db"
+    },
+    {
+      "type": "schema",
+      "name": "public",
+      "db": "analytics_db",
+      "id": "analytics_db.public"
+    },
+    {
+      "type": "table",
+      "name": "customer_segments",
+      "db": "analytics_db",
+      "schema": "public",
+      "description": "This table stores customer segmentation data with customer_id as the primary key, containing RFM analysis scores, segment classifications, lifetime value metrics, order statistics, and purchase timing information for each customer.\n\nIt answers business questions about customer classification, value analysis, purchase behavior patterns, and retention metrics, supporting queries about pelanggan segments, customer lifetime value, buying frequency, average transaction size, and recency analysis for targeted marketing and customer relationship management.",
+      "columns": [
+        "customer_id",
+        "rfm_score",
+        "segment",
+        "lifetime_value",
+        "total_orders",
+        "avg_order_value",
+        "last_purchase_date",
+        "updated_at"
+      ],
+      "id": "analytics_db.public.customer_segments"
+    },
+    {
+      "type": "column",
+      "name": "customer_id",
+      "data_type": "text",
+      "description": "The customer_id column stores unique text identifiers for customers and serves as the primary key for joining with other customer-related tables, commonly used in WHERE clause filters and GROUP BY operations for customer segmentation analysis.",
+      "table": "customer_segments",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.customer_segments.customer_id"
+    },
+    {
+      "type": "column",
+      "name": "rfm_score",
+      "data_type": "bigint",
+      "description": "The rfm_score column stores a numerical RFM (Recency, Frequency, Monetary) scoring value as a bigint that quantifies customer behavior patterns and is commonly used for filtering high-value customers, grouping customers into behavioral segments, and aggregating to calculate average segment scores (skor).",
+      "table": "customer_segments",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.customer_segments.rfm_score"
+    },
+    {
+      "type": "column",
+      "name": "segment",
+      "data_type": "text",
+      "description": "The segment column stores customer categorization labels (such as \"VIP\", \"Regular\", \"At Risk\") used for filtering customers by behavioral groups and grouping analytics by customer type in marketing and retention analysis queries (segmen).",
+      "table": "customer_segments",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.customer_segments.segment"
+    },
+    {
+      "type": "column",
+      "name": "lifetime_value",
+      "data_type": "double precision",
+      "description": "The lifetime_value column stores the total monetary value a customer has generated over their entire relationship with the business as a double precision number, commonly used for filtering high-value customers, grouping customers into value tiers, and calculating aggregate metrics like average customer worth across segments (nilai seumur hidup).",
+      "table": "customer_segments",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.customer_segments.lifetime_value"
+    },
+    {
+      "type": "column",
+      "name": "total_orders",
+      "data_type": "bigint",
+      "description": "The total_orders column stores the cumulative count of orders placed by each customer as a bigint metric, commonly used for filtering high-value customers, grouping customers by purchase frequency ranges, and aggregating to calculate average orders per segment (total pesanan).",
+      "table": "customer_segments",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.customer_segments.total_orders"
+    },
+    {
+      "type": "column",
+      "name": "avg_order_value",
+      "data_type": "double precision",
+      "description": "The avg_order_value column stores the average monetary value of orders placed by each customer as a double precision number, commonly used for filtering high-value customers, grouping customers into spending tiers, and calculating segment-level aggregations in customer analytics queries (nilai rata-rata pesanan).",
+      "table": "customer_segments",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.customer_segments.avg_order_value"
+    },
+    {
+      "type": "column",
+      "name": "last_purchase_date",
+      "data_type": "text",
+      "description": "The last_purchase_date column stores the date of a customer's most recent purchase as text and is commonly used for filtering customers by recency, grouping customers into time-based cohorts, and calculating customer retention metrics in RFM analysis (tanggal pembelian terakhir).",
+      "table": "customer_segments",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.customer_segments.last_purchase_date"
+    },
+    {
+      "type": "column",
+      "name": "updated_at",
+      "data_type": "text",
+      "description": "The updated_at column stores the timestamp when customer segment data was last modified as text, commonly used for filtering recent updates and tracking data freshness in customer analytics queries (tanggal_diperbarui).",
+      "table": "customer_segments",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.customer_segments.updated_at"
+    },
+    {
+      "type": "table",
+      "name": "daily_metrics",
+      "db": "analytics_db",
+      "schema": "public",
+      "description": "This table stores daily business performance metrics with date as the primary key, tracking key attributes including total sales revenue, order counts, average order values, and customer acquisition data for each day.\n\nIt answers business questions about daily sales performance, order trends, customer behavior patterns, and revenue analysis, supporting searches for terms like daily sales, penjualan harian, order volume, nilai rata-rata pesanan, new customer acquisition, pelanggan baru, returning customers, and pelanggan kembali.",
+      "columns": [
+        "date",
+        "total_sales",
+        "total_orders",
+        "avg_order_value",
+        "new_customers",
+        "returning_customers"
+      ],
+      "id": "analytics_db.public.daily_metrics"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "text",
+      "description": "The date column stores daily date values in text format and serves as the primary key for filtering time periods, grouping metrics by day, and joining with other time-based tables in daily sales analytics (tanggal).",
+      "table": "daily_metrics",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.daily_metrics.date"
+    },
+    {
+      "type": "column",
+      "name": "total_sales",
+      "data_type": "bigint",
+      "description": "The total_sales column stores the aggregate sales amount in bigint format for each day and is commonly used for filtering by sales thresholds, grouping by sales ranges, and calculating sum/average aggregations across date periods to analyze daily revenue performance (total_penjualan).",
+      "table": "daily_metrics",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.daily_metrics.total_sales"
+    },
+    {
+      "type": "column",
+      "name": "total_orders",
+      "data_type": "bigint",
+      "description": "The total_orders column stores the count of orders placed on each date as a bigint metric that is commonly used for aggregation operations like SUM and AVG to analyze order volume trends and can be filtered or grouped by date ranges for daily, weekly, or monthly reporting (total pesanan).",
+      "table": "daily_metrics",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.daily_metrics.total_orders"
+    },
+    {
+      "type": "column",
+      "name": "avg_order_value",
+      "data_type": "bigint",
+      "description": "The avg_order_value column stores the average monetary value per order in bigint format and serves as a key performance metric that can be filtered for trend analysis, grouped by time periods, and aggregated to calculate overall averages across different date ranges (nilai rata-rata pesanan).",
+      "table": "daily_metrics",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.daily_metrics.avg_order_value"
+    },
+    {
+      "type": "column",
+      "name": "new_customers",
+      "data_type": "bigint",
+      "description": "The new_customers column stores the count of first-time customers acquired on each date as a bigint metric that is commonly used for aggregation operations like SUM and AVG to analyze customer acquisition trends, and for filtering in time-series comparisons alongside its sibling metrics (pelanggan_baru).",
+      "table": "daily_metrics",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.daily_metrics.new_customers"
+    },
+    {
+      "type": "column",
+      "name": "returning_customers",
+      "data_type": "bigint",
+      "description": "The returning_customers column stores the count of customers who made repeat purchases on a given day as a bigint value, commonly used for filtering by customer retention thresholds, grouping by time periods for trend analysis, and aggregating to calculate total or average returning customer metrics across date ranges (pelanggan kembali).",
+      "table": "daily_metrics",
+      "db": "analytics_db",
+      "schema": "public",
+      "id": "analytics_db.public.daily_metrics.returning_customers"
+    }
+  ],
+  "edges": [
+    {
+      "type": "contains",
+      "source": "sales_db",
+      "target": "sales_db.public"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public",
+      "target": "sales_db.public.customers"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public",
+      "target": "sales_db.public.orders"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public",
+      "target": "sales_db.public.payments"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.customers",
+      "target": "sales_db.public.customers.customer_id"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.customers",
+      "target": "sales_db.public.customers.customer_unique_id"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.customers",
+      "target": "sales_db.public.customers.customer_name"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.customers",
+      "target": "sales_db.public.customers.customer_email"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.customers",
+      "target": "sales_db.public.customers.customer_city"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.customers",
+      "target": "sales_db.public.customers.customer_state"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.customers",
+      "target": "sales_db.public.customers.customer_zip_code"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.customers",
+      "target": "sales_db.public.customers.customer_created_at"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.orders",
+      "target": "sales_db.public.orders.order_id"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.orders",
+      "target": "sales_db.public.orders.customer_id"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.orders",
+      "target": "sales_db.public.orders.order_status"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.orders",
+      "target": "sales_db.public.orders.order_purchase_timestamp"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.orders",
+      "target": "sales_db.public.orders.order_approved_at"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.orders",
+      "target": "sales_db.public.orders.order_delivered_timestamp"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.orders",
+      "target": "sales_db.public.orders.order_estimated_delivery_date"
+    },
+    {
+      "type": "joins_with",
+      "via": "customer_id → customer_id",
+      "source": "sales_db.public.orders",
+      "target": "sales_db.public.customers"
+    },
+    {
+      "type": "fk",
+      "from_table": "orders",
+      "to_table": "customers",
+      "source": "sales_db.public.orders.customer_id",
+      "target": "sales_db.public.customers.customer_id"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.payments",
+      "target": "sales_db.public.payments.payment_id"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.payments",
+      "target": "sales_db.public.payments.order_id"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.payments",
+      "target": "sales_db.public.payments.payment_sequential"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.payments",
+      "target": "sales_db.public.payments.payment_type"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.payments",
+      "target": "sales_db.public.payments.payment_installments"
+    },
+    {
+      "type": "contains",
+      "source": "sales_db.public.payments",
+      "target": "sales_db.public.payments.payment_value"
+    },
+    {
+      "type": "joins_with",
+      "via": "order_id → order_id",
+      "source": "sales_db.public.payments",
+      "target": "sales_db.public.orders"
+    },
+    {
+      "type": "fk",
+      "from_table": "payments",
+      "to_table": "orders",
+      "source": "sales_db.public.payments.order_id",
+      "target": "sales_db.public.orders.order_id"
+    },
+    {
+      "type": "contains",
+      "source": "products_db",
+      "target": "products_db.public"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public",
+      "target": "products_db.public.products"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public",
+      "target": "products_db.public.order_items"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public",
+      "target": "products_db.public.sellers"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.products",
+      "target": "products_db.public.products.product_id"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.products",
+      "target": "products_db.public.products.product_category_name"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.products",
+      "target": "products_db.public.products.product_name_length"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.products",
+      "target": "products_db.public.products.product_description_length"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.products",
+      "target": "products_db.public.products.product_photos_qty"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.products",
+      "target": "products_db.public.products.product_weight_g"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.products",
+      "target": "products_db.public.products.product_length_cm"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.products",
+      "target": "products_db.public.products.product_height_cm"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.products",
+      "target": "products_db.public.products.product_width_cm"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.order_items",
+      "target": "products_db.public.order_items.order_id"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.order_items",
+      "target": "products_db.public.order_items.order_item_id"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.order_items",
+      "target": "products_db.public.order_items.product_id"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.order_items",
+      "target": "products_db.public.order_items.seller_id"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.order_items",
+      "target": "products_db.public.order_items.shipping_limit_date"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.order_items",
+      "target": "products_db.public.order_items.price"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.order_items",
+      "target": "products_db.public.order_items.freight_value"
+    },
+    {
+      "type": "joins_with",
+      "via": "product_id → product_id",
+      "source": "products_db.public.order_items",
+      "target": "products_db.public.products"
+    },
+    {
+      "type": "fk",
+      "from_table": "order_items",
+      "to_table": "products",
+      "source": "products_db.public.order_items.product_id",
+      "target": "products_db.public.products.product_id"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.sellers",
+      "target": "products_db.public.sellers.seller_id"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.sellers",
+      "target": "products_db.public.sellers.seller_zip_code"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.sellers",
+      "target": "products_db.public.sellers.seller_city"
+    },
+    {
+      "type": "contains",
+      "source": "products_db.public.sellers",
+      "target": "products_db.public.sellers.seller_state"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db",
+      "target": "analytics_db.public"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public",
+      "target": "analytics_db.public.customer_segments"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public",
+      "target": "analytics_db.public.daily_metrics"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.customer_segments",
+      "target": "analytics_db.public.customer_segments.customer_id"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.customer_segments",
+      "target": "analytics_db.public.customer_segments.rfm_score"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.customer_segments",
+      "target": "analytics_db.public.customer_segments.segment"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.customer_segments",
+      "target": "analytics_db.public.customer_segments.lifetime_value"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.customer_segments",
+      "target": "analytics_db.public.customer_segments.total_orders"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.customer_segments",
+      "target": "analytics_db.public.customer_segments.avg_order_value"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.customer_segments",
+      "target": "analytics_db.public.customer_segments.last_purchase_date"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.customer_segments",
+      "target": "analytics_db.public.customer_segments.updated_at"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.daily_metrics",
+      "target": "analytics_db.public.daily_metrics.date"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.daily_metrics",
+      "target": "analytics_db.public.daily_metrics.total_sales"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.daily_metrics",
+      "target": "analytics_db.public.daily_metrics.total_orders"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.daily_metrics",
+      "target": "analytics_db.public.daily_metrics.avg_order_value"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.daily_metrics",
+      "target": "analytics_db.public.daily_metrics.new_customers"
+    },
+    {
+      "type": "contains",
+      "source": "analytics_db.public.daily_metrics",
+      "target": "analytics_db.public.daily_metrics.returning_customers"
+    }
+  ]
+}
