@@ -1,8 +1,8 @@
 """
 Streamlit UI - Text-to-SQL Chatbot
 
-Simple web interface for non-technical users to query databases
-using natural language.
+Web interface for querying databases using natural language.
+Database is auto-detected by the system — no manual selection needed.
 """
 
 import streamlit as st
@@ -10,258 +10,338 @@ import requests
 import json
 import pandas as pd
 
-# Page config
+# ─────────────────────────────────────────────
+# CONFIG
+# ─────────────────────────────────────────────
 st.set_page_config(
     page_title="Text-to-SQL Chatbot",
     page_icon="🤖",
     layout="wide"
 )
 
-# API endpoint
 API_URL = "http://localhost:8000"
 
-# Custom CSS
+# ─────────────────────────────────────────────
+# CSS
+# ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 0.5rem;
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'IBM Plex Sans', sans-serif;
     }
+
+    .main-header {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 2rem;
+        font-weight: 600;
+        color: #0f172a;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.25rem;
+    }
+
     .sub-header {
-        font-size: 1.2rem;
-        color: #666;
-        text-align: center;
+        font-size: 1rem;
+        color: #64748b;
         margin-bottom: 2rem;
     }
-    .success-box {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
+
+    .insight-box {
+        padding: 1.25rem 1.5rem;
+        border-radius: 0.75rem;
+        background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+        border-left: 4px solid #3b82f6;
+        margin: 1rem 0;
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+
+    .clarification-box {
+        padding: 1.25rem 1.5rem;
+        border-radius: 0.75rem;
+        background: #fffbeb;
+        border-left: 4px solid #f59e0b;
         margin: 1rem 0;
     }
+
+    .clarification-title {
+        font-weight: 600;
+        color: #92400e;
+        margin-bottom: 0.5rem;
+        font-size: 0.95rem;
+    }
+
+    .suggestion-chip {
+        display: inline-block;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        background: #e0f2fe;
+        color: #0369a1;
+        font-size: 0.85rem;
+        margin: 0.25rem;
+        cursor: pointer;
+        border: 1px solid #bae6fd;
+    }
+
+    .db-badge {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 0.375rem;
+        background: #f1f5f9;
+        color: #475569;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.8rem;
+        border: 1px solid #e2e8f0;
+    }
+
+    .metric-card {
+        padding: 1rem;
+        border-radius: 0.75rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        text-align: center;
+    }
+
+    .sql-container {
+        background: #0f172a;
+        border-radius: 0.75rem;
+        padding: 1.25rem;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.875rem;
+        color: #e2e8f0;
+        overflow-x: auto;
+        white-space: pre-wrap;
+    }
+
     .error-box {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        background-color: #f8d7da;
-        border: 1px solid #f5c6cb;
-        margin: 1rem 0;
+        padding: 1rem 1.5rem;
+        border-radius: 0.75rem;
+        background: #fef2f2;
+        border-left: 4px solid #ef4444;
+        color: #7f1d1d;
     }
-    .sql-box {
-        padding: 1rem;
+
+    .stButton > button {
         border-radius: 0.5rem;
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        font-family: monospace;
-        font-size: 0.9rem;
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-weight: 600;
+    }
+
+    .stTextInput > div > div > input {
+        border-radius: 0.5rem;
+        font-family: 'IBM Plex Sans', sans-serif;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Header
+# ─────────────────────────────────────────────
+# HEADER
+# ─────────────────────────────────────────────
 st.markdown('<div class="main-header">🤖 Text-to-SQL Chatbot</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Tanya apa saja tentang data Anda dalam bahasa natural!</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Tanya apa saja tentang data Anda — sistem akan otomatis memilih database yang tepat.</div>', unsafe_allow_html=True)
 
-# Sidebar
+# ─────────────────────────────────────────────
+# SIDEBAR
+# ─────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️ Pengaturan")
-    
-    # Database selection
-    database = st.selectbox(
-        "Pilih Database",
-        ["sales_db", "products_db", "analytics_db"],
-        help="Pilih database yang ingin Anda query"
-    )
-    
+    st.header("💡 Tips Bertanya")
+
+    st.markdown("""
+    **✅ Pertanyaan yang bagus:**
+    - Gunakan kata kerja: *tampilkan*, *berapa*, *siapa*
+    - Sebutkan entitas: *customer*, *order*, *produk*
+    - Spesifik: *"top 5 customer berdasarkan spending"*
+
+    **❌ Hindari:**
+    - Terlalu singkat: *"data customer"*
+    - Tanpa konteks: *"tampilkan semua"*
+    """)
+
     st.markdown("---")
-    
-    # Info
-    st.subheader("ℹ️ Informasi Database")
-    
-    if database == "sales_db":
-        st.write("**Sales Database**")
-        st.write("📊 Tables:")
-        st.write("- customers (100 rows)")
-        st.write("- orders (500 rows)")
-        st.write("- payments (500 rows)")
-    elif database == "products_db":
-        st.write("**Products Database**")
-        st.write("📦 Tables:")
-        st.write("- products (50 rows)")
-        st.write("- sellers (20 rows)")
-        st.write("- order_items (500 rows)")
-    else:
-        st.write("**Analytics Database**")
-        st.write("📈 Tables:")
-        st.write("- customer_segments (100 rows)")
-        st.write("- daily_metrics (90 rows)")
-    
+    st.subheader("📌 Contoh Pertanyaan")
+
+    examples = [
+        "Berapa jumlah total customer?",
+        "Tampilkan customer dari Jakarta",
+        "Siapa 5 customer dengan spending tertinggi?",
+        "Berapa total nilai semua pembayaran?",
+        "Tampilkan semua orders yang statusnya delivered",
+        "Berapa jumlah produk yang tersedia?",
+        "Seller mana yang paling banyak menjual?",
+        "Berapa rata-rata nilai order per customer?",
+    ]
+
+    for ex in examples:
+        st.markdown(f"• {ex}")
+
     st.markdown("---")
+    st.caption("🔄 Database dipilih otomatis oleh sistem berdasarkan pertanyaan Anda.")
+
+# ─────────────────────────────────────────────
+# QUERY INPUT
+# ─────────────────────────────────────────────
+with st.form(key="query_form"):
+    col_input, col_btn = st.columns([5, 1])
     
-    # Example queries
-    st.subheader("💡 Contoh Pertanyaan")
+    with col_input:
+        user_question = st.text_input(
+            "💬 Pertanyaan Anda:",
+            placeholder="Contoh: Siapa 5 customer dengan total pembelian tertinggi?",
+            label_visibility="collapsed"
+        )
     
-    examples = {
-        "sales_db": [
-            "Berapa jumlah customer?",
-            "Total revenue berapa?",
-            "Top 5 customer berdasarkan spending",
-            "Berapa order bulan ini?",
-            "Customer dari Jakarta"
-        ],
-        "products_db": [
-            "Berapa jumlah produk?",
-            "Produk dari kategori Electronics",
-            "Top 3 seller",
-            "Rata-rata harga produk"
-        ],
-        "analytics_db": [
-            "Berapa customer VIP?",
-            "Total sales 7 hari terakhir",
-            "Customer lifetime value tertinggi"
-        ]
-    }
-    
-    for example in examples.get(database, []):
-        st.write(f"• {example}")
+    with col_btn:
+        ask_button = st.form_submit_button("🚀 Tanya", type="primary", use_container_width=True)
 
-# Main content
-col1, col2 = st.columns([3, 1])
-
-with col1:
-    # Query input
-    user_question = st.text_input(
-        "💬 Tanyakan sesuatu:",
-        placeholder="Contoh: Berapa total revenue bulan ini?",
-        help="Ketik pertanyaan Anda dalam bahasa natural"
-    )
-
-with col2:
-    # Button
-    st.write("")  # Spacer
-    ask_button = st.button("🚀 Tanya!", type="primary", use_container_width=True)
-
-# Process query
+# ─────────────────────────────────────────────
+# PROCESS QUERY
+# ─────────────────────────────────────────────
 if ask_button and user_question:
-    with st.spinner("🔄 Sedang memproses pertanyaan Anda..."):
+    with st.spinner("⏳ Memproses pertanyaan..."):
         try:
-            # Call API
             response = requests.post(
                 f"{API_URL}/query",
-                json={
-                    "question": user_question,
-                    "database": database
-                },
-                timeout=30
+                json={"question": user_question},
+                timeout=60
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
-                
-                # Success message
-                st.markdown('<div class="success-box">✅ <strong>Query berhasil!</strong></div>', unsafe_allow_html=True)
-                
-                # Display results in tabs
-                tab1, tab2, tab3 = st.tabs(["📊 Hasil", "🔍 SQL Query", "⚙️ Metadata"])
-                
-                with tab1:
-                    st.subheader("📊 Hasil Query")
-                    
-                    # ✨ NEW: Show insights first (natural language explanation)
-                    if result.get('insights'):
-                        st.markdown("### 💡 Insights")
-                        st.info(result['insights'])
-                        st.markdown("---")
-                    
-                    # Then show data table
-                    st.markdown("### 📋 Data Detail")
-                    
-                    if result['data'] and len(result['data']) > 0:
-                        # Convert to DataFrame for better display
-                        df = pd.DataFrame(result['data'])
-                        
-                        # Format numbers
-                        for col in df.columns:
-                            if df[col].dtype in ['float64', 'int64']:
-                                if 'value' in col.lower() or 'revenue' in col.lower() or 'spending' in col.lower() or 'price' in col.lower():
-                                    # Format as currency
-                                    df[col] = df[col].apply(lambda x: f"Rp {x:,.2f}" if pd.notnull(x) else "")
-                        
-                        st.dataframe(df, use_container_width=True, height=400)
-                        
-                        # Summary
-                        st.info(f"📈 Menampilkan **{result['row_count']}** baris data")
-                        
-                        # Download button
-                        csv = df.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download CSV",
-                            data=csv,
-                            file_name=f"query_result_{database}.csv",
-                            mime="text/csv"
+                metadata = result.get("metadata", {})
+
+                # ── Needs Clarification ──────────────────
+                if metadata.get("needs_clarification"):
+                    reason = metadata.get("clarification_reason", "")
+                    st.markdown(f"""
+                    <div class="clarification-box">
+                        <div class="clarification-title">⚠️ Pertanyaan Perlu Diperjelas</div>
+                        <p style="margin: 0.5rem 0; color: #78350f;">{reason}</p>
+                        <p style="margin: 0.5rem 0; color: #78350f; font-size: 0.9rem;">
+                            <strong>Saran:</strong> Coba pertanyaan yang lebih spesifik dengan menyebutkan entitas data
+                            (customer, order, produk, dll) dan kata kerja yang jelas (tampilkan, berapa, siapa).
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Suggestion chips
+                    st.markdown("**💡 Coba pertanyaan seperti ini:**")
+                    suggestions = [
+                        "Tampilkan semua customer",
+                        "Berapa total order?",
+                        "Siapa customer dengan spending tertinggi?",
+                        "Berapa jumlah produk?"
+                    ]
+                    cols = st.columns(len(suggestions))
+                    for i, sug in enumerate(suggestions):
+                        with cols[i]:
+                            st.markdown(f'<span class="suggestion-chip">📌 {sug}</span>', unsafe_allow_html=True)
+
+                # ── Success ──────────────────────────────
+                else:
+                    # Database badge
+                    detected_db = metadata.get("database", "")
+                    if detected_db:
+                        st.markdown(
+                            f'🗄️ Database yang digunakan: <span class="db-badge">{detected_db}</span>',
+                            unsafe_allow_html=True
                         )
-                    else:
-                        st.warning("⚠️ Query tidak mengembalikan data")
-                
-                with tab2:
-                    st.subheader("🔍 SQL Query yang Di-generate")
-                    st.markdown(f'<div class="sql-box">{result["sql"]}</div>', unsafe_allow_html=True)
-                    
-                    # Copy button
-                    st.code(result['sql'], language='sql')
-                
-                with tab3:
-                    st.subheader("⚙️ Metadata")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric(
-                            "⏱️ Total Waktu",
-                            f"{result['execution_time_ms']:.0f} ms"
-                        )
-                    
-                    with col2:
-                        st.metric(
-                            "🗄️ Database",
-                            result['metadata']['database']
-                        )
-                    
-                    with col3:
-                        st.metric(
-                            "📊 Jumlah Baris",
-                            result['row_count']
-                        )
-                    
-                    # Detailed metadata
-                    with st.expander("📋 Detail Lengkap"):
-                        st.json(result['metadata'])
-            
+                        st.markdown("")
+
+                    # Tabs
+                    tab1, tab2, tab3 = st.tabs(["📊 Hasil", "🔍 SQL Query", "⚙️ Detail"])
+
+                    with tab1:
+                        # Insights
+                        if result.get("insights"):
+                            st.markdown(
+                                f'<div class="insight-box">💡 {result["insights"]}</div>',
+                                unsafe_allow_html=True
+                            )
+
+                        # Data table
+                        if result.get("data") and len(result["data"]) > 0:
+                            df = pd.DataFrame(result["data"])
+
+                            # Format currency columns
+                            for col in df.columns:
+                                if any(k in col.lower() for k in ["value", "revenue", "spending", "price", "total"]):
+                                    if df[col].dtype in ["float64", "int64"]:
+                                        df[col] = df[col].apply(
+                                            lambda x: f"Rp {x:,.2f}" if pd.notnull(x) else ""
+                                        )
+
+                            st.dataframe(df, use_container_width=True, height=400)
+
+                            col_info, col_download = st.columns([3, 1])
+                            with col_info:
+                                st.caption(f"📈 {result['row_count']} baris data")
+                            with col_download:
+                                csv = pd.DataFrame(result["data"]).to_csv(index=False)
+                                st.download_button(
+                                    "📥 Download CSV",
+                                    data=csv,
+                                    file_name="query_result.csv",
+                                    mime="text/csv",
+                                    use_container_width=True
+                                )
+                        else:
+                            st.info("ℹ️ Query tidak mengembalikan data.")
+
+                    with tab2:
+                        if result.get("sql"):
+                            st.markdown(
+                                f'<div class="sql-container">{result["sql"]}</div>',
+                                unsafe_allow_html=True
+                            )
+                            st.code(result["sql"], language="sql")
+
+                    with tab3:
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            st.metric("⏱️ Waktu", f"{result['execution_time_ms']:.0f} ms")
+                        with c2:
+                            st.metric("🗄️ Database", detected_db)
+                        with c3:
+                            st.metric("📊 Baris", result["row_count"])
+
+                        with st.expander("🔎 Detail Lengkap"):
+                            st.json(metadata)
+
             else:
-                st.markdown(f'<div class="error-box">❌ <strong>Error:</strong> {response.text}</div>', unsafe_allow_html=True)
-        
+                error_detail = response.json().get("detail", response.text)
+                st.markdown(
+                    f'<div class="error-box">❌ <strong>Error:</strong> {error_detail}</div>',
+                    unsafe_allow_html=True
+                )
+
         except requests.exceptions.Timeout:
-            st.markdown('<div class="error-box">⏱️ <strong>Timeout:</strong> Query terlalu lama. Coba query yang lebih sederhana.</div>', unsafe_allow_html=True)
-        
+            st.markdown(
+                '<div class="error-box">⏱️ <strong>Timeout:</strong> Query terlalu lama. Coba pertanyaan yang lebih sederhana.</div>',
+                unsafe_allow_html=True
+            )
         except requests.exceptions.ConnectionError:
-            st.markdown('<div class="error-box">🔌 <strong>Connection Error:</strong> Tidak bisa terhubung ke API. Pastikan API server sedang running di http://localhost:8000</div>', unsafe_allow_html=True)
-        
+            st.markdown(
+                '<div class="error-box">🔌 <strong>Connection Error:</strong> Tidak bisa terhubung ke API. Pastikan server berjalan di http://localhost:8000</div>',
+                unsafe_allow_html=True
+            )
         except Exception as e:
-            st.markdown(f'<div class="error-box">❌ <strong>Error:</strong> {str(e)}</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="error-box">❌ <strong>Error:</strong> {str(e)}</div>',
+                unsafe_allow_html=True
+            )
 
 elif ask_button and not user_question:
     st.warning("⚠️ Silakan masukkan pertanyaan terlebih dahulu!")
 
-# Footer
+# ─────────────────────────────────────────────
+# FOOTER
+# ─────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
     """
-    <div style="text-align: center; color: #666; font-size: 0.9rem;">
-        <p>💡 <strong>Tips:</strong> Tanyakan dalam bahasa natural seperti berbicara dengan manusia!</p>
-        <p>🤖 Powered by Claude Sonnet 4 | 🗄️ PostgreSQL | ⚡ FastAPI</p>
+    <div style="text-align: center; color: #94a3b8; font-size: 0.85rem; font-family: 'IBM Plex Mono', monospace;">
+        Text-to-SQL Chatbot • PostgreSQL • FastAPI • ChromaDB + BM25 + Graph
     </div>
     """,
     unsafe_allow_html=True
