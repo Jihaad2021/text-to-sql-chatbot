@@ -29,7 +29,6 @@ import json
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
-from src.utils.exceptions import InsightGenerationError
 
 
 class InsightGenerator(LLMBaseAgent):
@@ -43,7 +42,7 @@ class InsightGenerator(LLMBaseAgent):
     - Handle empty results gracefully
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name="insight_generator", version="1.0.0")
 
     def execute(self, state: AgentState) -> AgentState:
@@ -63,7 +62,7 @@ class InsightGenerator(LLMBaseAgent):
             self.log(f"Insights generated ({len(insights)} chars)")
 
         except Exception as e:
-            self.log(f"LLM insight failed, using fallback: {str(e)}", level="warning")
+            self.log(f"LLM insight failed, using fallback: {e}", level="warning")
             state.insights = self._fallback(state)
 
         return state

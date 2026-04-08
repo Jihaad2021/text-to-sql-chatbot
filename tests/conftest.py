@@ -5,12 +5,12 @@ Fixtures defined here are automatically available to all test files
 without needing to import them.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.models.agent_state import AgentState
 from src.models.retrieved_table import RetrievedTable
-
 
 # ========================================
 # AgentState Fixtures

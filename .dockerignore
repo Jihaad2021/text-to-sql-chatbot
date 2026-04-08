@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.pyo
+.pytest_cache
+.ruff_cache
+*.egg-info
+dist/
+build/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment secrets — never bake into image
+.env
+
+# Development tools
+.claude/
+docs/
+tests/
+tools/
+
+# Local data (mounted as volume in production)
+chroma_db/
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp

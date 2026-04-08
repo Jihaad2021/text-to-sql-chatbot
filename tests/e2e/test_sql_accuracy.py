@@ -14,9 +14,9 @@ Run:
 """
 
 import pytest
-from tests.e2e.conftest import run_full_pipeline
-from src.models.agent_state import AgentState
 
+from src.models.agent_state import AgentState
+from tests.e2e.conftest import run_full_pipeline
 
 # ========================================
 # Test Cases Definition
@@ -156,7 +156,7 @@ class TestJoinQueriesAccuracy:
     def test_join_query_accuracy(self, real_agents, test_case):
         """Join queries should generate SQL with JOIN clause."""
         state = run_full_pipeline(real_agents, test_case["query"], database="sales_db")
-        
+
         print(f"\n{'='*60}")
         print(f"Description: {test_case['description']}")
         print(f"Query      : {test_case['query']}")
@@ -204,18 +204,26 @@ class TestEdgeCasesAndLimitations:
 
 class TestLimitationsReport:
 
+    def _run_and_report(self, real_agents, query: str, label: str) -> AgentState:
+        """Run pipeline and return partial state even if later stages fail."""
+        state = AgentState(query=query, database="sales_db")
+        try:
+            state = run_full_pipeline(real_agents, query)
+        except Exception as exc:
+            print(f"\n[LIMITATION] Pipeline raised: {type(exc).__name__}: {exc}")
+        return state
+
     def test_complex_analytics_limitation(self, real_agents):
         """
         Test complex analytics query.
-        Reveals limitation: may not handle window functions well.
+        Reveals limitation: may not handle window functions or CTEs well.
         """
-        state = run_full_pipeline(
-            real_agents,
-            "revenue per bulan dalam 3 bulan terakhir"
+        state = self._run_and_report(
+            real_agents, "revenue per bulan dalam 3 bulan terakhir", "Complex date analytics"
         )
 
         print(f"\n{'='*60}")
-        print(f"LIMITATION TEST: Complex date analytics")
+        print("LIMITATION TEST: Complex date analytics")
         print(f"Query    : {state.query}")
         print(f"Intent   : {state.intent['category'] if state.intent else 'N/A'}")
         print(f"SQL      :\n{state.validated_sql}")
@@ -223,8 +231,7 @@ class TestLimitationsReport:
         print(f"Insights : {state.insights}")
         print(f"Errors   : {state.errors}")
 
-        # Just check pipeline completes, not strict SQL check
-        # This reveals if system can handle complex date queries
+        # Intent classification should always succeed; later stages may fail
         assert state.intent is not None
 
     def test_indonesian_query_limitation(self, real_agents):
@@ -232,13 +239,12 @@ class TestLimitationsReport:
         Test full Indonesian query.
         Reveals limitation: Indonesian language understanding.
         """
-        state = run_full_pipeline(
-            real_agents,
-            "tampilkan pelanggan dengan total pembelian terbanyak"
+        state = self._run_and_report(
+            real_agents, "tampilkan pelanggan dengan total pembelian terbanyak", "Full Indonesian query"
         )
 
         print(f"\n{'='*60}")
-        print(f"LIMITATION TEST: Full Indonesian query")
+        print("LIMITATION TEST: Full Indonesian query")
         print(f"Query    : {state.query}")
         print(f"Intent   : {state.intent['category'] if state.intent else 'N/A'}")
         print(f"SQL      :\n{state.validated_sql}")
@@ -252,13 +258,12 @@ class TestLimitationsReport:
         Test query with multiple conditions.
         Reveals limitation: handling complex WHERE conditions.
         """
-        state = run_full_pipeline(
-            real_agents,
-            "customer dari Jakarta yang total ordernya lebih dari 5"
+        state = self._run_and_report(
+            real_agents, "customer dari Jakarta yang total ordernya lebih dari 5", "Multi-condition query"
         )
 
         print(f"\n{'='*60}")
-        print(f"LIMITATION TEST: Multi-condition query")
+        print("LIMITATION TEST: Multi-condition query")
         print(f"Query    : {state.query}")
         print(f"Intent   : {state.intent['category'] if state.intent else 'N/A'}")
         print(f"SQL      :\n{state.validated_sql}")
@@ -276,7 +281,7 @@ class TestLimitationsReport:
         ]
 
         print(f"\n{'='*60}")
-        print(f"TIMING REPORT")
+        print("TIMING REPORT")
         print(f"{'='*60}")
 
         for query in queries:

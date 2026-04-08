@@ -14,9 +14,9 @@ Run:
 """
 
 import pytest
-from tests.e2e.conftest import run_full_pipeline
-from src.models.agent_state import AgentState
 
+from src.models.agent_state import AgentState
+from tests.e2e.conftest import run_full_pipeline
 
 # ========================================
 # Test: Intent Classification (Real)
@@ -173,7 +173,7 @@ class TestRealFullPipeline:
         """All agent timings should be recorded in state."""
         state = run_full_pipeline(real_agents, "berapa total customer?")
 
-        print(f"\nTiming breakdown:")
+        print("\nTiming breakdown:")
         for agent, ms in state.timing.items():
             print(f"  {agent}: {ms:.0f}ms")
         print(f"  Total: {sum(state.timing.values()):.0f}ms")

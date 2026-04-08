@@ -1,0 +1,19 @@
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",   # line too long — enforced by code review, not linter
+]
+
+[lint.per-file-ignores]
+# load_dotenv() must run before src.* imports that read env vars at import time
+"src/main.py" = ["E402"]
+# Pipeline scripts are one-off setup tools, not production code
+"src/pipeline/*" = ["F401", "F541", "I001"]
+# Tests import fixtures that look unused to ruff
+"tests/*" = ["F401"]
+
+[lint.isort]
+known-first-party = ["src"]

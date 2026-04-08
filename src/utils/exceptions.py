@@ -8,7 +8,7 @@ Example:
     >>> raise AgentExecutionError(agent_name="intent_classifier", message="Failed")
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class AgentExecutionError(Exception):

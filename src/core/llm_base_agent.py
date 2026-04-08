@@ -31,6 +31,8 @@ Example .env configuration:
 """
 
 import os
+from typing import Any
+
 from dotenv import load_dotenv
 
 from src.core.base_agent import BaseAgent
@@ -81,19 +83,19 @@ class LLMBaseAgent(BaseAgent):
         self,
         name: str,
         version: str = "1.0.0",
-        model: str = None,
-        log_level: str = "INFO"
-    ):
+        model: str | None = None,
+        log_level: str = "INFO",
+    ) -> None:
         super().__init__(name=name, version=version, log_level=log_level)
 
         self.provider, self.client, self.model = self._init_client(
             agent_name=name,
-            model_override=model
+            model_override=model,
         )
 
         self.log(f"LLM provider: {self.provider}, model: {self.model}")
 
-    def _init_client(self, agent_name: str, model_override: str = None) -> tuple:
+    def _init_client(self, agent_name: str, model_override: str | None = None) -> tuple[str, Any, str]:
         """
         Initialize LLM client based on .env configuration.
 
@@ -158,7 +160,7 @@ class LLMBaseAgent(BaseAgent):
         # Use provider default
         return DEFAULT_MODELS[provider]
 
-    def _create_client(self, provider: str):
+    def _create_client(self, provider: str) -> Any:
         """Create LLM client for the given provider."""
         api_key = os.getenv(API_KEY_ENV[provider])
 

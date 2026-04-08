@@ -3,73 +3,141 @@ FastAPI Application - Text-to-SQL Chatbot
 Complete 7-agent pipeline using AgentState.
 """
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+import os
+import uuid
+from contextlib import asynccontextmanager
+from typing import Any, Dict, List, Optional
 
-from src.models.agent_state import AgentState
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+load_dotenv()
+
+from src.components.insight_generator import InsightGenerator
 from src.components.intent_classifier import IntentClassifier
-from src.components.schema_retriever import SchemaRetriever
+from src.components.query_executor import QueryExecutor
 from src.components.retrieval_evaluator import RetrievalEvaluator
+from src.components.schema_retriever import SchemaRetriever
 from src.components.sql_generator import SQLGenerator
 from src.components.sql_validator import SQLValidator
-from src.components.query_executor import QueryExecutor
-from src.components.insight_generator import InsightGenerator
-from src.utils.logger import setup_logger
+from src.core.config import Config
+from src.core.pipeline import TextToSQLPipeline
+from src.core.startup import validate_environment
+from src.models.agent_state import AgentState
 from src.utils.exceptions import AgentExecutionError
+from src.utils.logger import setup_logger
 
 logger = setup_logger(name="main")
 
-# Initialize FastAPI
+limiter = Limiter(key_func=get_remote_address)
+
+pipeline: TextToSQLPipeline
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown lifecycle."""
+    global pipeline
+
+    validate_environment()
+
+    logger.info("Initializing pipeline...")
+    pipeline = TextToSQLPipeline(
+        intent_classifier=IntentClassifier(),
+        schema_retriever=SchemaRetriever(),
+        retrieval_evaluator=RetrievalEvaluator(),
+        sql_generator=SQLGenerator(),
+        sql_validator=SQLValidator(enable_ai_validation=Config.ENABLE_AI_VALIDATION),
+        query_executor=QueryExecutor(),
+        insight_generator=InsightGenerator(),
+    )
+    logger.info(
+        "Pipeline ready — "
+        "Intent → Retrieval → Evaluation → Generation → Validation → Execution → Insights"
+    )
+
+    yield
+
+    logger.info("Shutting down — closing database connections...")
+    pipeline.close()
+
+
+# ─────────────────────────────────────────────
+# APP
+# ─────────────────────────────────────────────
+
 app = FastAPI(
     title="Text-to-SQL Chatbot API",
     description="AI-powered natural language to SQL with 7-agent pipeline",
-    version="3.0.0"
+    version="3.0.0",
+    lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+_allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8501").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
-# Initialize all agents
-logger.info("Initializing agents...")
 
-intent_classifier = IntentClassifier()
-schema_retriever = SchemaRetriever()
-retrieval_evaluator = RetrievalEvaluator()
-sql_generator = SQLGenerator()
-sql_validator = SQLValidator(enable_ai_validation=False)
-query_executor = QueryExecutor()
-insight_generator = InsightGenerator()
+# ─────────────────────────────────────────────
+# MODELS
+# ─────────────────────────────────────────────
 
-logger.info("All agents ready.")
-logger.info("Pipeline: Intent → Retrieval → Evaluation → Generation → Validation → Execution → Insights")
+_ALLOWED_DATABASES = set(Config.DB_URLS.keys())
 
 
-# Request/Response models
 class QueryRequest(BaseModel):
     question: str
-    database: Optional[str] = "sales_db"
+    database: str = "sales_db"
+
+    @field_validator("question")
+    @classmethod
+    def question_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 3:
+            raise ValueError("question must be at least 3 characters")
+        return v
+
+    @field_validator("database")
+    @classmethod
+    def database_must_be_known(cls, v: str) -> str:
+        if v not in _ALLOWED_DATABASES:
+            raise ValueError(
+                f"Unknown database '{v}'. Allowed values: {sorted(_ALLOWED_DATABASES)}"
+            )
+        return v
 
 
 class QueryResponse(BaseModel):
     question: str
-    sql: Optional[str]
-    data: Optional[List[Dict[str, Any]]]
-    insights: Optional[str]
+    sql: Optional[str] = None
+    data: Optional[List[Dict[str, Any]]] = None
+    insights: Optional[str] = None
     row_count: int
     execution_time_ms: float
     metadata: Dict[str, Any]
 
 
-# Routes
+# ─────────────────────────────────────────────
+# ROUTES
+# ─────────────────────────────────────────────
+
 @app.get("/")
-def root():
+def root() -> dict:
     return {
         "message": "Text-to-SQL Chatbot API v3.0",
         "pipeline": [
@@ -79,117 +147,102 @@ def root():
             "4. SQLGenerator",
             "5. SQLValidator",
             "6. QueryExecutor",
-            "7. InsightGenerator"
+            "7. InsightGenerator",
         ],
         "endpoints": {
             "health": "/health",
             "query": "/query (POST)",
             "databases": "/databases",
-            "docs": "/docs"
-        }
+            "docs": "/docs",
+        },
     }
 
 
 @app.get("/health")
-def health_check():
-    agents = [
-        intent_classifier,
-        schema_retriever,
-        retrieval_evaluator,
-        sql_generator,
-        sql_validator,
-        query_executor,
-        insight_generator
-    ]
-    return {
-        "status": "healthy",
-        "version": "3.0.0",
-        "agents": {
-            agent.name: {
-                "status": "ready",
-                "metrics": agent.get_metrics()
-            }
-            for agent in agents
-        }
-    }
+def health_check() -> JSONResponse:
+    """
+    Deep health check — verifies actual connectivity to databases and ChromaDB.
+    Returns HTTP 200 if all critical components are healthy, 503 if degraded.
+    """
+    health = pipeline.check_health()
+    status = "healthy" if health["overall_healthy"] else "degraded"
+
+    return JSONResponse(
+        status_code=200 if health["overall_healthy"] else 503,
+        content={
+            "status": status,
+            "version": "3.0.0",
+            "databases": health["databases"],
+            "retrieval": health["retrieval"],
+            "agents": health["agents"],
+        },
+    )
 
 
 @app.get("/databases")
-def list_databases():
+def list_databases() -> dict:
     try:
-        all_tables = schema_retriever.get_all_tables()
-        databases = list(set([
-            t.split('.')[0] for t in all_tables if '.' in t
-        ]))
+        all_tables = pipeline.get_all_tables()
+        databases = sorted({t.split(".")[0] for t in all_tables if "." in t})
         return {
-            "databases": sorted(databases),
+            "databases": databases,
             "default": databases[0] if databases else "sales_db",
-            "total_tables": len(all_tables)
+            "total_tables": len(all_tables),
         }
     except Exception as e:
         return {
-            "databases": ["sales_db", "products_db", "analytics_db"],
+            "databases": sorted(_ALLOWED_DATABASES),
             "default": "sales_db",
-            "error": str(e)
+            "error": str(e),
         }
 
 
 @app.post("/query", response_model=QueryResponse)
-async def process_query(request: QueryRequest):
+@limiter.limit(f"{Config.RATE_LIMIT_PER_MINUTE}/minute")
+async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
     """
-    Main endpoint: Run complete 7-agent pipeline.
+    Main endpoint: Run the complete 7-agent pipeline.
 
-    Each agent reads from and writes to AgentState.
-    Pipeline stops early if query is ambiguous or an error occurs.
+    Rate limited to RATE_LIMIT_PER_MINUTE requests per IP per minute.
     """
-
-    # Initialize state
-    state = AgentState(
-        query=request.question,
-        database=request.database
-    )
+    request_id = str(uuid.uuid4())
+    state = AgentState(query=body.question, database=body.database)
 
     try:
-        # Step 1: Intent Classification
-        state = intent_classifier.run(state)
+        state = pipeline.run(state)
+
+        total_ms = sum(state.timing.values()) * 1000
 
         if state.needs_clarification:
+            logger.info(
+                "query needs clarification",
+                extra={"request_id": request_id, "database": body.database, "success": False},
+            )
             return QueryResponse(
                 question=state.query,
-                sql=None,
-                data=None,
-                insights=None,
                 row_count=0,
-                execution_time_ms=sum(state.timing.values()),
+                execution_time_ms=total_ms,
                 metadata={
+                    "request_id": request_id,
                     "pipeline_stage": "intent_classification",
                     "needs_clarification": True,
                     "clarification_reason": state.clarification_reason,
                     "intent": state.intent,
-                    "suggestion": "Please provide more specific details."
-                }
+                    "suggestion": "Please provide more specific details.",
+                },
             )
 
-        # Step 2: Schema Retrieval
-        state = schema_retriever.run(state)
-
-        # Step 3: Retrieval Evaluation
-        state = retrieval_evaluator.run(state)
-
-        # Step 4: SQL Generation
-        state = sql_generator.run(state)
-
-        # Step 5: SQL Validation
-        state = sql_validator.run(state)
-
-        # Step 6: Query Execution
-        state = query_executor.run(state)
-
-        # Step 7: Insight Generation
-        state = insight_generator.run(state)
-
-        # Return final response
-        total_ms = sum(state.timing.values())
+        logger.info(
+            "query completed",
+            extra={
+                "request_id": request_id,
+                "database": state.database,
+                "intent": state.intent,
+                "row_count": state.row_count,
+                "execution_time_ms": round(total_ms, 1),
+                "success": True,
+            },
+        )
 
         return QueryResponse(
             question=state.query,
@@ -199,35 +252,35 @@ async def process_query(request: QueryRequest):
             row_count=state.row_count,
             execution_time_ms=total_ms,
             metadata={
+                "request_id": request_id,
                 "pipeline_stage": "complete",
                 "database": state.database,
                 "intent": state.intent,
                 "tables_retrieved": len(state.retrieved_tables),
                 "tables_used": len(state.evaluated_tables),
                 "timing": state.timing,
-                "errors": state.errors
-            }
+                "errors": state.errors,
+            },
         )
 
     except AgentExecutionError as e:
-        logger.error(f"Agent error at {e.agent_name}: {e.message}")
+        logger.error(
+            "agent error",
+            extra={"request_id": request_id, "agent": e.agent_name, "error": e.message},
+        )
         raise HTTPException(
             status_code=500,
-            detail={
-                "agent": e.agent_name,
-                "error": e.message,
-                "details": e.details
-            }
+            detail={"request_id": request_id, "agent": e.agent_name, "error": e.message},
         )
 
     except HTTPException:
         raise
 
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        logger.error("unexpected error", extra={"request_id": request_id, "error": str(e)})
         raise HTTPException(
             status_code=500,
-            detail=f"Unexpected error: {str(e)}"
+            detail={"request_id": request_id, "error": "Internal server error"},
         )
 
 

@@ -25,13 +25,13 @@ Example:
 """
 
 import re
-import sqlparse
-from typing import List, Tuple
 
+import sqlparse
+
+from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.exceptions import SQLValidationError
-from src.core.config import Config
 
 
 class SQLValidator(LLMBaseAgent):
@@ -42,10 +42,14 @@ class SQLValidator(LLMBaseAgent):
     1. Syntax validation (sqlparse)
     2. Security validation (block dangerous keywords)
     3. Table whitelist validation
-    4. Logic validation via Claude (optional)
+    4. Logic validation via LLM (optional)
     """
 
-    def __init__(self, enable_ai_validation: bool = None, max_retries: int = 2):
+    def __init__(
+        self,
+        enable_ai_validation: bool | None = None,
+        max_retries: int = 2,
+    ) -> None:
         super().__init__(name="sql_validator", version="1.0.0")
         self.enable_ai_validation = (
             enable_ai_validation
@@ -70,6 +74,9 @@ class SQLValidator(LLMBaseAgent):
 
         Returns:
             Updated state with state.validated_sql
+
+        Raises:
+            SQLValidationError: If validation fails after all retries
         """
         if not state.sql:
             raise SQLValidationError(
@@ -78,11 +85,11 @@ class SQLValidator(LLMBaseAgent):
             )
 
         current_sql = state.sql
-        fixes_applied = []
+        fixes_applied: list[str] = []
 
         for attempt in range(self.max_retries + 1):
-            errors, warnings = self._validate(current_sql, state.query)
-            
+            errors, _ = self._validate(current_sql, state.query)
+
             if not errors:
                 state.validated_sql = current_sql
                 if fixes_applied:
@@ -98,7 +105,6 @@ class SQLValidator(LLMBaseAgent):
                     details={"errors": errors}
                 )
 
-            # Attempt auto-fix
             if self.enable_ai_validation:
                 self.log(f"Attempting auto-fix (attempt {attempt + 1}/{self.max_retries})")
                 fixed_sql = self._auto_fix(current_sql, errors, state.query)
@@ -119,10 +125,16 @@ class SQLValidator(LLMBaseAgent):
                     details={"errors": errors}
                 )
 
-    def _validate(self, sql: str, query: str = "") -> Tuple[List[str], List[str]]:
+        # Unreachable — loop always returns or raises — but satisfies type checker
+        raise SQLValidationError(
+            agent_name=self.name,
+            message="SQL validation exhausted all retries unexpectedly"
+        )
+
+    def _validate(self, sql: str, query: str = "") -> tuple[list[str], list[str]]:
         """Run all validation layers, return (errors, warnings)."""
-        errors = []
-        warnings = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         errors.extend(self._validate_syntax(sql))
         if errors:
@@ -143,24 +155,23 @@ class SQLValidator(LLMBaseAgent):
 
         return errors, warnings
 
-    def _validate_syntax(self, sql: str) -> List[str]:
+    def _validate_syntax(self, sql: str) -> list[str]:
         """Layer 1: Syntax validation using sqlparse."""
         try:
             parsed = sqlparse.parse(sql)
             if not parsed or not str(parsed[0]).strip():
                 return ["SYNTAX: Empty or invalid SQL"]
         except Exception as e:
-            return [f"SYNTAX: Parse error - {str(e)}"]
+            return [f"SYNTAX: Parse error - {e}"]
         return []
 
-    def _validate_security(self, sql: str) -> List[str]:
-        """Layer 2: Security validation."""
-        errors = []
+    def _validate_security(self, sql: str) -> list[str]:
+        """Layer 2: Security validation — blocks dangerous keywords and multi-statements."""
+        errors: list[str] = []
         sql_upper = sql.upper()
 
         for keyword in self.dangerous_keywords:
-            # Pakai word boundary agar tidak match nama kolom
-            # contoh: customer_created_at tidak match CREATE
+            # Use word boundary to avoid matching column names (e.g. customer_created_at ≠ CREATE)
             pattern = r'\b' + keyword + r'\b'
             if re.search(pattern, sql_upper):
                 errors.append(f"SECURITY: Dangerous keyword '{keyword}' not allowed")
@@ -176,30 +187,27 @@ class SQLValidator(LLMBaseAgent):
 
         return errors
 
-    def _validate_tables(self, sql: str) -> List[str]:
+    def _validate_tables(self, sql: str) -> list[str]:
         """Layer 3: Table whitelist validation."""
-        errors = []
+        errors: list[str] = []
 
-        # Extract CTE names to skip them
         cte_names = set(re.findall(
             r'\bWITH\s+(\w+)\s+AS\s*\(',
             sql,
             re.IGNORECASE
         ))
 
-        # Extract all table names from FROM and JOIN clauses
         matches = re.findall(
             r'\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)',
             sql,
             re.IGNORECASE
         )
 
+        skip_words = {'select', 'where', 'extract', 'current_date', 'lateral', 'unnest'}
+
         for table_name in matches:
-            # Skip SQL keywords
-            skip_words = {'select', 'where', 'extract', 'current_date', 'lateral', 'unnest'}
             if table_name.lower() in skip_words:
                 continue
-            # Skip CTE names
             if table_name.lower() in {c.lower() for c in cte_names}:
                 continue
             if len(table_name) > 1 and table_name.lower() not in self.allowed_tables:
@@ -207,8 +215,8 @@ class SQLValidator(LLMBaseAgent):
 
         return errors
 
-    def _validate_logic_ai(self, sql: str, query: str) -> Tuple[List[str], List[str]]:
-        """Layer 4: AI logic validation using Claude."""
+    def _validate_logic_ai(self, sql: str, query: str) -> tuple[list[str], list[str]]:
+        """Layer 4: AI logic validation using LLM."""
         if 'EXTRACT(' in sql.upper() or 'DATE_TRUNC' in sql.upper():
             return [], []
 
@@ -228,8 +236,9 @@ Your response:"""
 
         try:
             response = self._call_llm(prompt, max_tokens=500, temperature=0)
-            errors, warnings = [], []
-            current_section = None
+            errors: list[str] = []
+            warnings: list[str] = []
+            current_section: str | None = None
 
             for line in response.split('\n'):
                 line = line.strip()
@@ -254,11 +263,11 @@ Your response:"""
             return errors, warnings
 
         except Exception as e:
-            self.log(f"AI validation failed: {str(e)}", level="warning")
-            return [], [f"AI validation unavailable: {str(e)}"]
+            self.log(f"AI validation failed: {e}", level="warning")
+            return [], [f"AI validation unavailable: {e}"]
 
-    def _auto_fix(self, sql: str, errors: List[str], query: str) -> str:
-        """Auto-fix SQL using Claude."""
+    def _auto_fix(self, sql: str, errors: list[str], query: str) -> str:
+        """Auto-fix SQL using LLM."""
         prompt = f"""You are a SQL fixer. Fix the errors in this SQL query.
 
 USER QUESTION: "{query}"
@@ -279,5 +288,5 @@ Corrected SQL:"""
             fixed = re.sub(r'```\s*', '', fixed)
             return fixed.strip()
         except Exception as e:
-            self.log(f"Auto-fix failed: {str(e)}", level="error")
+            self.log(f"Auto-fix failed: {e}", level="error")
             return ""

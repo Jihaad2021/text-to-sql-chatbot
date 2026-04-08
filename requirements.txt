@@ -13,6 +13,7 @@ groq>=1.0.0                 # Groq (Llama, Mixtral)
 fastapi>=0.100.0            # REST API framework
 uvicorn>=0.20.0             # ASGI server
 streamlit>=1.31.0           # Web UI
+slowapi>=0.1.9              # Rate limiting for FastAPI
 
 # ─── Database ─────────────────────────────────────────────────
 sqlalchemy>=2.0.0           # SQL ORM & connection

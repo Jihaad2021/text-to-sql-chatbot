@@ -1,5 +1,5 @@
 """
-Integration tests for full 7-agent pipeline.
+Integration tests for full 7-agent pipeline via TextToSQLPipeline.
 
 Tests cover:
 - Complete pipeline runs end-to-end
@@ -9,20 +9,21 @@ Tests cover:
 - All agents mocked to avoid external dependencies
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+import logging
+from unittest.mock import MagicMock, patch
 
-from src.models.agent_state import AgentState
-from src.models.retrieved_table import RetrievedTable
+import pytest
+
+from src.components.insight_generator import InsightGenerator
 from src.components.intent_classifier import IntentClassifier
-from src.components.schema_retriever import SchemaRetriever
+from src.components.query_executor import QueryExecutor
 from src.components.retrieval_evaluator import RetrievalEvaluator
+from src.components.schema_retriever import SchemaRetriever
 from src.components.sql_generator import SQLGenerator
 from src.components.sql_validator import SQLValidator
-from src.components.query_executor import QueryExecutor
-from src.components.insight_generator import InsightGenerator
-from src.utils.exceptions import AgentExecutionError, SQLValidationError, SQLGenerationError
-
+from src.core.pipeline import TextToSQLPipeline
+from src.models.agent_state import AgentState
+from src.utils.exceptions import AgentExecutionError, SQLGenerationError, SQLValidationError
 
 # ========================================
 # Fixtures
@@ -58,22 +59,22 @@ def mock_collection():
                 "table_name": "customers",
                 "columns": "customer_id,customer_name",
                 "description": "Customer master data",
-                "relationships": ""
+                "relationships": "",
             },
             {
                 "db_name": "sales_db",
                 "table_name": "orders",
                 "columns": "order_id,customer_id",
                 "description": "Order transactions",
-                "relationships": "FK to customers.customer_id"
-            }
-        ]]
+                "relationships": "FK to customers.customer_id",
+            },
+        ]],
     }
     return collection
 
-def _make_mock_retriever(mock_collection):
+
+def _make_mock_retriever(mock_collection) -> SchemaRetriever:
     """Create SchemaRetriever with mocked dependencies."""
-    import logging
     retriever = SchemaRetriever.__new__(SchemaRetriever)
     retriever.name = "schema_retriever"
     retriever.version = "2.0.0"
@@ -85,47 +86,31 @@ def _make_mock_retriever(mock_collection):
     retriever.metrics = {
         "total_calls": 0, "successful_calls": 0, "failed_calls": 0,
         "total_time_seconds": 0.0, "average_time_seconds": 0.0,
-        "last_execution_time": None, "created_at": "2024-01-01"
+        "last_execution_time": None, "created_at": "2024-01-01",
     }
     retriever.logger = logging.getLogger("agent.schema_retriever")
     return retriever
 
+
 @pytest.fixture
-def all_agents(mock_engine, mock_collection):
-    """Initialize all agents with mocked dependencies."""
+def pipeline(mock_engine, mock_collection):
+    """Fully mocked TextToSQLPipeline — no real LLM or DB calls."""
     with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-     with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-      with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-       with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-         with patch("src.components.schema_retriever.chromadb.PersistentClient"):
-          with patch("src.components.schema_retriever.embedding_functions.OpenAIEmbeddingFunction"):
-           with patch.object(QueryExecutor, "_create_engines", return_value={"sales_db": mock_engine}):
-            with patch("builtins.open", side_effect=FileNotFoundError):
-                return {
-                    "intent": IntentClassifier(),
-                    "retriever": _make_mock_retriever(mock_collection),
-                    "evaluator": RetrievalEvaluator(),
-                    "generator": SQLGenerator(),
-                    "validator": SQLValidator(enable_ai_validation=False),
-                    "executor": QueryExecutor(),
-                    "insight": InsightGenerator()
-                }
-
-
-def run_pipeline(agents: dict, state: AgentState) -> AgentState:
-    """Helper to run full pipeline."""
-    state = agents["intent"].run(state)
-    if state.needs_clarification:
-        return state
-
-    state = agents["retriever"].execute(state)
-    state = agents["evaluator"].run(state)
-    state = agents["generator"].run(state)
-    state = agents["validator"].run(state)
-    state = agents["executor"].run(state)
-    state = agents["insight"].run(state)
-    return state
+        with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                    with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                        with patch.object(QueryExecutor, "_create_engines", return_value={"sales_db": mock_engine}):
+                            with patch("builtins.open", side_effect=FileNotFoundError):
+                                return TextToSQLPipeline(
+                                    intent_classifier=IntentClassifier(),
+                                    schema_retriever=_make_mock_retriever(mock_collection),
+                                    retrieval_evaluator=RetrievalEvaluator(),
+                                    sql_generator=SQLGenerator(),
+                                    sql_validator=SQLValidator(enable_ai_validation=False),
+                                    query_executor=QueryExecutor(),
+                                    insight_generator=InsightGenerator(),
+                                )
 
 
 # ========================================
@@ -134,32 +119,19 @@ def run_pipeline(agents: dict, state: AgentState) -> AgentState:
 
 class TestCompletePipeline:
 
-    def test_pipeline_completes_successfully(self, all_agents, mock_collection):
+    def test_pipeline_completes_successfully(self, pipeline):
         """Full pipeline should complete with all state fields populated."""
         state = AgentState(query="berapa total customer?", database="sales_db")
 
-        # Setup retriever
-        all_agents["retriever"].collection = mock_collection
-        all_agents["retriever"].top_k = 5
-        all_agents["retriever"].name = "schema_retriever"
-        all_agents["retriever"].version = "1.0.0"
-        all_agents["retriever"].metrics = {
-            "total_calls": 0, "successful_calls": 0, "failed_calls": 0,
-            "total_time_seconds": 0.0, "average_time_seconds": 0.0,
-            "last_execution_time": None, "created_at": "2024-01-01"
-        }
-        import logging
-        all_agents["retriever"].logger = logging.getLogger("agent.schema_retriever")
-
-        with patch.object(all_agents["intent"], "_call_llm",
+        with patch.object(pipeline.intent_classifier, "_call_llm",
                           return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count"):
-            with patch.object(all_agents["evaluator"], "_call_llm",
+            with patch.object(pipeline.retrieval_evaluator, "_call_llm",
                               return_value="ESSENTIAL:\n- sales_db.customers: Required\nOPTIONAL:\nEXCLUDED:"):
-                with patch.object(all_agents["generator"], "_call_llm",
+                with patch.object(pipeline.sql_generator, "_call_llm",
                                   return_value="SELECT COUNT(*) as total FROM customers LIMIT 100;"):
-                    with patch.object(all_agents["insight"], "_call_llm",
+                    with patch.object(pipeline.insight_generator, "_call_llm",
                                       return_value="Terdapat 100 customer dalam sistem."):
-                        state = run_pipeline(all_agents, state)
+                        state = pipeline.run(state)
 
         assert state.intent is not None
         assert state.retrieved_tables is not None
@@ -169,97 +141,77 @@ class TestCompletePipeline:
         assert state.query_result is not None
         assert state.insights is not None
 
-    def test_state_flows_through_all_agents(self, all_agents, mock_collection):
-        """Each agent should read and write to the same state object."""
+    def test_state_flows_through_all_agents(self, pipeline):
+        """Timing should be recorded for every agent that ran."""
         state = AgentState(query="berapa total customer?", database="sales_db")
 
-        all_agents["retriever"].collection = mock_collection
-        all_agents["retriever"].top_k = 5
-        all_agents["retriever"].name = "schema_retriever"
-        all_agents["retriever"].version = "1.0.0"
-        all_agents["retriever"].metrics = {
-            "total_calls": 0, "successful_calls": 0, "failed_calls": 0,
-            "total_time_seconds": 0.0, "average_time_seconds": 0.0,
-            "last_execution_time": None, "created_at": "2024-01-01"
-        }
-        import logging
-        all_agents["retriever"].logger = logging.getLogger("agent.schema_retriever")
-
-        with patch.object(all_agents["intent"], "_call_llm",
+        with patch.object(pipeline.intent_classifier, "_call_llm",
                           return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count"):
-            with patch.object(all_agents["evaluator"], "_call_llm",
+            with patch.object(pipeline.retrieval_evaluator, "_call_llm",
                               return_value="ESSENTIAL:\n- sales_db.customers: Required\nOPTIONAL:\nEXCLUDED:"):
-                with patch.object(all_agents["generator"], "_call_llm",
+                with patch.object(pipeline.sql_generator, "_call_llm",
                                   return_value="SELECT COUNT(*) as total FROM customers LIMIT 100;"):
-                    with patch.object(all_agents["insight"], "_call_llm",
+                    with patch.object(pipeline.insight_generator, "_call_llm",
                                       return_value="Terdapat 100 customer dalam sistem."):
-                        state = run_pipeline(all_agents, state)
+                        state = pipeline.run(state)
 
-        # All timing should be recorded
-        assert "intent_classifier" in state.timing
-        assert "retrieval_evaluator" in state.timing
-        assert "sql_generator" in state.timing
-        assert "sql_validator" in state.timing
-        assert "query_executor" in state.timing
-        assert "insight_generator" in state.timing
+        expected_agents = [
+            "intent_classifier", "schema_retriever", "retrieval_evaluator",
+            "sql_generator", "sql_validator", "query_executor", "insight_generator",
+        ]
+        for agent_name in expected_agents:
+            assert agent_name in state.timing, f"Missing timing for {agent_name}"
 
 
 # ========================================
-# Test: Early Stop - Ambiguous Query
+# Test: Early Stop — Ambiguous Query
 # ========================================
 
 class TestEarlyStopAmbiguous:
 
-    def test_pipeline_stops_on_ambiguous_query(self, all_agents):
+    def test_pipeline_stops_on_ambiguous_query(self, pipeline):
         """Pipeline should stop after intent if query is ambiguous."""
         state = AgentState(query="show me the data", database="sales_db")
 
-        with patch.object(all_agents["intent"], "_call_llm",
+        with patch.object(pipeline.intent_classifier, "_call_llm",
                           return_value="INTENT: ambiguous\nCONFIDENCE: 1.0\nREASON: Too vague"):
-            state = all_agents["intent"].run(state)
+            state = pipeline.run(state)
 
         assert state.needs_clarification is True
         assert state.sql is None
         assert state.query_result is None
         assert state.insights is None
 
+    def test_early_stop_records_intent_timing(self, pipeline):
+        """Even on early stop, intent_classifier timing should be recorded."""
+        state = AgentState(query="show me the data", database="sales_db")
+
+        with patch.object(pipeline.intent_classifier, "_call_llm",
+                          return_value="INTENT: ambiguous\nCONFIDENCE: 1.0\nREASON: Too vague"):
+            state = pipeline.run(state)
+
+        assert "intent_classifier" in state.timing
+        assert "schema_retriever" not in state.timing
+
 
 # ========================================
-# Test: Early Stop - Validation Failure
+# Test: Early Stop — Validation Failure
 # ========================================
 
 class TestEarlyStopValidation:
 
-    def test_pipeline_stops_on_validation_failure(self, all_agents, mock_collection):
-        """Pipeline should stop if SQL validation fails."""
+    def test_pipeline_stops_on_validation_failure(self, pipeline):
+        """Pipeline should raise if SQL validation fails."""
         state = AgentState(query="berapa total customer?", database="sales_db")
 
-        all_agents["retriever"].collection = mock_collection
-        all_agents["retriever"].top_k = 5
-        all_agents["retriever"].name = "schema_retriever"
-        all_agents["retriever"].version = "1.0.0"
-        all_agents["retriever"].metrics = {
-            "total_calls": 0, "successful_calls": 0, "failed_calls": 0,
-            "total_time_seconds": 0.0, "average_time_seconds": 0.0,
-            "last_execution_time": None, "created_at": "2024-01-01"
-        }
-        import logging
-        all_agents["retriever"].logger = logging.getLogger("agent.schema_retriever")
-
-        with patch.object(all_agents["intent"], "_call_llm",
+        with patch.object(pipeline.intent_classifier, "_call_llm",
                           return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count"):
-            with patch.object(all_agents["evaluator"], "_call_llm",
+            with patch.object(pipeline.retrieval_evaluator, "_call_llm",
                               return_value="ESSENTIAL:\n- sales_db.customers: Required\nOPTIONAL:\nEXCLUDED:"):
-                # Generator returns dangerous SQL
-                with patch.object(all_agents["generator"], "_call_llm",
+                with patch.object(pipeline.sql_generator, "_call_llm",
                                   return_value="SELECT * FROM customers; DELETE FROM orders;"):
-                
-                    with pytest.raises((SQLValidationError, SQLGenerationError)):
-                        state = all_agents["intent"].run(state)
-                        state = all_agents["retriever"].execute(state)
-                        state = all_agents["evaluator"].run(state)
-                        state = all_agents["generator"].run(state)
-                        state = all_agents["validator"].run(state)
+                    with pytest.raises((SQLValidationError, SQLGenerationError, AgentExecutionError)):
+                        pipeline.run(state)
 
 
 # ========================================
@@ -268,24 +220,48 @@ class TestEarlyStopValidation:
 
 class TestErrorPropagation:
 
-    def test_agent_error_stops_pipeline(self, all_agents):
-        """AgentExecutionError from any agent should stop pipeline."""
+    def test_agent_error_stops_pipeline(self, pipeline):
+        """AgentExecutionError from any agent should propagate out of pipeline.run()."""
         state = AgentState(query="berapa total customer?", database="sales_db")
 
-        with patch.object(all_agents["intent"], "_call_llm",
+        with patch.object(pipeline.intent_classifier, "_call_llm",
                           side_effect=Exception("LLM unavailable")):
             with pytest.raises(AgentExecutionError):
-                all_agents["intent"].run(state)
+                pipeline.run(state)
 
-    def test_errors_recorded_in_state(self, all_agents):
-        """Errors should be recorded in state.errors."""
+    def test_errors_recorded_in_state(self, pipeline):
+        """Errors should be recorded in state.errors even when pipeline raises."""
         state = AgentState(query="berapa total customer?", database="sales_db")
 
         try:
-            with patch.object(all_agents["intent"], "_call_llm",
+            with patch.object(pipeline.intent_classifier, "_call_llm",
                               side_effect=Exception("LLM error")):
-                all_agents["intent"].run(state)
+                pipeline.run(state)
         except AgentExecutionError:
             pass
 
         assert len(state.errors) > 0
+
+
+# ========================================
+# Test: Pipeline Structure
+# ========================================
+
+class TestPipelineStructure:
+
+    def test_agents_property_returns_all_seven(self, pipeline):
+        """pipeline.agents should expose all 7 agents in order."""
+        assert len(pipeline.agents) == 7
+
+    def test_agents_property_order(self, pipeline):
+        """Agents should be in pipeline execution order."""
+        names = [a.name for a in pipeline.agents]
+        assert names == [
+            "intent_classifier",
+            "schema_retriever",
+            "retrieval_evaluator",
+            "sql_generator",
+            "sql_validator",
+            "query_executor",
+            "insight_generator",
+        ]

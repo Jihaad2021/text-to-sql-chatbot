@@ -25,11 +25,11 @@ Example:
     >>> print(state.retrieved_tables)
 """
 
+import json
 import os
 import pickle
-import json
 import re
-from typing import List, Dict, Tuple, Optional
+from typing import Any
 
 import chromadb
 import networkx as nx
@@ -37,19 +37,12 @@ from chromadb.utils import embedding_functions
 from dotenv import load_dotenv
 
 from src.core.base_agent import BaseAgent
+from src.core.config import Config
 from src.models.agent_state import AgentState
 from src.models.retrieved_table import RetrievedTable
 from src.utils.exceptions import SchemaRetrievalError
 
 load_dotenv()
-
-# File paths
-CHROMA_PATH = os.getenv("CHROMA_PATH", "./chroma_db")
-BM25_FILE   = os.getenv("BM25_INDEX_FILE", "data/bm25_index.pkl")
-GRAPH_FILE  = os.getenv("GRAPH_INDEX_FILE", "data/schema_graph.json")
-
-# RRF constant
-RRF_K = 60
 
 
 class SchemaRetriever(BaseAgent):
@@ -60,7 +53,7 @@ class SchemaRetriever(BaseAgent):
     more accurate and robust table retrieval.
     """
 
-    def __init__(self, top_k: int = 5):
+    def __init__(self, top_k: int = Config.TOP_K_RETRIEVAL) -> None:
         super().__init__(name="schema_retriever", version="2.0.0")
         self.top_k = top_k
 
@@ -70,22 +63,22 @@ class SchemaRetriever(BaseAgent):
 
         self.log(
             f"Hybrid retrieval initialized: "
-            f"ChromaDB={'✓' if self.collection else '✗'} "
-            f"BM25={'✓' if self.bm25 else '✗'} "
-            f"Graph={'✓' if self.graph else '✗'}"
+            f"ChromaDB={'OK' if self.collection else 'SKIP'} "
+            f"BM25={'OK' if self.bm25 else 'SKIP'} "
+            f"Graph={'OK' if self.graph else 'SKIP'}"
         )
 
     # ─────────────────────────────────────────────
     # INIT
     # ─────────────────────────────────────────────
 
-    def _init_chromadb(self):
+    def _init_chromadb(self) -> chromadb.Collection | None:
         try:
             openai_key = os.getenv("OPENAI_API_KEY")
             if not openai_key:
-                raise ValueError("OPENAI_API_KEY not found")
+                raise ValueError("OPENAI_API_KEY not found — ChromaDB semantic search disabled")
 
-            client = chromadb.PersistentClient(path=CHROMA_PATH)
+            client = chromadb.PersistentClient(path=Config.CHROMA_PATH)
             embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
                 api_key=openai_key,
                 model_name="text-embedding-3-small"
@@ -98,32 +91,32 @@ class SchemaRetriever(BaseAgent):
             return collection
 
         except Exception as e:
-            self.log(f"ChromaDB init failed: {str(e)}", level="warning")
+            self.log(f"ChromaDB init failed: {e}", level="warning")
             return None
 
-    def _init_bm25(self) -> Tuple:
+    def _init_bm25(self) -> tuple[Any, list]:
         try:
-            if not os.path.exists(BM25_FILE):
-                self.log(f"BM25 index not found at {BM25_FILE}", level="warning")
+            if not os.path.exists(Config.BM25_INDEX_FILE):
+                self.log(f"BM25 index not found at {Config.BM25_INDEX_FILE}", level="warning")
                 return None, []
 
-            with open(BM25_FILE, "rb") as f:
+            with open(Config.BM25_INDEX_FILE, "rb") as f:
                 data = pickle.load(f)
 
             self.log(f"BM25 loaded: {len(data['corpus'])} tables indexed")
             return data["bm25"], data["corpus"]
 
         except Exception as e:
-            self.log(f"BM25 init failed: {str(e)}", level="warning")
+            self.log(f"BM25 init failed: {e}", level="warning")
             return None, []
 
-    def _init_graph(self) -> Optional[nx.DiGraph]:
+    def _init_graph(self) -> nx.DiGraph | None:
         try:
-            if not os.path.exists(GRAPH_FILE):
-                self.log(f"Graph not found at {GRAPH_FILE}", level="warning")
+            if not os.path.exists(Config.GRAPH_INDEX_FILE):
+                self.log(f"Graph not found at {Config.GRAPH_INDEX_FILE}", level="warning")
                 return None
 
-            with open(GRAPH_FILE, "r") as f:
+            with open(Config.GRAPH_INDEX_FILE, "r") as f:
                 data = json.load(f)
 
             G = nx.node_link_graph(data, directed=True)
@@ -132,7 +125,7 @@ class SchemaRetriever(BaseAgent):
             return G
 
         except Exception as e:
-            self.log(f"Graph init failed: {str(e)}", level="warning")
+            self.log(f"Graph init failed: {e}", level="warning")
             return None
 
     # ─────────────────────────────────────────────
@@ -151,7 +144,7 @@ class SchemaRetriever(BaseAgent):
         """
         chroma_results = self._retrieve_chromadb(state.query)
         bm25_results   = self._retrieve_bm25(state.query)
-        graph_results  = self._retrieve_graph(state.query, chroma_results)
+        graph_results  = self._retrieve_graph(chroma_results)
 
         fused = self._rrf_fusion([chroma_results, bm25_results, graph_results])
         retrieved_tables = self._to_retrieved_tables(fused[:self.top_k])
@@ -182,7 +175,7 @@ class SchemaRetriever(BaseAgent):
     # RETRIEVERS
     # ─────────────────────────────────────────────
 
-    def _retrieve_chromadb(self, query: str) -> List[Dict]:
+    def _retrieve_chromadb(self, query: str) -> list[dict]:
         if not self.collection:
             return []
         try:
@@ -208,10 +201,10 @@ class SchemaRetriever(BaseAgent):
                     })
             return tables
         except Exception as e:
-            self.log(f"ChromaDB retrieval failed: {str(e)}", level="warning")
+            self.log(f"ChromaDB retrieval failed: {e}", level="warning")
             return []
 
-    def _retrieve_bm25(self, query: str) -> List[Dict]:
+    def _retrieve_bm25(self, query: str) -> list[dict]:
         if not self.bm25 or not self.bm25_corpus:
             return []
         try:
@@ -237,14 +230,14 @@ class SchemaRetriever(BaseAgent):
                 })
             return tables
         except Exception as e:
-            self.log(f"BM25 retrieval failed: {str(e)}", level="warning")
+            self.log(f"BM25 retrieval failed: {e}", level="warning")
             return []
 
-    def _retrieve_graph(self, query: str, seed_tables: List[Dict]) -> List[Dict]:
+    def _retrieve_graph(self, seed_tables: list[dict]) -> list[dict]:
         if not self.graph or not seed_tables:
             return []
         try:
-            related = {}
+            related: dict[str, dict] = {}
             for seed in seed_tables[:3]:
                 db   = seed["db_name"]
                 sch  = seed.get("schema_name", "public")
@@ -275,28 +268,28 @@ class SchemaRetriever(BaseAgent):
                         }
             return list(related.values())
         except Exception as e:
-            self.log(f"Graph retrieval failed: {str(e)}", level="warning")
+            self.log(f"Graph retrieval failed: {e}", level="warning")
             return []
 
     # ─────────────────────────────────────────────
     # RRF FUSION
     # ─────────────────────────────────────────────
 
-    def _rrf_fusion(self, result_lists: List[List[Dict]]) -> List[Dict]:
+    def _rrf_fusion(self, result_lists: list[list[dict]]) -> list[dict]:
         """Reciprocal Rank Fusion — combine multiple ranked lists."""
-        rrf_scores = {}
-        table_data = {}
+        rrf_scores: dict[str, float] = {}
+        table_data: dict[str, dict] = {}
 
         for result_list in result_lists:
             for rank, table in enumerate(result_list, start=1):
                 table_id  = table["id"]
-                rrf_score = 1.0 / (RRF_K + rank)
+                rrf_score = 1.0 / (Config.RRF_K + rank)
                 rrf_scores[table_id] = rrf_scores.get(table_id, 0) + rrf_score
 
                 if table_id not in table_data or table.get("source") == "chromadb":
                     table_data[table_id] = table
 
-        sorted_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)
+        sorted_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)  # type: ignore[arg-type]
 
         result = []
         for table_id in sorted_ids:
@@ -310,37 +303,37 @@ class SchemaRetriever(BaseAgent):
     # HELPERS
     # ─────────────────────────────────────────────
 
-    def _to_retrieved_tables(self, tables: List[Dict]) -> List[RetrievedTable]:
-        result = []
-        for t in tables:
-            result.append(RetrievedTable(
+    def _to_retrieved_tables(self, tables: list[dict]) -> list[RetrievedTable]:
+        return [
+            RetrievedTable(
                 db_name=t.get("db_name", ""),
                 table_name=t.get("table_name", ""),
                 columns=t.get("columns", []),
                 description=t.get("description", ""),
                 similarity_score=t.get("rrf_score", t.get("score", 0.0)),
                 relationships=t.get("relationships", [])
-            ))
-        return result
+            )
+            for t in tables
+        ]
 
-    def _detect_database(self, tables: List[RetrievedTable]) -> str:
+    def _detect_database(self, tables: list[RetrievedTable]) -> str:
         if not tables:
             return "sales_db"
 
-        db_scores = {}
+        db_scores: dict[str, float] = {}
         for i, table in enumerate(tables[:5]):
             weight = 1.0 / (i + 1)
             db = table.db_name
             db_scores[db] = db_scores.get(db, 0) + (table.similarity_score * weight)
 
-        return max(db_scores, key=db_scores.get)
+        return max(db_scores, key=db_scores.get)  # type: ignore[arg-type]
 
-    def _parse_list(self, data, sep: str = ",") -> List[str]:
+    def _parse_list(self, data: list | str, sep: str = ",") -> list[str]:
         if isinstance(data, list):
             return data
         return [x.strip() for x in str(data).split(sep) if x.strip()]
 
-    def get_all_tables(self) -> List[str]:
+    def get_all_tables(self) -> list[str]:
         try:
             all_data = self.collection.get()
             return [

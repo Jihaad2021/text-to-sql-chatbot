@@ -19,12 +19,12 @@ Example:
 
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Any
 from datetime import datetime
+from typing import Any, Dict
 
 from src.models.agent_state import AgentState
-from src.utils.logger import setup_logger
 from src.utils.exceptions import AgentExecutionError
+from src.utils.logger import setup_logger
 
 
 class BaseAgent(ABC):
@@ -114,10 +114,10 @@ class BaseAgent(ABC):
             updated_state = self.execute(state)
 
             execution_time = time.perf_counter() - start_time
-            
+
             # ✅ simpan dalam DETIK (bukan ms)
             updated_state.add_timing(self.name, execution_time)
-            
+
             self._update_metrics(success=True, execution_time=execution_time)
 
             self.log(f"Completed in {execution_time:.6f}s")

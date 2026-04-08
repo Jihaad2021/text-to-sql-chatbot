@@ -9,8 +9,9 @@ Tests cover:
 - State input/output correctness
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from src.components.sql_generator import SQLGenerator
 from src.models.agent_state import AgentState

@@ -5,10 +5,14 @@ Web interface for querying databases using natural language.
 Database is auto-detected by the system — no manual selection needed.
 """
 
-import streamlit as st
-import requests
-import json
+import os
+
 import pandas as pd
+import requests
+import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ─────────────────────────────────────────────
 # CONFIG
@@ -19,7 +23,7 @@ st.set_page_config(
     layout="wide"
 )
 
-API_URL = "http://localhost:8000"
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # ─────────────────────────────────────────────
 # CSS
@@ -183,14 +187,14 @@ with st.sidebar:
 # ─────────────────────────────────────────────
 with st.form(key="query_form"):
     col_input, col_btn = st.columns([5, 1])
-    
+
     with col_input:
         user_question = st.text_input(
             "💬 Pertanyaan Anda:",
             placeholder="Contoh: Siapa 5 customer dengan total pembelian tertinggi?",
             label_visibility="collapsed"
         )
-    
+
     with col_btn:
         ask_button = st.form_submit_button("🚀 Tanya", type="primary", use_container_width=True)
 

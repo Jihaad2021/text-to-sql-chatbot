@@ -30,8 +30,6 @@ Example:
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
-from src.utils.exceptions import IntentClassificationError
-
 
 # Valid intent categories
 INTENT_CATEGORIES = {
@@ -40,7 +38,7 @@ INTENT_CATEGORIES = {
     "aggregation": "Requires COUNT, SUM, AVG, MIN, MAX",
     "multi_table_join": "Requires JOIN across multiple tables",
     "complex_analytics": "Advanced analytics with subqueries, trends, grouping",
-    "ambiguous": "Unclear query that needs clarification"
+    "ambiguous": "Unclear query that needs clarification",
 }
 
 # Strategy hint per category (passed to SQL Generator via state.intent)
@@ -50,7 +48,7 @@ INTENT_SQL_STRATEGY = {
     "aggregation": "Use aggregate functions (COUNT/SUM/AVG) with GROUP BY if needed",
     "multi_table_join": "Use JOIN across relevant tables",
     "complex_analytics": "Use subqueries, CTEs, or window functions if needed",
-    "ambiguous": "Cannot generate SQL - needs clarification"
+    "ambiguous": "Cannot generate SQL - needs clarification",
 }
 
 
@@ -64,7 +62,7 @@ class IntentClassifier(LLMBaseAgent):
     - SQL generation strategy hint for SQL Generator
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name="intent_classifier", version="1.0.0")
 
     def execute(self, state: AgentState) -> AgentState:
@@ -81,7 +79,6 @@ class IntentClassifier(LLMBaseAgent):
         response = self._call_llm(prompt, max_tokens=500, temperature=0)
         intent = self._parse_response(response)
 
-        # Write to state
         state.intent = intent
         state.needs_clarification = (
             intent["category"] == "ambiguous" or intent["confidence"] < 0.7
@@ -100,9 +97,8 @@ class IntentClassifier(LLMBaseAgent):
 
     def _build_prompt(self, query: str) -> str:
         """Build classification prompt."""
-
         categories_text = "\n".join([
-            f"{i+1}. {cat} - {desc}"
+            f"{i + 1}. {cat} - {desc}"
             for i, (cat, desc) in enumerate(INTENT_CATEGORIES.items())
         ])
 
@@ -126,9 +122,8 @@ Rules:
 
 Your response:"""
 
-    def _parse_response(self, response: str) -> dict:
-        """Parse Claude response into intent dict."""
-
+    def _parse_response(self, response: str) -> dict[str, str | float]:
+        """Parse LLM response into intent dict."""
         intent_str = "ambiguous"
         confidence = 0.0
         reason = ""
@@ -145,11 +140,9 @@ Your response:"""
             elif line.startswith("REASON:"):
                 reason = line.replace("REASON:", "").strip()
 
-        # Validate category
         if intent_str not in INTENT_CATEGORIES:
             intent_str = "ambiguous"
 
-        # Force ambiguous if low confidence
         if confidence < 0.7:
             intent_str = "ambiguous"
             reason = reason or f"Low confidence ({confidence:.2f})"
@@ -158,5 +151,5 @@ Your response:"""
             "category": intent_str,
             "confidence": confidence,
             "reason": reason,
-            "sql_strategy": INTENT_SQL_STRATEGY[intent_str]
+            "sql_strategy": INTENT_SQL_STRATEGY[intent_str],
         }

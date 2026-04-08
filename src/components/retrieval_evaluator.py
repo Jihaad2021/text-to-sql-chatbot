@@ -9,10 +9,10 @@ Inherits: LLMBaseAgent
 
 Reads from state:
     - state.query
-    - state.retrieved_tables (List[RetrievedTable])
+    - state.retrieved_tables (list[RetrievedTable])
 
 Writes to state:
-    - state.evaluated_tables (List[RetrievedTable]) - filtered relevant tables
+    - state.evaluated_tables (list[RetrievedTable]) - filtered relevant tables
 
 Example:
     >>> evaluator = RetrievalEvaluator()
@@ -23,12 +23,9 @@ Example:
     [customers]  # orders and products excluded as not needed
 """
 
-from typing import List, Tuple
-
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.models.retrieved_table import RetrievedTable
-from src.utils.exceptions import RetrievalEvaluationError
 
 
 class RetrievalEvaluator(LLMBaseAgent):
@@ -41,7 +38,7 @@ class RetrievalEvaluator(LLMBaseAgent):
     - EXCLUDED: Not relevant, should be removed
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name="retrieval_evaluator", version="1.0.0")
 
     def execute(self, state: AgentState) -> AgentState:
@@ -56,7 +53,6 @@ class RetrievalEvaluator(LLMBaseAgent):
         """
         retrieved = state.retrieved_tables
 
-        # Skip evaluation if 2 or fewer tables
         if len(retrieved) <= 2:
             state.evaluated_tables = retrieved
             self.log(f"Skipped evaluation, only {len(retrieved)} tables retrieved")
@@ -66,12 +62,18 @@ class RetrievalEvaluator(LLMBaseAgent):
         response = self._call_llm(prompt, max_tokens=1000, temperature=0)
         essential, optional, excluded = self._parse_response(response, retrieved)
 
-        # Use essential + optional as evaluated tables
         all_relevant = essential + optional
-        state.evaluated_tables = [
-            t for t in all_relevant
-            if t.db_name == state.database
-]
+        evaluated = [t for t in all_relevant if t.db_name == state.database]
+
+        if not evaluated:
+            # LLM was too conservative — fall back to all retrieved tables for this DB
+            self.log(
+                "Evaluation yielded 0 tables for database — falling back to all retrieved tables",
+                level="warning",
+            )
+            evaluated = [t for t in retrieved if t.db_name == state.database]
+
+        state.evaluated_tables = evaluated
 
         self.log(
             f"Evaluation complete: {len(essential)} essential, "
@@ -80,7 +82,7 @@ class RetrievalEvaluator(LLMBaseAgent):
 
         return state
 
-    def _build_prompt(self, query: str, tables: List[RetrievedTable]) -> str:
+    def _build_prompt(self, query: str, tables: list[RetrievedTable]) -> str:
         """Build evaluation prompt."""
         tables_info = ""
         for i, table in enumerate(tables, 1):
@@ -122,13 +124,15 @@ Your response:"""
     def _parse_response(
         self,
         response: str,
-        tables: List[RetrievedTable]
-    ) -> Tuple[List[RetrievedTable], List[RetrievedTable], List[RetrievedTable]]:
-        """Parse Claude response into essential, optional, excluded lists."""
+        tables: list[RetrievedTable],
+    ) -> tuple[list[RetrievedTable], list[RetrievedTable], list[RetrievedTable]]:
+        """Parse LLM response into essential, optional, excluded lists."""
         table_map = {table.full_name: table for table in tables}
 
-        essential, optional, excluded = [], [], []
-        current_category = None
+        essential: list[RetrievedTable] = []
+        optional: list[RetrievedTable] = []
+        excluded: list[RetrievedTable] = []
+        current_category: str | None = None
 
         for line in response.split("\n"):
             line = line.strip()
@@ -151,9 +155,8 @@ Your response:"""
                             excluded.append(table_obj)
                         break
 
-        # Fallback: if nothing parsed, mark all as essential
         if not essential and not optional and not excluded:
             self.log("Parse failed, using all tables as essential", level="warning")
-            essential = tables
+            essential = list(tables)
 
         return essential, optional, excluded

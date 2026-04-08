@@ -16,15 +16,15 @@ Run e2e tests:
 """
 
 import pytest
-from src.models.agent_state import AgentState
+
+from src.components.insight_generator import InsightGenerator
 from src.components.intent_classifier import IntentClassifier
-from src.components.schema_retriever import SchemaRetriever
+from src.components.query_executor import QueryExecutor
 from src.components.retrieval_evaluator import RetrievalEvaluator
+from src.components.schema_retriever import SchemaRetriever
 from src.components.sql_generator import SQLGenerator
 from src.components.sql_validator import SQLValidator
-from src.components.query_executor import QueryExecutor
-from src.components.insight_generator import InsightGenerator
-
+from src.models.agent_state import AgentState
 
 # ========================================
 # Real Agent Fixtures
@@ -118,7 +118,7 @@ def run_full_pipeline(agents: dict, query: str, database: str = "sales_db") -> A
         return state
 
     # Step 2: Retrieval
-    state = agents["retriever"].execute(state)
+    state = agents["retriever"].run(state)
 
     # Step 3: Evaluation
     state = agents["evaluator"].run(state)

@@ -9,10 +9,11 @@ Tests cover:
 - LLM call is mocked (no real API calls)
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from src.components.intent_classifier import IntentClassifier, INTENT_CATEGORIES
+import pytest
+
+from src.components.intent_classifier import INTENT_CATEGORIES, IntentClassifier
 from src.models.agent_state import AgentState
 
 

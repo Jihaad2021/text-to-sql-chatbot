@@ -11,8 +11,9 @@ Tests cover:
 - State input/output correctness
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from src.components.query_executor import QueryExecutor
 from src.models.agent_state import AgentState
@@ -191,3 +192,38 @@ class TestAgentState:
         metrics = executor.get_metrics()
         assert metrics["total_calls"] == 1
         assert metrics["successful_calls"] == 1
+
+
+# ========================================
+# Test: check_connectivity
+# ========================================
+
+class TestCheckConnectivity:
+
+    def test_returns_healthy_when_db_reachable(self, executor, mock_engine):
+        """check_connectivity should return 'healthy' for a reachable database."""
+        status = executor.check_connectivity()
+
+        assert "sales_db" in status
+        assert status["sales_db"] == "healthy"
+
+    def test_returns_error_string_when_db_unreachable(self, executor, mock_engine):
+        """check_connectivity should return 'error: ...' when SELECT 1 fails."""
+        conn = mock_engine.connect.return_value.__enter__.return_value
+        conn.execute.side_effect = Exception("connection refused")
+
+        status = executor.check_connectivity()
+
+        assert "sales_db" in status
+        assert status["sales_db"].startswith("error:")
+
+    def test_returns_dict_for_all_engines(self, executor):
+        """check_connectivity should return a status entry for every engine."""
+        status = executor.check_connectivity()
+        assert set(status.keys()) == set(executor.engines.keys())
+
+    def test_healthy_status_is_exactly_healthy(self, executor):
+        """The value for a healthy DB must be the string 'healthy' (used by /health)."""
+        status = executor.check_connectivity()
+        for db_name in executor.engines:
+            assert status[db_name] == "healthy"

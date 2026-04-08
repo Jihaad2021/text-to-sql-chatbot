@@ -9,7 +9,7 @@ Inherits: LLMBaseAgent
 
 Reads from state:
     - state.query
-    - state.evaluated_tables (List[RetrievedTable])
+    - state.evaluated_tables (list[RetrievedTable])
     - state.intent (dict: category, sql_strategy)
 
 Writes to state:
@@ -26,12 +26,12 @@ Example:
 """
 
 import re
-import yaml
-from typing import List
 
+import yaml
+
+from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
-from src.models.retrieved_table import RetrievedTable
 from src.utils.exceptions import SQLGenerationError
 
 
@@ -43,7 +43,7 @@ class SQLGenerator(LLMBaseAgent):
     Supports few-shot examples from YAML config.
     """
 
-    def __init__(self, examples_path: str = "config/few_shot_examples.yaml"):
+    def __init__(self, examples_path: str = Config.EXAMPLES_PATH) -> None:
         super().__init__(name="sql_generator", version="1.0.0")
         self.examples = self._load_examples(examples_path)
         self.log(f"Few-shot examples loaded: {len(self.examples)}")
@@ -75,7 +75,6 @@ class SQLGenerator(LLMBaseAgent):
             sql = self._call_llm(prompt, max_tokens=1000, temperature=0)
             sql = self._clean_sql(sql)
 
-            # Validate SQL starts with SELECT or WITH
             if sql and re.match(r'^(SELECT|WITH)\s+', sql, re.IGNORECASE):
                 state.sql = sql
                 self.log(f"SQL generated: {sql[:80]}...")
@@ -93,8 +92,6 @@ class SQLGenerator(LLMBaseAgent):
 
     def _build_prompt(self, state: AgentState) -> str:
         """Build SQL generation prompt using intent strategy and table schemas."""
-
-        # Intent strategy hint
         intent_hint = ""
         if state.intent:
             intent_hint = f"""
@@ -102,7 +99,6 @@ QUERY STRATEGY: {state.intent.get('sql_strategy', '')}
 QUERY TYPE: {state.intent.get('category', '')}
 """
 
-        # Table schemas
         schema_context = "AVAILABLE TABLES:\n\n"
         for table in state.evaluated_tables:
             schema_context += f"Table: {table.table_name} (in {table.db_name})\n"
@@ -114,7 +110,6 @@ QUERY TYPE: {state.intent.get('category', '')}
                     schema_context += f"  - {rel}\n"
             schema_context += "\n"
 
-        # Few-shot examples
         examples_context = "EXAMPLE QUERIES:\n\n"
         for i, example in enumerate(self.examples[:7], 1):
             examples_context += f"Example {i}:\n"
@@ -164,28 +159,26 @@ SQL:
 
     def _clean_sql(self, sql: str) -> str:
         """Remove markdown and extract only SQL from response."""
-        # Remove markdown
         sql = re.sub(r'```sql\s*', '', sql)
         sql = re.sub(r'```\s*', '', sql)
-        
-        # Jika ada teks sebelum SELECT/WITH, ambil dari sana
+
         match = re.search(r'(WITH\s+|SELECT\s+)', sql, re.IGNORECASE)
         if match:
             sql = sql[match.start():]
-        
+
         return sql.strip()
 
-    def _load_examples(self, path: str) -> list:
+    def _load_examples(self, path: str) -> list[dict]:
         """Load few-shot examples from YAML."""
         try:
-            with open(path, 'r') as f:
+            with open(path) as f:
                 config = yaml.safe_load(f)
                 return config.get('examples', [])
         except FileNotFoundError:
             self.log(f"Examples file not found: {path}, using defaults", level="warning")
             return self._default_examples()
 
-    def _default_examples(self) -> list:
+    def _default_examples(self) -> list[dict]:
         return [
             {
                 'question': 'Show all customers',
@@ -197,12 +190,14 @@ SQL:
             },
             {
                 'question': 'Top 5 customers by total spending',
-                'sql': '''SELECT c.customer_name, SUM(p.payment_value) as total_spent
-FROM customers c
-JOIN orders o ON c.customer_id = o.customer_id
-JOIN payments p ON o.order_id = p.order_id
-GROUP BY c.customer_name
-ORDER BY total_spent DESC
-LIMIT 5;'''
-            }
+                'sql': (
+                    'SELECT c.customer_name, SUM(p.payment_value) as total_spent\n'
+                    'FROM customers c\n'
+                    'JOIN orders o ON c.customer_id = o.customer_id\n'
+                    'JOIN payments p ON o.order_id = p.order_id\n'
+                    'GROUP BY c.customer_name\n'
+                    'ORDER BY total_spent DESC\n'
+                    'LIMIT 5;'
+                )
+            },
         ]
