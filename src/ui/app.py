@@ -299,7 +299,7 @@ if ask_button and user_question:
                     with tab3:
                         c1, c2, c3 = st.columns(3)
                         with c1:
-                            st.metric("⏱️ Waktu", f"{result['execution_time_ms']:.0f} ms")
+                            st.metric("⏱️ Waktu", f"{result['execution_time_ms'] / 1000:.2f} s")
                         with c2:
                             st.metric("🗄️ Database", detected_db)
                         with c3:
