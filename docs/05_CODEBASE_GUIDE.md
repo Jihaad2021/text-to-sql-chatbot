@@ -35,7 +35,6 @@ text-to-sql-chatbot/
 │
 ├── docs/                           # Dokumentasi
 │   ├── 01_DESIGN_RATIONALE.md      # Keputusan arsitektur
-│   ├── 02_IMPLEMENTATION_GUIDE.md  # Panduan implementasi
 │   ├── 03_TEST_STRATEGY.md         # Strategi testing
 │   ├── 04_QUICK_REFERENCE.md       # Referensi cepat
 │   └── 05_CODEBASE_GUIDE.md        # File ini
@@ -50,19 +49,21 @@ text-to-sql-chatbot/
 │   ├── components/                 # 7 Agent pipeline
 │   ├── core/                       # Fondasi arsitektur
 │   ├── models/                     # Data models
-│   ├── pipeline/                   # Schema pipeline
+│   ├── pipeline/                   # Schema pipeline (jalankan sekali)
 │   ├── ui/                         # Streamlit UI
 │   ├── utils/                      # Utilities
 │   └── main.py                     # FastAPI entry point
 │
-├── tests/                          # Test suite
-│   ├── unit/                       # Unit tests (mock)
-│   ├── integration/                # Integration tests (mock)
-│   └── e2e/                        # End-to-end tests (real API & DB)
+├── tests/                          # Test suite (155 tests)
+│   ├── unit/                       # 130 unit tests (mock)
+│   ├── integration/                # 9 integration tests (mock)
+│   └── e2e/                        # 25 end-to-end tests (real API & DB)
 │
-└── tools/                          # Developer utilities
-    ├── generate_sample_data.py     # Generate data dummy
-    └── setup_databases.py          # Setup/reset database
+├── .github/workflows/ci.yml        # CI/CD: test + lint di setiap push
+├── Dockerfile                      # Multi-stage build untuk API
+├── Dockerfile.ui                   # Multi-stage build untuk Streamlit
+├── docker-compose.yml              # API + UI dengan health checks
+└── ruff.toml                       # Konfigurasi linter
 ```
 
 ---
@@ -73,9 +74,11 @@ text-to-sql-chatbot/
 
 | File | Fungsi |
 |------|--------|
-| `base_agent.py` | Abstract base class untuk semua agent. Berisi `execute()`, `run()`, logging, dan metrics tracking. **Semua agent wajib inherit class ini.** |
-| `llm_base_agent.py` | Extend BaseAgent dengan Anthropic Claude client dan `_call_llm()`. **Hanya agent yang pakai LLM yang inherit class ini.** |
-| `config.py` | Centralized configuration. Semua konstanta (model, timeout, allowed tables, DB URLs) ada di sini. |
+| `pipeline.py` | **`TextToSQLPipeline`** — orchestrator yang mengelola semua 7 agent. `main.py` hanya punya satu `pipeline.run(state)`. Berisi juga `check_health()`, `get_all_tables()`, `close()`. |
+| `base_agent.py` | Abstract base class untuk semua agent. Berisi `execute()`, `run()` (dengan metrics + error wrapping), dan `log()`. **Semua agent wajib inherit class ini.** |
+| `llm_base_agent.py` | Extend BaseAgent dengan multi-LLM client (`_call_llm()`). Support Anthropic, OpenAI, Groq, Gemini — dikonfigurasi per-agent via `.env`. **Hanya agent yang pakai LLM yang inherit class ini.** |
+| `config.py` | Centralized configuration. **Semua** konstanta dan env vars ada di sini. Tidak ada `os.getenv()` di luar file ini. |
+| `startup.py` | Validasi environment saat startup. Fail fast jika API key atau DB URL tidak ada — sebelum agent diinisialisasi. |
 
 ### `src/models/` — Data Models
 
@@ -118,8 +121,8 @@ python -m src.pipeline.index_schemas
 
 | File | Fungsi |
 |------|--------|
-| `logger.py` | `setup_logger()` — fungsi untuk setup logger yang konsisten di semua agent. |
-| `exceptions.py` | Custom exceptions per komponen (`AgentExecutionError`, `SQLValidationError`, dll). |
+| `logger.py` | `setup_logger()` — structured logging. `LOG_FORMAT=text` untuk development, `LOG_FORMAT=json` untuk production (single-line JSON per log entry). |
+| `exceptions.py` | Custom exceptions per komponen (`AgentExecutionError`, `SQLValidationError`, `SQLGenerationError`, `SchemaRetrievalError`, dll). Selalu gunakan exception yang tepat — jangan `raise Exception(...)`. |
 
 ### `src/ui/app.py` — Streamlit UI
 
@@ -127,14 +130,19 @@ Interface web untuk user non-teknis. Terhubung ke FastAPI via HTTP.
 
 ### `src/main.py` — FastAPI Entry Point
 
-Orkestrasi pipeline. Menerima request dari user, menjalankan 7 agent secara berurutan, mengembalikan response.
+Menerima request dari user dan mendelegasikan ke `TextToSQLPipeline`. API layer tidak tahu urutan agent — itu urusan pipeline.
 
 **Endpoint utama:**
 ```
-POST /query  → jalankan full pipeline
-GET  /health → cek status semua agent
-GET  /databases → list database yang tersedia
+POST /query      → jalankan full pipeline via pipeline.run(state)
+GET  /health     → cek konektivitas real DB + ChromaDB
+GET  /databases  → list database yang tersedia
 ```
+
+**Fitur production:**
+- Rate limiting via slowapi (`RATE_LIMIT_PER_MINUTE` per IP)
+- CORS dari env var `ALLOWED_ORIGINS`
+- Setiap request log `request_id`, `database`, `intent`, `execution_time_ms`, `success`
 
 ---
 
@@ -153,8 +161,8 @@ AgentState(query="berapa total customer?")
     │
     ▼ (jika needs_clarification → stop, return ke user)
     │
-[2] SchemaRetriever.execute(state)
-    → state.retrieved_tables = [customers, orders, ...]
+[2] SchemaRetriever.run(state)
+    → state.retrieved_tables = [customers, orders, ...]  ← hybrid: ChromaDB+BM25+Graph+RRF
     → state.database = "sales_db"
     │
     ▼
@@ -384,8 +392,10 @@ pytest tests/e2e/ -v -s
 □ Sudah baca docstring di agent yang diubah
 □ Input dari state tidak berubah
 □ Output ke state tidak berubah
-□ Unit test masih passing
-□ Tidak ada hardcoded credentials
+□ Unit test masih passing: pytest tests/unit/ tests/integration/ -v
+□ Lint bersih: ruff check src/ tests/
+□ Tidak ada hardcoded credentials atau magic numbers
+□ Config values dibaca dari Config class, bukan os.getenv() langsung
 ```
 
 ---
@@ -413,11 +423,38 @@ sellers.seller_id   ←── order_items.seller_id
 
 ## 9. Environment Variables (.env)
 
-```
-ANTHROPIC_API_KEY=    # Untuk semua LLM agents
-OPENAI_API_KEY=       # Untuk ChromaDB embeddings
+```bash
+# LLM — minimal satu wajib ada
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...          # wajib untuk ChromaDB embeddings
 
-SALES_DB_URL=postgresql://user@localhost:5432/ecommerce_sales
-PRODUCTS_DB_URL=postgresql://user@localhost:5432/ecommerce_products
-ANALYTICS_DB_URL=postgresql://user@localhost:5432/ecommerce_analytics
+# LLM selection
+DEFAULT_LLM=openai             # anthropic | openai | groq | gemini
+DEFAULT_MODEL=gpt-4o
+
+# Per-agent override (opsional)
+INTENT_CLASSIFIER_LLM=groq
+INTENT_CLASSIFIER_MODEL=llama3-8b-8192
+SQL_GENERATOR_LLM=anthropic
+SQL_GENERATOR_MODEL=claude-sonnet-4-20250514
+
+# Database URLs — minimal satu wajib ada
+SALES_DB_URL=postgresql://user:pass@localhost:5432/ecommerce_sales
+PRODUCTS_DB_URL=postgresql://user:pass@localhost:5432/ecommerce_products
+ANALYTICS_DB_URL=postgresql://user:pass@localhost:5432/ecommerce_analytics
+
+# API
+ALLOWED_ORIGINS=http://localhost:8501
+RATE_LIMIT_PER_MINUTE=30
+LOG_FORMAT=text                # text (dev) | json (production)
+
+# Retrieval
+TOP_K_RETRIEVAL=5
+RRF_K=60
+
+# Query execution
+QUERY_TIMEOUT_SECONDS=30
+QUERY_MAX_ROWS=10000
 ```
+
+Lihat `.env.example` untuk daftar lengkap semua variabel yang didukung.

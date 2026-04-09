@@ -26,51 +26,52 @@
 
 ## 1. Quick Start
 
-### 1.1 First Time Setup (30 minutes)
+### 1.1 Option A — Docker Compose (Recommended)
 ```bash
-# 1. Clone/Create project
-git clone <repo> && cd text-to-sql-chatbot
-# OR
-mkdir text-to-sql-chatbot && cd text-to-sql-chatbot
+git clone https://github.com/Jihaad2021/text-to-sql-chatbot.git
+cd text-to-sql-chatbot
+cp .env.example .env
+# Edit .env — add API keys and DB URLs
 
-# 2. Create virtual environment
+docker-compose up -d
+```
+
+**Access:**
+- UI: http://localhost:8501
+- API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
+
+### 1.2 Option B — Local Development
+```bash
+# 1. Clone and install
+git clone https://github.com/Jihaad2021/text-to-sql-chatbot.git
+cd text-to-sql-chatbot
 python3.11 -m venv venv
 source venv/bin/activate  # Mac/Linux
-# venv\Scripts\activate   # Windows
-
-# 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Setup environment variables
+# 2. Configure
 cp .env.example .env
-nano .env  # Add API keys
+# Edit .env — set API keys and DB URLs
 
-# 5. Start PostgreSQL
-brew services start postgresql@14  # Mac
-# sudo systemctl start postgresql  # Linux
+# 3. Create PostgreSQL databases
+psql postgres -c "CREATE DATABASE ecommerce_sales;"
+psql postgres -c "CREATE DATABASE ecommerce_products;"
+psql postgres -c "CREATE DATABASE ecommerce_analytics;"
 
-# 6. Create databases
-psql postgres
-CREATE DATABASE ecommerce_sales;
-CREATE DATABASE ecommerce_products;
-CREATE DATABASE ecommerce_analytics;
-\q
+# 4. Index schemas (run once, or after schema changes)
+python -m src.pipeline.pg_metadata_extractor
+python -m src.pipeline.enrich_metadata
+python -m src.pipeline.index_schemas
+python -m src.pipeline.build_bm25_index
+python -m src.pipeline.build_graph
 
-# 7. Load data
-python scripts/setup_databases.py
+# 5. Run tests
+pytest tests/unit/ tests/integration/ -v
 
-# 8. Index schemas
-python scripts/index_schemas.py
-
-# 9. Run tests
-python scripts/run_tests.py
-
-# 10. Start services
-# Terminal 1: API
-uvicorn src.main:app --reload --port 8000
-
-# Terminal 2: UI
-streamlit run src/ui/app.py
+# 6. Start services
+uvicorn src.main:app --reload --port 8000   # Terminal 1
+streamlit run src/ui/app.py                  # Terminal 2
 ```
 
 **Access:**
@@ -80,7 +81,7 @@ streamlit run src/ui/app.py
 
 ---
 
-### 1.2 Daily Development Workflow
+### 1.3 Daily Development Workflow
 ```bash
 # Activate environment
 source venv/bin/activate
@@ -92,7 +93,10 @@ uvicorn src.main:app --reload
 streamlit run src/ui/app.py
 
 # Run tests after changes
-python scripts/run_tests.py
+pytest tests/unit/ tests/integration/ -v
+
+# Lint check
+ruff check src/ tests/
 
 # Check logs
 tail -f logs/app.log
@@ -180,32 +184,46 @@ tail -f logs/app.log
 
 ### 2.4 Testing Commands
 ```bash
-# Run all tests
-python scripts/run_tests.py
+# Run all 155 tests
+pytest tests/ -v
 
-# Run unit tests only
-pytest tests/test_components.py -v
+# By layer
+pytest tests/unit/ -v               # 130 tests — no API/DB needed
+pytest tests/integration/ -v        # 9 tests  — no API/DB needed
+pytest tests/e2e/ -v -s             # 25 tests — requires real API + DB
 
-# Run integration tests
-pytest tests/test_integration.py -v
+# Specific test file or class
+pytest tests/unit/test_sql_validator.py -v
+pytest tests/unit/test_sql_validator.py::TestSecurityValidation -v
 
-# Run specific test
-pytest tests/test_components.py::test_intent_classifier -v
-
-# Run with coverage
-pytest --cov=src tests/
-
-# Generate coverage report
-pytest --cov=src --cov-report=html tests/
+# With coverage
+pytest --cov=src tests/unit/ tests/integration/
+pytest --cov=src --cov-report=html tests/unit/ tests/integration/
 open htmlcov/index.html
 ```
 
 ---
 
-### 2.5 ChromaDB Commands
+### 2.5 Linting Commands
+```bash
+# Check for lint errors
+ruff check src/ tests/
+
+# Auto-fix fixable issues
+ruff check --fix src/ tests/
+
+# Check single file
+ruff check src/components/sql_generator.py
+```
+
+---
+
+### 2.6 ChromaDB & Indexing Commands
 ```bash
 # Re-index schemas (if schemas change)
-python scripts/index_schemas.py
+python -m src.pipeline.index_schemas
+python -m src.pipeline.build_bm25_index
+python -m src.pipeline.build_graph
 
 # Check ChromaDB collection
 python -c "
@@ -235,54 +253,55 @@ print(results['ids'])
 ```
 text-to-sql-chatbot/
 │
-├── src/                          # Source code
-│   ├── main.py                   # FastAPI app (START HERE for API)
-│   ├── config.py                 # Config loader
+├── src/
+│   ├── main.py                       # FastAPI app (START HERE for API)
 │   │
-│   ├── components/               # 7 Pipeline components
-│   │   ├── intent_classifier.py      # Component 1
-│   │   ├── schema_retriever.py       # Component 2
-│   │   ├── retrieval_evaluator.py    # Component 3
-│   │   ├── sql_generator.py          # Component 4
-│   │   ├── sql_validator.py          # Component 5
-│   │   ├── query_executor.py         # Component 6
-│   │   └── insight_generator.py      # Component 7
+│   ├── components/                   # 7 Pipeline agents
+│   │   ├── intent_classifier.py      # Agent 1
+│   │   ├── schema_retriever.py       # Agent 2: ChromaDB + BM25 + Graph
+│   │   ├── retrieval_evaluator.py    # Agent 3
+│   │   ├── sql_generator.py          # Agent 4
+│   │   ├── sql_validator.py          # Agent 5
+│   │   ├── query_executor.py         # Agent 6
+│   │   └── insight_generator.py      # Agent 7
 │   │
-│   ├── models/                   # Pydantic models
-│   │   ├── query_models.py
-│   │   └── response_models.py
+│   ├── core/
+│   │   ├── pipeline.py               # TextToSQLPipeline orchestrator
+│   │   ├── base_agent.py             # Abstract base for all agents
+│   │   ├── llm_base_agent.py         # Multi-LLM base (Anthropic/OpenAI/Groq/Gemini)
+│   │   ├── config.py                 # Centralized config (all env vars)
+│   │   └── startup.py                # Environment validation at startup
 │   │
-│   └── ui/                       # Streamlit UI
-│       └── app.py                # START HERE for UI
+│   ├── models/
+│   │   ├── agent_state.py            # Shared pipeline state
+│   │   └── retrieved_table.py        # Table schema model
+│   │
+│   ├── pipeline/                     # Schema indexing scripts (run once)
+│   │   ├── pg_metadata_extractor.py
+│   │   ├── enrich_metadata.py
+│   │   ├── index_schemas.py
+│   │   ├── build_bm25_index.py
+│   │   └── build_graph.py
+│   │
+│   └── ui/
+│       └── app.py                    # Streamlit UI (START HERE for UI)
 │
-├── scripts/                      # Setup scripts
-│   ├── setup_databases.py        # Load data into DBs
-│   ├── index_schemas.py          # Create ChromaDB index
-│   └── run_tests.py              # Test runner
+├── tests/
+│   ├── unit/                         # 130 tests — no API/DB needed
+│   ├── integration/                  # 9 tests  — no API/DB needed
+│   └── e2e/                          # 25 tests — requires real API + DB
 │
-├── tests/                        # Test files
-│   ├── test_components.py        # Unit tests
-│   ├── test_integration.py       # E2E tests
-│   └── test_queries.json         # 20 test queries
+├── config/
+│   └── few_shot_examples.yaml        # SQL examples for prompting
 │
-├── config/                       # Configuration
-│   ├── config.yaml               # Main config
-│   ├── few_shot_examples.yaml   # SQL examples
-│   └── databases.yaml            # DB connections
-│
-├── data/                         # Data files
-│   ├── raw/                      # Olist CSVs
-│   └── schemas/                  # Schema descriptions
-│
-├── docs/                         # Documentation
-│   ├── 01_DESIGN_RATIONALE.md
-│   ├── 02_IMPLEMENTATION_GUIDE.md
-│   ├── 03_TEST_STRATEGY.md
-│   └── 04_QUICK_REFERENCE.md     # This file
-│
-├── .env                          # Environment variables (DON'T COMMIT!)
-├── requirements.txt              # Python dependencies
-└── README.md                     # Project overview
+├── .github/workflows/ci.yml          # CI: test + lint on push
+├── Dockerfile                        # Multi-stage build for API
+├── Dockerfile.ui                     # Multi-stage build for UI
+├── docker-compose.yml                # API + UI with health checks
+├── ruff.toml                         # Linter config
+├── .env                              # Environment variables (DON'T COMMIT!)
+├── requirements.txt                  # Python dependencies
+└── README.md                         # Project overview
 ```
 
 ---
@@ -291,48 +310,50 @@ text-to-sql-chatbot/
 
 ### 4.1 Environment Variables (.env)
 ```bash
-# Required
+# LLM — at least one required
 ANTHROPIC_API_KEY=sk-ant-xxxxx
-OPENAI_API_KEY=sk-xxxxx
+OPENAI_API_KEY=sk-xxxxx        # also required for ChromaDB embeddings
+GROQ_API_KEY=gsk_xxxxx
+GEMINI_API_KEY=AIza-xxxxx
 
-# Database URLs
-SALES_DB_URL=postgresql://localhost:5432/ecommerce_sales
-PRODUCTS_DB_URL=postgresql://localhost:5432/ecommerce_products
-ANALYTICS_DB_URL=postgresql://localhost:5432/ecommerce_analytics
+# LLM selection (default for all agents)
+DEFAULT_LLM=openai             # anthropic | openai | groq | gemini
+DEFAULT_MODEL=gpt-4o
 
-# Optional
-DEBUG=true
-LOG_LEVEL=INFO
+# Per-agent override (optional)
+INTENT_CLASSIFIER_LLM=groq
+INTENT_CLASSIFIER_MODEL=llama3-8b-8192
+SQL_GENERATOR_LLM=anthropic
+SQL_GENERATOR_MODEL=claude-sonnet-4-20250514
+
+# Database URLs — at least one required
+SALES_DB_URL=postgresql://user:pass@localhost:5432/ecommerce_sales
+PRODUCTS_DB_URL=postgresql://user:pass@localhost:5432/ecommerce_products
+ANALYTICS_DB_URL=postgresql://user:pass@localhost:5432/ecommerce_analytics
+
+# API
+ALLOWED_ORIGINS=http://localhost:8501
+RATE_LIMIT_PER_MINUTE=30
+LOG_FORMAT=text                # text | json
+
+# Retrieval
+TOP_K_RETRIEVAL=5
+RRF_K=60
+
+# Query execution
+QUERY_TIMEOUT_SECONDS=30
+QUERY_MAX_ROWS=10000
+DB_POOL_SIZE=5
+DB_MAX_OVERFLOW=10
 ```
 
----
+### 4.2 All config values come from `src/core/config.py`
+Never hardcode values in component files. Always read from `Config`:
+```python
+from src.core.config import Config
 
-### 4.2 Main Config (config/config.yaml)
-```yaml
-llm:
-  model: claude-sonnet-4-20250514
-  temperature: 0              # Deterministic
-  max_tokens: 1000
-
-embeddings:
-  model: text-embedding-3-small
-
-vector_db:
-  persist_directory: ./chroma_db
-  collection_name: table_schemas
-
-validation:
-  sql_timeout_seconds: 30
-  max_result_rows: 10000
-  max_retry_attempts: 2
-
-api:
-  host: 0.0.0.0
-  port: 8000
-
-logging:
-  level: INFO
-  format: json
+timeout = Config.TIMEOUT_SECONDS   # ✅
+timeout = 30                       # ❌ hardcoded
 ```
 
 ---
