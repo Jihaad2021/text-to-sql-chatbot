@@ -3,23 +3,24 @@
 AI-powered chatbot for multi-database analytics using natural language. Convert questions in Indonesian or English into SQL queries with intelligent validation and beautiful insights.
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109.0-009688.svg)](https://fastapi.tiangolo.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688.svg)](https://fastapi.tiangolo.com/)
+[![CI](https://github.com/Jihaad2021/text-to-sql-chatbot/actions/workflows/ci.yml/badge.svg)](https://github.com/Jihaad2021/text-to-sql-chatbot/actions)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
 
 ---
 
 ## ✨ Features
 
-- 🗣️ **Natural Language Queries** - Ask in Indonesian or English
-- 🤖 **AI-Powered SQL Generation** - Claude Sonnet 4 with 90%+ accuracy
-- 🛡️ **Security First** - SQL injection prevention (100% blocked)
-- 🔍 **Semantic Search** - RAG-based table retrieval with ChromaDB
-- ✅ **Smart Validation** - 4-layer hybrid validation (syntax, security, tables, logic)
-- 💡 **Beautiful Insights** - Natural language explanations with formatted numbers
-- 🎯 **Intent Detection** - Catches ambiguous queries before processing
-- 📊 **Multi-Database** - Works across 3 separate PostgreSQL databases
-- 🚀 **Fast** - ~4-6 second average response time
-- 💰 **Cost-Efficient** - ~$0.024 per query
+- 🗣️ **Natural Language Queries** — Ask in Indonesian or English
+- 🤖 **Multi-LLM Support** — Anthropic Claude, OpenAI GPT, Groq, Google Gemini; configurable per-agent
+- 🔍 **Hybrid Retrieval** — ChromaDB (semantic) + BM25 (keyword) + Graph (relationship) with RRF fusion
+- 🛡️ **Security First** — SQL injection prevention, read-only enforcement, CORS from env var
+- ✅ **Smart Validation** — 4-layer hybrid validation (syntax, security, table whitelist, logic)
+- 💡 **Natural Language Insights** — Conversational Indonesian explanations with formatted numbers
+- 🎯 **Intent Detection** — Catches ambiguous queries before processing
+- 📊 **Multi-Database** — Works across 3 separate PostgreSQL databases
+- 🚀 **Production Ready** — Rate limiting, connection pooling, structured JSON logging, startup validation
+- 🐳 **Docker Compose** — One command to run API + UI
 
 ---
 
@@ -36,8 +37,6 @@ User: "Top 5 customers by spending"
 → Result: Beautiful table + insights in Indonesian
 ```
 
-**Try it yourself:** [Screenshots in docs/]
-
 ---
 
 ## 📋 Table of Contents
@@ -45,16 +44,13 @@ User: "Top 5 customers by spending"
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
-- [Documentation](#documentation)
 - [Tech Stack](#tech-stack)
+- [Configuration](#configuration)
 - [Capabilities](#capabilities)
 - [Performance](#performance)
-- [Development](#development)
 - [Testing](#testing)
 - [Deployment](#deployment)
 - [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
 
 ---
 
@@ -64,67 +60,59 @@ User: "Top 5 customers by spending"
 
 - Python 3.11+
 - PostgreSQL 14+
-- 8GB RAM minimum
-- ~10GB disk space
+- At least one LLM API key (Anthropic, OpenAI, Groq, or Gemini)
+- OpenAI API key (for ChromaDB embeddings)
 
-### Installation
+### Option A — Docker Compose (Recommended)
+
 ```bash
-# 1. Clone repository
-git clone https://github.com/YOUR_USERNAME/text-to-sql-chatbot.git
+# 1. Clone and configure
+git clone https://github.com/Jihaad2021/text-to-sql-chatbot.git
 cd text-to-sql-chatbot
+cp .env.example .env
+# Edit .env with your API keys and DB URLs
 
-# 2. Create virtual environment
+# 2. Run everything
+docker-compose up -d
+
+# Access:
+# Web UI  → http://localhost:8501
+# API     → http://localhost:8000
+# API Docs→ http://localhost:8000/docs
+```
+
+### Option B — Local Development
+
+```bash
+# 1. Clone and install
+git clone https://github.com/Jihaad2021/text-to-sql-chatbot.git
+cd text-to-sql-chatbot
 python3.11 -m venv venv
-source venv/bin/activate  # Mac/Linux
-# venv\Scripts\activate   # Windows
-
-# 3. Install dependencies
+source venv/bin/activate       # Mac/Linux
+# venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 
-# 4. Configure environment variables
+# 2. Configure
 cp .env.example .env
-# Edit .env and add your API keys:
-# - ANTHROPIC_API_KEY (get from https://console.anthropic.com/)
-# - OPENAI_API_KEY (get from https://platform.openai.com/)
+# Edit .env — set API keys and DB connection URLs
 
-# 5. Setup PostgreSQL databases
-# Make sure PostgreSQL is running
-brew services start postgresql@14  # Mac
-# sudo systemctl start postgresql  # Linux
-
-# Create databases
+# 3. Setup PostgreSQL
 psql postgres << EOF
 CREATE DATABASE ecommerce_sales;
 CREATE DATABASE ecommerce_products;
 CREATE DATABASE ecommerce_analytics;
 EOF
 
-# 6. Generate sample data and load to databases
-python scripts/generate_sample_data.py
-python scripts/setup_databases.py
+# 4. Index schemas for semantic search
+python -m src.pipeline.index_schemas
+python -m src.pipeline.build_bm25_index
+python -m src.pipeline.build_graph
 
-# 7. Index schemas for semantic search
-python scripts/index_schemas.py
-
-# 8. Test installation
-python scripts/run_tests.py
-```
-
-### Running the Application
-
-**You need 2 terminals running simultaneously:**
-
-**Terminal 1: API Server (Backend)**
-```bash
-cd text-to-sql-chatbot
-source venv/bin/activate
+# 5. Run
+# Terminal 1: API
 uvicorn src.main:app --reload --port 8000
-```
 
-**Terminal 2: Streamlit UI (Frontend)**
-```bash
-cd text-to-sql-chatbot
-source venv/bin/activate
+# Terminal 2: UI
 streamlit run src/ui/app.py
 ```
 
@@ -137,208 +125,220 @@ streamlit run src/ui/app.py
 
 ## 🏗️ Architecture
 
-### System Overview
+### Pipeline Flow
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    USER QUERY                           │
-│              "Berapa revenue bulan ini?"                │
-└────────────────────┬────────────────────────────────────┘
+Query
+  │
+  ▼
+┌─────────────────────────────────────────┐
+│ 1. IntentClassifier                     │
+│    Detect: aggregation (conf: 0.95)     │
+│    Early stop if ambiguous              │
+└────────────────────┬────────────────────┘
                      │
                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Component 1: Intent Classifier (Claude Sonnet 4)       │
-│  → Detect: aggregation (confidence: 0.95)               │
-└────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ 2. SchemaRetriever                      │
+│    Hybrid: ChromaDB + BM25 + Graph      │
+│    Fused with Reciprocal Rank Fusion    │
+└────────────────────┬────────────────────┘
                      │
                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Component 2: Schema Retriever (ChromaDB RAG)           │
-│  → Retrieved: customers, orders, payments               │
-└────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ 3. RetrievalEvaluator                   │
+│    Filter: essential / optional tables  │
+└────────────────────┬────────────────────┘
                      │
                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Component 3: Retrieval Evaluator (Claude Sonnet 4)     │
-│  → Essential: orders, payments                          │
-└────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ 4. SQLGenerator                         │
+│    NL → SQL with few-shot examples      │
+└────────────────────┬────────────────────┘
                      │
                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Component 4: SQL Generator (Claude Sonnet 4)           │
-│  → SQL: SELECT SUM(payment_value)...                    │
-└────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ 5. SQLValidator                         │
+│    Syntax + Security + Whitelist + Logic│
+└────────────────────┬────────────────────┘
                      │
                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Component 5: SQL Validator (Hybrid)                    │
-│  → Validated: ✓ Safe, ✓ Syntax OK                      │
-└────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ 6. QueryExecutor                        │
+│    Safe execution with timeout & limit  │
+└────────────────────┬────────────────────┘
                      │
                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Component 6: Query Executor (PostgreSQL)               │
-│  → Executed: 1 row returned                             │
-└────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ 7. InsightGenerator                     │
+│    Natural language answer in Indonesian│
+└────────────────────┬────────────────────┘
                      │
                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Component 7: Insight Generator (Claude Sonnet 4)       │
-│  → "Total revenue bulan ini: Rp 1,3 miliar"            │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│                  FORMATTED RESPONSE                     │
-│              + SQL + Data + Insights                    │
-└─────────────────────────────────────────────────────────┘
+             Formatted Response
+          (SQL + Data + Insights)
 ```
+
+All 7 agents are orchestrated by `TextToSQLPipeline` (`src/core/pipeline.py`), which is separate from the API layer.
 
 ### Design Philosophy
 
 **Hybrid Approach:** Combines AI (intelligence) with Traditional (reliability)
 
-- **Agentic Components (4/7):** Intent, Evaluation, Generation, Insights
-- **Traditional Components (2/7):** Schema Retrieval, Query Execution  
-- **Hybrid Components (1/7):** SQL Validation
+- **LLM Agents (4/7):** IntentClassifier, RetrievalEvaluator, SQLGenerator, InsightGenerator
+- **Traditional (2/7):** SchemaRetriever, QueryExecutor
+- **Hybrid (1/7):** SQLValidator (rule-based + optional AI auto-fix)
 
-**Why Hybrid?**
-- ✅ AI for tasks requiring intelligence and context understanding
-- ✅ Traditional for tasks requiring speed, determinism, and 100% reliability
-- ✅ Best of both worlds: Smart + Fast + Reliable
+### Multi-LLM Support
+
+Each agent can use a different LLM provider, configured via `.env`:
+
+```env
+# Default for all agents
+DEFAULT_LLM=openai
+DEFAULT_MODEL=gpt-4o
+
+# Per-agent override (optional)
+INTENT_CLASSIFIER_LLM=groq
+INTENT_CLASSIFIER_MODEL=llama3-8b-8192
+SQL_GENERATOR_LLM=anthropic
+SQL_GENERATOR_MODEL=claude-sonnet-4-20250514
+```
+
+Supported providers: `anthropic`, `openai`, `groq`, `gemini`
 
 ---
 
 ## 📁 Project Structure
+
 ```
 text-to-sql-chatbot/
 │
-├── src/                           # Source code
-│   ├── main.py                    # FastAPI application (API entry point)
-│   ├── config.py                  # Configuration loader
+├── src/
+│   ├── main.py                        # FastAPI app + lifespan + routes
 │   │
-│   ├── components/                # 7 Pipeline components
-│   │   ├── intent_classifier.py       # Component 1: Intent classification
-│   │   ├── schema_retriever.py        # Component 2: Semantic table search
-│   │   ├── retrieval_evaluator.py     # Component 3: Filter relevant tables
-│   │   ├── sql_generator.py           # Component 4: NL → SQL generation
-│   │   ├── sql_validator.py           # Component 5: 4-layer validation
-│   │   ├── query_executor.py          # Component 6: Safe SQL execution
-│   │   └── insight_generator.py       # Component 7: Format insights
+│   ├── components/                    # 7 pipeline agents
+│   │   ├── intent_classifier.py       # Agent 1: intent + ambiguity detection
+│   │   ├── schema_retriever.py        # Agent 2: hybrid retrieval (ChromaDB+BM25+Graph)
+│   │   ├── retrieval_evaluator.py     # Agent 3: filter essential/optional tables
+│   │   ├── sql_generator.py           # Agent 4: NL → SQL
+│   │   ├── sql_validator.py           # Agent 5: 4-layer validation
+│   │   ├── query_executor.py          # Agent 6: safe SQL execution
+│   │   └── insight_generator.py       # Agent 7: natural language insights
 │   │
-│   ├── models/                    # Pydantic data models
-│   │   ├── query_models.py
-│   │   └── response_models.py
+│   ├── core/
+│   │   ├── pipeline.py                # TextToSQLPipeline orchestrator
+│   │   ├── base_agent.py              # BaseAgent (metrics, error wrapping)
+│   │   ├── llm_base_agent.py          # LLMBaseAgent (multi-provider LLM calls)
+│   │   ├── config.py                  # Centralized config (all env vars)
+│   │   └── startup.py                 # Environment validation at startup
 │   │
-│   ├── utils/                     # Utility functions
-│   │   ├── logger.py
-│   │   └── helpers.py
+│   ├── models/
+│   │   ├── agent_state.py             # Shared pipeline state (AgentState)
+│   │   └── retrieved_table.py         # Table schema model
 │   │
-│   └── ui/                        # Streamlit web interface
-│       └── app.py
+│   ├── pipeline/                      # Indexing scripts
+│   │   ├── index_schemas.py           # Index table schemas to ChromaDB
+│   │   ├── build_bm25_index.py        # Build BM25 keyword index
+│   │   ├── build_graph.py             # Build schema relationship graph
+│   │   ├── pg_metadata_extractor.py   # Extract metadata from PostgreSQL
+│   │   └── enrich_metadata.py         # Enrich schema descriptions with LLM
+│   │
+│   ├── utils/
+│   │   ├── exceptions.py              # Domain-specific exceptions
+│   │   └── logger.py                  # Structured logging (text/JSON)
+│   │
+│   └── ui/
+│       └── app.py                     # Streamlit web interface
 │
-├── scripts/                       # Setup & utility scripts
-│   ├── generate_sample_data.py        # Generate sample e-commerce data
-│   ├── setup_databases.py             # Load data to PostgreSQL
-│   ├── index_schemas.py               # Index schemas to ChromaDB
-│   └── run_tests.py                   # Run test suite
+├── tests/
+│   ├── unit/                          # Unit tests per component (130 tests)
+│   ├── integration/                   # Pipeline integration tests (9 tests)
+│   └── e2e/                           # End-to-end tests with real API+DB (25 tests)
 │
-├── tests/                         # Test suite
-│   ├── test_components.py             # Unit tests for each component
-│   ├── test_integration.py            # Integration tests
-│   └── test_queries.json              # 20 test queries with expected results
+├── config/
+│   └── few_shot_examples.yaml         # SQL examples for prompting
 │
-├── config/                        # Configuration files
-│   ├── config.yaml                    # Main application config
-│   ├── databases.yaml                 # Database connections
-│   ├── few_shot_examples.yaml         # SQL examples for prompting
-│   └── business_metrics.yaml          # Business metric definitions
+├── data/
+│   ├── bm25_index.pkl                 # BM25 index (generated)
+│   └── schema_graph.json              # Schema graph (generated)
 │
-├── data/                          # Data storage
-│   ├── raw/                           # CSV files (generated)
-│   ├── processed/                     # Processed data
-│   └── schemas/                       # Schema descriptions
-│       └── schema_descriptions.yaml       # Rich schema metadata for RAG
+├── chroma_db/                         # ChromaDB vector storage (generated)
 │
-├── docs/                          # Documentation
-│   ├── 01_DESIGN_RATIONALE.md         # Why hybrid? Design decisions
-│   ├── 02_IMPLEMENTATION_GUIDE.md     # How to build step-by-step
-│   ├── 03_TEST_STRATEGY.md            # Testing framework & results
-│   └── 04_QUICK_REFERENCE.md          # Developer cheat sheet
-│
-├── chroma_db/                     # ChromaDB vector storage (generated)
-├── logs/                          # Application logs
-│
-├── .env                           # Environment variables (create from .env.example)
-├── .env.example                   # Environment template
-├── .gitignore                     # Git ignore rules
-├── requirements.txt               # Python dependencies
-├── README.md                      # This file
-└── LICENSE                        # License information
+├── .github/workflows/ci.yml           # CI: test + lint on every push
+├── Dockerfile                         # Multi-stage build for API
+├── Dockerfile.ui                      # Multi-stage build for Streamlit UI
+├── docker-compose.yml                 # API + UI with health checks
+├── ruff.toml                          # Linter config (Python 3.11+)
+├── CLAUDE.md                          # Coding standards for AI-assisted dev
+├── .env.example                       # Environment template
+└── requirements.txt                   # Python dependencies
 ```
-
----
-
-## 📚 Documentation
-
-Comprehensive documentation available in `docs/`:
-
-1. **[Design Rationale](docs/01_DESIGN_RATIONALE.md)** (7,500 words)
-   - Why hybrid architecture?
-   - Problem-solution mapping
-   - Risk analysis & mitigation
-   - Trade-off analysis
-
-2. **[Implementation Guide](docs/02_IMPLEMENTATION_GUIDE.md)** (12,000 words)
-   - Step-by-step setup
-   - Component specifications
-   - Code structure
-   - Configuration guide
-
-3. **[Test Strategy](docs/03_TEST_STRATEGY.md)** (10,000 words)
-   - 20 test queries
-   - Evaluation metrics
-   - Ablation study
-   - Acceptance criteria
-
-4. **[Quick Reference](docs/04_QUICK_REFERENCE.md)** (8,000 words)
-   - Common commands
-   - API reference
-   - Troubleshooting guide
-   - Code snippets
-
-**Total: ~37,500 words of documentation**
 
 ---
 
 ## 🛠️ Tech Stack
 
-### Core Technologies
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **LLM** | Anthropic / OpenAI / Groq / Gemini | SQL generation, intent, insights |
+| **Embeddings** | OpenAI text-embedding-3-small | Semantic search for schemas |
+| **Vector DB** | ChromaDB | Store & search table embeddings |
+| **Keyword Search** | BM25 (rank_bm25) | Keyword-based table retrieval |
+| **Graph Search** | NetworkX | Relationship-aware retrieval |
+| **Retrieval Fusion** | RRF (Reciprocal Rank Fusion) | Combine ChromaDB + BM25 + Graph |
+| **Database** | PostgreSQL 14+ | Data storage (3 databases) |
+| **API** | FastAPI | RESTful backend |
+| **UI** | Streamlit | Web interface |
+| **ORM** | SQLAlchemy 2.0 | Connection pooling + query execution |
+| **SQL Parser** | sqlparse | Syntax validation |
+| **Rate Limiting** | slowapi | Per-IP rate limiting on /query |
+| **Linting** | ruff | Fast Python linter |
+| **Language** | Python 3.11+ | All application code |
 
-| Component | Technology | Version | Purpose |
-|-----------|-----------|---------|---------|
-| **LLM** | Claude Sonnet 4 | 20250514 | SQL generation, intent classification, insights |
-| **Embeddings** | OpenAI text-embedding-3-small | - | Semantic search for schemas |
-| **Vector DB** | ChromaDB | 1.5.0 | Store & search table embeddings |
-| **Database** | PostgreSQL | 14+ | Data storage (3 databases) |
-| **API** | FastAPI | 0.109.0 | RESTful API backend |
-| **UI** | Streamlit | 1.31.0 | Web interface |
-| **ORM** | SQLAlchemy | 2.0.25 | Database connections |
-| **SQL Parser** | sqlparse | 0.4.4 | Syntax validation |
-| **Language** | Python | 3.11+ | All application code |
+---
 
-### Key Dependencies
+## ⚙️ Configuration
+
+All configuration lives in `src/core/config.py` and is driven by `.env`. Copy `.env.example` to get started:
+
+```bash
+cp .env.example .env
 ```
-anthropic==0.40+         # Claude SDK
-openai==1.52+            # Embeddings
-chromadb==1.5.0          # Vector database
-fastapi==0.109.0         # API framework
-streamlit==1.31.0        # UI framework
-sqlalchemy==2.0.25       # Database ORM
-pandas==2.2.0            # Data processing
-pyyaml==6.0.1            # Config files
+
+Key variables:
+
+```env
+# LLM — at least one required
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...        # also required for ChromaDB embeddings
+GROQ_API_KEY=gsk_...
+GEMINI_API_KEY=AIza...
+
+# LLM selection
+DEFAULT_LLM=openai            # anthropic | openai | groq | gemini
+DEFAULT_MODEL=gpt-4o
+
+# Databases — at least one required
+SALES_DB_URL=postgresql://user:pass@localhost:5432/ecommerce_sales
+PRODUCTS_DB_URL=postgresql://user:pass@localhost:5432/ecommerce_products
+ANALYTICS_DB_URL=postgresql://user:pass@localhost:5432/ecommerce_analytics
+
+# API
+ALLOWED_ORIGINS=http://localhost:8501
+RATE_LIMIT_PER_MINUTE=30
+LOG_FORMAT=text               # text | json
+
+# Retrieval
+TOP_K_RETRIEVAL=5
+RRF_K=60
+
+# Query execution
+QUERY_TIMEOUT_SECONDS=30
+QUERY_MAX_ROWS=10000
 ```
 
-See `requirements.txt` for complete list.
+See `.env.example` for the full list.
 
 ---
 
@@ -346,200 +346,143 @@ See `requirements.txt` for complete list.
 
 ### What the System Can Do
 
-| Query Type | Support | Accuracy | Example |
-|------------|---------|----------|---------|
-| Simple SELECT | ✅ Full | 100% | "Show all customers" |
-| COUNT/SUM/AVG | ✅ Full | 95% | "How many orders?" |
-| WHERE Filters | ✅ Full | 90% | "Customers from Jakarta" |
-| JOINs (2-3 tables) | ✅ Full | 85% | "Top 5 customers by spending" |
-| Date Filtering | ✅ Full | 85% | "Orders this month" |
-| GROUP BY | ✅ Full | 80% | "Revenue by payment method" |
-| Indonesian Language | ✅ Full | 95% | "Berapa jumlah customer?" |
-| English Language | ✅ Full | 90% | "How many customers?" |
-| Ambiguity Detection | ✅ Full | 100% | Catches "Show me data" |
-| SQL Injection Prevention | ✅ Full | 100% | Blocks all malicious queries |
+| Query Type | Support | Example |
+|------------|---------|---------|
+| Simple SELECT | ✅ | "Show all customers" |
+| COUNT/SUM/AVG | ✅ | "How many orders?" |
+| WHERE Filters | ✅ | "Customers from Jakarta" |
+| JOINs (2-3 tables) | ✅ | "Top 5 customers by spending" |
+| Date Filtering | ✅ | "Orders this month" |
+| GROUP BY | ✅ | "Revenue by payment method" |
+| Indonesian Language | ✅ | "Berapa jumlah customer?" |
+| English Language | ✅ | "How many customers?" |
+| Ambiguity Detection | ✅ | Catches "Show me data" |
+| SQL Injection Prevention | ✅ | Blocks all malicious queries |
 
 ### What the System Cannot Do
 
 | Feature | Status | Reason |
 |---------|--------|--------|
-| Window Functions | ❌ Not Supported | Not in training examples |
-| INSERT/UPDATE/DELETE | ❌ Blocked by Design | Read-only for security |
-| Recursive CTEs | ❌ Not Supported | Too complex for current prompt |
+| Window Functions | ⚠️ Limited | May fail validator without AI auto-fix |
+| INSERT/UPDATE/DELETE | ❌ Blocked | Read-only by design |
+| Recursive CTEs | ⚠️ Limited | Too complex for current prompt |
 | Cross-DB JOINs | ⚠️ Limited | PostgreSQL limitation |
-| Subqueries | ⚠️ Partial (50%) | Inconsistent accuracy |
-
-See **[Capabilities Documentation](docs/CAPABILITIES.md)** for complete list.
+| Subqueries | ⚠️ Partial | Inconsistent accuracy |
 
 ---
 
 ## 📊 Performance
 
-### Metrics (POC)
-
-- **Accuracy:** 90% (18/20 test queries)
-- **Average Response Time:** 4-6 seconds
-  - Intent Classification: ~1.5s
-  - SQL Generation: ~2.0s
-  - Query Execution: ~0.1s
-  - Insight Generation: ~1.5s
-- **Cost per Query:** ~$0.024
-- **Security:** 100% SQL injection prevention
-- **Uptime Target:** 99.5%
-
-### Scalability
-
-| Metric | POC | MVP | Production |
-|--------|-----|-----|------------|
-| Concurrent Users | 1 | 10-20 | 200+ |
-| Queries/Day | 20 | 100 | 1,000+ |
-| Tables | 8 | 30 | 100+ |
-| Response Time (p95) | 5s | 3s | 2s |
-| Cost/Month | $50 | $300 | $1,500 |
+| Metric | Value |
+|--------|-------|
+| Accuracy | ~90% (18/20 test queries) |
+| Average Response Time | 4–6 seconds |
+| — Intent Classification | ~1.5s |
+| — SQL Generation | ~2.0s |
+| — Query Execution | ~0.1s |
+| — Insight Generation | ~1.5s |
+| Security | 100% SQL injection prevention |
+| Cost per Query | ~$0.024 (GPT-4o) |
 
 ---
 
 ## 🧪 Testing
 
-### Run All Tests
 ```bash
-# Complete test suite
-python scripts/run_tests.py
+# All 155 tests
+pytest tests/ -v
 
-# Unit tests only
-pytest tests/test_components.py -v
+# By layer
+pytest tests/unit/        # Unit tests (130) — no API/DB required
+pytest tests/integration/ # Integration tests (9) — mocked
+pytest tests/e2e/         # E2E tests (25) — requires real API + DB
 
-# Integration tests
-pytest tests/test_integration.py -v
-
-# With coverage
-pytest --cov=src tests/
+# Linting
+ruff check src/ tests/
 ```
 
-### Test Results Summary
+### Test Coverage
 
-**Component Tests:** All passing ✅
-- Intent Classifier: 100% (8/8)
-- SQL Generator: 100% (5/5)  
-- Retrieval Evaluator: 100% (2/2)
-- SQL Validator: 83% (5/6)
-- Query Executor: 100% (6/6)
-- Insight Generator: 100% (4/4)
+| Layer | Tests | Requirements |
+|-------|-------|--------------|
+| Unit | 130 | None (all mocked) |
+| Integration | 9 | None (all mocked) |
+| E2E | 25 | Real API key + PostgreSQL + ChromaDB |
+| **Total** | **155** | |
 
-**Integration Tests:** 100% (3/3) ✅
+### CI/CD
 
-**Security Tests:** 100% (10/10 injections blocked) ✅
+Every push to `main` runs automatically via GitHub Actions (`.github/workflows/ci.yml`):
+- **test** job: runs unit + integration tests with dummy env vars
+- **lint** job: runs `ruff check src/ tests/`
 
 ---
 
 ## 🚀 Deployment
 
-### Local Development
+### Docker Compose (Recommended)
 
-Already covered in [Quick Start](#quick-start)
-
-### Docker (Optional)
 ```bash
-# Build image
-docker build -t text-to-sql-chatbot .
+cp .env.example .env
+# Edit .env
 
-# Run containers
 docker-compose up -d
+
+# Check health
+curl http://localhost:8000/health
 ```
 
-### Production Deployment
+### Manual
 
-See **[Deployment Guide](docs/DEPLOYMENT.md)** for:
-- Cloud deployment (AWS, GCP, Azure)
-- Environment configuration
-- Monitoring & logging
-- Scaling strategies
-- Security hardening
+```bash
+# API
+uvicorn src.main:app --host 0.0.0.0 --port 8000
+
+# UI
+streamlit run src/ui/app.py --server.port 8501
+```
+
+### Production Checklist
+
+- [ ] Set `LOG_FORMAT=json` for structured logging
+- [ ] Set `ALLOWED_ORIGINS` to your actual frontend domain
+- [ ] Set `RATE_LIMIT_PER_MINUTE` appropriate for your traffic
+- [ ] Configure `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE`
+- [ ] Set `ENABLE_AI_VALIDATION=true` for AI-assisted SQL auto-fix
+- [ ] Monitor `/health` endpoint
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+**API startup fails**
+```bash
+# Check required env vars — the app validates on startup and fails fast
+# Look for "Missing required" in the startup log
+```
 
 **PostgreSQL not running**
 ```bash
-# Mac
-brew services start postgresql@14
-
-# Linux
-sudo systemctl start postgresql
-
-# Verify
-psql postgres -c "SELECT 1;"
-```
-
-**API connection error in UI**
-```bash
-# Check API is running
-curl http://localhost:8000/health
-
-# Restart API
-uvicorn src.main:app --reload --port 8000
+brew services start postgresql@14   # Mac
+sudo systemctl start postgresql     # Linux
+psql postgres -c "SELECT 1;"        # Verify
 ```
 
 **ChromaDB collection not found**
 ```bash
-# Re-index schemas
-python scripts/index_schemas.py
+python -m src.pipeline.index_schemas
 ```
 
-See **[Troubleshooting Guide](docs/04_QUICK_REFERENCE.md#9-troubleshooting-guide)** for more solutions.
-
----
-
-## 🤝 Contributing
-
-This is a technical test project. For inquiries, contact the project owner.
+**API connection error in UI**
+```bash
+curl http://localhost:8000/health
+# Check API_URL in .env matches where API is running
+```
 
 ---
 
 ## 📄 License
 
-Proprietary - Technical Test Project  
+Proprietary — Technical Test Project
 © 2026 All Rights Reserved
 
----
-
-## 🙏 Acknowledgments
-
-- **Claude Sonnet 4** by Anthropic - AI brain of the system
-- **OpenAI** - Embeddings for semantic search
-- **FastAPI** - Modern Python web framework
-- **Streamlit** - Rapid UI development
-- **PostgreSQL** - Reliable database
-- **ChromaDB** - Vector database for RAG
-
----
-
-## 📞 Contact
-
-For questions or feedback:
-- **Project:** Text-to-SQL Analytics Chatbot POC
-- **Purpose:** AI Engineer Technical Test
-- **Date:** February 2026
-
----
-
-## 🎯 Project Status
-
-**Status:** ✅ **COMPLETE - POC Delivered**
-
-**Deliverables:**
-- ✅ Working POC with all 7 components
-- ✅ 90%+ query accuracy
-- ✅ Beautiful web UI
-- ✅ Comprehensive documentation (37,500 words)
-- ✅ Test suite with results
-- ✅ Demo-ready system
-
-**Next Phase:** MVP development with enhanced features (optional)
-
----
-
-**Built with ❤️ using Claude Sonnet 4**
