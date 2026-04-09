@@ -294,10 +294,6 @@ if ask_button and user_question:
 
                     with tab2:
                         if result.get("sql"):
-                            st.markdown(
-                                f'<div class="sql-container">{result["sql"]}</div>',
-                                unsafe_allow_html=True
-                            )
                             st.code(result["sql"], language="sql")
 
                     with tab3:
