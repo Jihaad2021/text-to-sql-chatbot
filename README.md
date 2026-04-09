@@ -128,58 +128,100 @@ streamlit run src/ui/app.py
 ### Pipeline Flow
 
 ```
-Query
+User Query: "Berapa total revenue bulan ini?"
   │
   ▼
-┌─────────────────────────────────────────┐
-│ 1. IntentClassifier                     │
-│    Detect: aggregation (conf: 0.95)     │
-│    Early stop if ambiguous              │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│ 2. SchemaRetriever                      │
-│    Hybrid: ChromaDB + BM25 + Graph      │
-│    Fused with Reciprocal Rank Fusion    │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│ 3. RetrievalEvaluator                   │
-│    Filter: essential / optional tables  │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│ 4. SQLGenerator                         │
-│    NL → SQL with few-shot examples      │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│ 5. SQLValidator                         │
-│    Syntax + Security + Whitelist + Logic│
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│ 6. QueryExecutor                        │
-│    Safe execution with timeout & limit  │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│ 7. InsightGenerator                     │
-│    Natural language answer in Indonesian│
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-             Formatted Response
-          (SQL + Data + Insights)
+┌──────────────────────────────────────────────────────────────┐
+│ 1. IntentClassifier                              [LLM Agent] │
+│                                                              │
+│  Goal  : Understand what the user wants before doing        │
+│          anything — prevents wasted LLM calls downstream    │
+│  How   : LLM classifies into aggregation / filter /         │
+│          join / trend / ambiguous with confidence score      │
+│  Output: intent = {category, sql_strategy, confidence}      │
+│                                                              │
+│  ⚡ Early stop: if ambiguous → return clarification request  │
+│     (skips all 6 remaining agents)                          │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 2. SchemaRetriever                         [Traditional Agent]│
+│                                                              │
+│  Goal  : Find the most relevant tables without hitting LLM  │
+│  How   : Three retrievers fused via Reciprocal Rank Fusion  │
+│          • ChromaDB  — semantic similarity (embeddings)      │
+│          • BM25      — keyword match (TF-IDF style)          │
+│          • Graph     — follow FK relationships               │
+│  Output: retrieved_tables = top-K candidates ranked by RRF  │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 3. RetrievalEvaluator                            [LLM Agent] │
+│                                                              │
+│  Goal  : Reduce noise — only send truly needed tables to    │
+│          SQL Generator (fewer tokens, better SQL quality)    │
+│  How   : LLM reads each candidate table and classifies it   │
+│          as ESSENTIAL / OPTIONAL / EXCLUDED for this query  │
+│  Output: evaluated_tables = filtered list for this database │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 4. SQLGenerator                                  [LLM Agent] │
+│                                                              │
+│  Goal  : Convert natural language to valid SQL              │
+│  How   : LLM prompt includes table schemas, column types,   │
+│          FK relationships, intent strategy, and few-shot    │
+│          examples from config/few_shot_examples.yaml        │
+│  Output: sql = raw SQL string (not yet validated)           │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 5. SQLValidator                                [Hybrid Agent] │
+│                                                              │
+│  Goal  : Ensure SQL is safe to execute — block attacks and  │
+│          prevent accidental data modification               │
+│  How   : 4-layer rule-based check (no LLM needed):         │
+│          1. Syntax    — sqlparse confirms valid SQL          │
+│          2. Security  — blocks DROP/DELETE/INSERT/UPDATE/.. │
+│          3. Whitelist — only tables in ALLOWED_TABLES set   │
+│          4. Structure — must start with SELECT              │
+│          + optional LLM auto-fix if ENABLE_AI_VALIDATION=true│
+│  Output: validated_sql = safe, executable SQL               │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 6. QueryExecutor                           [Traditional Agent]│
+│                                                              │
+│  Goal  : Execute SQL and return results safely              │
+│  How   : SQLAlchemy with connection pooling, query timeout  │
+│          (QUERY_TIMEOUT_SECONDS), and row limit cap         │
+│          (QUERY_MAX_ROWS) to prevent runaway queries        │
+│  Output: query_result = list of row dicts, row_count        │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 7. InsightGenerator                              [LLM Agent] │
+│                                                              │
+│  Goal  : Turn raw query results into a human-readable       │
+│          answer that directly addresses the user's question  │
+│  How   : LLM receives the original question + SQL + results │
+│          and generates 2–4 sentence Indonesian summary with  │
+│          properly formatted numbers (juta/miliar)            │
+│  Output: insights = natural language answer in Indonesian   │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ▼
+              Response: SQL + Data Table + Insights
 ```
 
-All 7 agents are orchestrated by `TextToSQLPipeline` (`src/core/pipeline.py`), which is separate from the API layer.
+All 7 agents share a single `AgentState` object and are orchestrated by
+`TextToSQLPipeline` (`src/core/pipeline.py`), which is fully decoupled from the API layer.
 
 ### Design Philosophy
 
