@@ -21,6 +21,7 @@ psycopg2-binary>=2.9.0      # PostgreSQL driver
 
 # ─── Vector Database ──────────────────────────────────────────
 chromadb>=0.4.0             # Vector database for RAG
+networkx>=3.0.0             # Graph-based schema retrieval
 
 # ─── Data Processing ──────────────────────────────────────────
 pandas>=2.0.0               # CSV loading & data manipulation
