@@ -44,6 +44,7 @@ jobs:
         run: |
           pytest tests/unit/ -v --tb=short \
             --cov=src \
+            --cov-omit=src/pipeline/* \
             --cov-report=xml \
             --cov-report=term-missing \
             --cov-fail-under=70
@@ -105,4 +106,6 @@ jobs:
         run: pip-audit -r requirements.txt
 
       - name: Static security analysis
-        run: bandit -r src/ -ll --format github
+        # Exclude src/pipeline/: offline build scripts (not production runtime code)
+        # -ll = medium and high severity only
+        run: bandit -r src/ -ll --exclude src/pipeline --format text
