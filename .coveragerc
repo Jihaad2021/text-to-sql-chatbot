@@ -1,0 +1,9 @@
+[run]
+source = src
+omit =
+    src/pipeline/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
