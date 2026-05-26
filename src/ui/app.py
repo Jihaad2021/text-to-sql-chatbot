@@ -136,6 +136,9 @@ st.markdown("""
         border-radius: 0.5rem;
         font-family: 'IBM Plex Sans', sans-serif;
     }
+
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
