@@ -8,7 +8,7 @@ This is Step 3 of the schema pipeline:
     pg_metadata_extractor.py → enrich_metadata.py → index_schemas.py
 
 Usage:
-    python -m src.pipeline.index_schemas
+    python scripts/index_schemas.py
 
 Flow:
     data/schemas/metadata.yaml → ChromaDB (table_schemas collection)

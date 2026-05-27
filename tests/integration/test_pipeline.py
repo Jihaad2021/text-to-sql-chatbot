@@ -15,14 +15,14 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from src.components.insight_generator import InsightGenerator
-from src.components.intent_classifier import IntentClassifier
-from src.components.query_executor import QueryExecutor
-from src.components.query_planner import QueryPlanner
-from src.components.retrieval_evaluator import RetrievalEvaluator
-from src.components.schema_retriever import SchemaRetriever
-from src.components.sql_generator import SQLGenerator
-from src.components.sql_validator import SQLValidator
+from src.agents.insight_generator import InsightGenerator
+from src.agents.intent_classifier import IntentClassifier
+from src.agents.query_executor import QueryExecutor
+from src.agents.query_planner import QueryPlanner
+from src.agents.retrieval_evaluator import RetrievalEvaluator
+from src.agents.schema_retriever import SchemaRetriever
+from src.agents.sql_generator import SQLGenerator
+from src.agents.sql_validator import SQLValidator
 from src.core.pipeline import TextToSQLPipeline
 from src.models.agent_state import AgentState
 from src.utils.exceptions import (

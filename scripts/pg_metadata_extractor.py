@@ -7,7 +7,7 @@ from all configured databases using Config.DB_URLS.
 Output: metadata.json — used as input for enrich_metadata.py
 
 Usage:
-    python -m src.pipeline.pg_metadata_extractor
+    python scripts/pg_metadata_extractor.py
 
 Output format:
     {

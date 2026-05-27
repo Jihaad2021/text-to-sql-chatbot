@@ -78,6 +78,10 @@ class AgentState:
     insights: Optional[str] = None
     sql_error: Optional[str] = None  # last DB execution error, fed back to SQLGenerator
 
+    # Query rewriting (set by QueryRewriter before IC/QP)
+    original_query: str = ""
+    rewrite_notes: Optional[str] = None
+
     # Multi-step plan
     execution_plan: List[Any] = field(default_factory=list)  # list[ExecutionStep]
     step_results: List[Any] = field(default_factory=list)    # list[StepResult]

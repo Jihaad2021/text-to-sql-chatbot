@@ -2,7 +2,7 @@ Scaffold a new agent following the project's established pattern.
 
 The user will provide: agent name, type (traditional or LLM), what it reads from AgentState, and what it writes to AgentState.
 
-Generate the file at `src/components/<agent_name>.py` with:
+Generate the file at `src/agents/<agent_name>.py` with:
 
 1. **Module docstring** — Description, Type (Traditional/LLM-based), Inherits, Reads from state, Writes to state, and an Example.
 

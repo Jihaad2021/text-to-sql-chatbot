@@ -87,7 +87,7 @@ text-to-sql-chatbot/
 | `agent_state.py` | **File terpenting.** Shared state yang mengalir dari agent ke agent. Semua input dan output agent disimpan di sini. |
 | `retrieved_table.py` | Dataclass untuk merepresentasikan satu tabel hasil retrieval dari ChromaDB. |
 
-### `src/components/` — 7 Agent Pipeline
+### `src/agents/` — 7 Agent Pipeline
 
 | File | Agent | Type | Input dari State | Output ke State |
 |------|-------|------|-----------------|-----------------|
@@ -99,7 +99,7 @@ text-to-sql-chatbot/
 | `query_executor.py` | Agent 6 | Traditional | `state.validated_sql`, `state.database` | `state.query_result`, `state.row_count` |
 | `insight_generator.py` | Agent 7 | LLM | `state.query`, `state.validated_sql`, `state.query_result`, `state.row_count` | `state.insights` |
 
-### `src/pipeline/` — Schema Pipeline
+### `scripts/` — Schema Pipeline
 
 > Pipeline ini dijalankan **sekali di awal** (atau saat ada perubahan schema database).
 > Bukan bagian dari query pipeline yang berjalan setiap user bertanya.
@@ -112,9 +112,9 @@ text-to-sql-chatbot/
 
 **Cara menjalankan schema pipeline:**
 ```bash
-python -m src.pipeline.pg_metadata_extractor
-python -m src.pipeline.enrich_metadata
-python -m src.pipeline.index_schemas
+python scripts/pg_metadata_extractor.py
+python scripts/enrich_metadata.py
+python scripts/index_schemas.py
 ```
 
 ### `src/utils/` — Utilities
@@ -307,13 +307,13 @@ Script ini akan:
 
 ```bash
 # Ekstrak schema dari PostgreSQL
-python -m src.pipeline.pg_metadata_extractor
+python scripts/pg_metadata_extractor.py
 
 # Generate deskripsi via Claude API
-python -m src.pipeline.enrich_metadata
+python scripts/enrich_metadata.py
 
 # Index ke ChromaDB
-python -m src.pipeline.index_schemas
+python scripts/index_schemas.py
 ```
 
 ### Step 7 — Jalankan Aplikasi

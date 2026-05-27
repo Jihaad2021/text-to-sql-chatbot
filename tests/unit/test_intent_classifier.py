@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.components.intent_classifier import INTENT_CATEGORIES, IntentClassifier
+from src.agents.intent_classifier import INTENT_CATEGORIES, IntentClassifier
 from src.models.agent_state import AgentState
 
 

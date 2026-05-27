@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-RAW_DIR = Path(__file__).parent.parent / "raw"
+RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 DB_URL = os.getenv("FINANCIAL_DB_URL", "postgresql://galaxymacbook@localhost:5432/financial_db")
 
 # ── Table DDL ─────────────────────────────────────────────────────────────────
@@ -271,10 +271,10 @@ def main() -> None:
     engine.dispose()
     print("\n✅ Done! All data loaded into financial_db.")
     print("\nNext steps:")
-    print("  1. python -m src.pipeline.pg_metadata_extractor")
-    print("  2. python -m src.pipeline.index_schemas")
-    print("  3. python -m src.pipeline.build_bm25_index")
-    print("  4. python -m src.pipeline.build_graph")
+    print("  1. python scripts/pg_metadata_extractor.py")
+    print("  2. python scripts/index_schemas.py")
+    print("  3. python scripts/build_bm25_index.py")
+    print("  4. python scripts/build_graph.py")
 
 
 if __name__ == "__main__":

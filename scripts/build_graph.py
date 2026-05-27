@@ -15,7 +15,7 @@ This is Step 5 of the schema pipeline:
     → build_bm25_index.py → build_graph.py (this file)
 
 Usage:
-    python -m src.pipeline.build_graph
+    python scripts/build_graph.py
 
 Output:
     data/schema_graph.json — NetworkX graph serialized as JSON

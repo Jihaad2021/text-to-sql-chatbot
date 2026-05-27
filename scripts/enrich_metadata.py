@@ -6,7 +6,7 @@ generates rich descriptions for schemas, tables, and columns,
 then saves to metadata.yaml for ChromaDB indexing.
 
 Usage:
-    python -m src.pipeline.enrich_metadata
+    python scripts/enrich_metadata.py
 
 Flow:
     metadata.json → OpenAI API → metadata.yaml → ChromaDB indexer

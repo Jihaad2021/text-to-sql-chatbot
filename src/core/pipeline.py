@@ -21,14 +21,15 @@ import copy
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from src.components.insight_generator import InsightGenerator
-from src.components.intent_classifier import IntentClassifier
-from src.components.query_executor import QueryExecutor
-from src.components.query_planner import QueryPlanner
-from src.components.retrieval_evaluator import RetrievalEvaluator
-from src.components.schema_retriever import SchemaRetriever
-from src.components.sql_generator import SQLGenerator
-from src.components.sql_validator import SQLValidator
+from src.agents.insight_generator import InsightGenerator
+from src.agents.intent_classifier import IntentClassifier
+from src.agents.query_executor import QueryExecutor
+from src.agents.query_planner import QueryPlanner
+from src.agents.query_rewriter import QueryRewriter
+from src.agents.retrieval_evaluator import RetrievalEvaluator
+from src.agents.schema_retriever import SchemaRetriever
+from src.agents.sql_generator import SQLGenerator
+from src.agents.sql_validator import SQLValidator
 from src.core.base_agent import BaseAgent
 from src.core.config import Config
 from src.core.query_cache import QueryCache, build_snapshot, restore_snapshot
@@ -64,6 +65,7 @@ class TextToSQLPipeline:
 
     def __init__(
         self,
+        query_rewriter: QueryRewriter,
         intent_classifier: IntentClassifier,
         query_planner: QueryPlanner,
         schema_retriever: SchemaRetriever,
@@ -73,6 +75,7 @@ class TextToSQLPipeline:
         query_executor: QueryExecutor,
         insight_generator: InsightGenerator,
     ) -> None:
+        self.query_rewriter      = query_rewriter
         self.intent_classifier   = intent_classifier
         self.query_planner       = query_planner
         self.schema_retriever    = schema_retriever
@@ -88,6 +91,7 @@ class TextToSQLPipeline:
     def agents(self) -> list[BaseAgent]:
         """All agents in pipeline order."""
         return [
+            self.query_rewriter,
             self.intent_classifier,
             self.query_planner,
             self.schema_retriever,
@@ -125,6 +129,10 @@ class TextToSQLPipeline:
             if cached:
                 self.intent_classifier.log(f"Cache hit for query: {original_query[:60]}")
                 return restore_snapshot(state, cached)
+
+        # ── 0: QueryRewriter ─────────────────────────────────────
+        # May update state.query; non-fatal if it fails.
+        state = self.query_rewriter.run(state)
 
         # ── 1 + 2: IntentClassifier ∥ QueryPlanner ───────────────
         state = self._run_initial_agents_parallel(state)

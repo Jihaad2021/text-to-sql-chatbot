@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.components.query_executor import QueryExecutor
+from src.agents.query_executor import QueryExecutor
 from src.models.agent_state import AgentState
 from src.utils.exceptions import QueryExecutionError
 

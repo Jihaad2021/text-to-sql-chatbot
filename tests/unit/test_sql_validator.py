@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.components.sql_validator import SQLValidator
+from src.agents.sql_validator import SQLValidator
 from src.models.agent_state import AgentState
 from src.utils.exceptions import SQLValidationError
 

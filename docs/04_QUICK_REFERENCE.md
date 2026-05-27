@@ -60,11 +60,11 @@ psql postgres -c "CREATE DATABASE ecommerce_products;"
 psql postgres -c "CREATE DATABASE ecommerce_analytics;"
 
 # 4. Index schemas (run once, or after schema changes)
-python -m src.pipeline.pg_metadata_extractor
-python -m src.pipeline.enrich_metadata
-python -m src.pipeline.index_schemas
-python -m src.pipeline.build_bm25_index
-python -m src.pipeline.build_graph
+python scripts/pg_metadata_extractor.py
+python scripts/enrich_metadata.py
+python scripts/index_schemas.py
+python scripts/build_bm25_index.py
+python scripts/build_graph.py
 
 # 5. Run tests
 pytest tests/unit/ tests/integration/ -v
@@ -213,7 +213,7 @@ ruff check src/ tests/
 ruff check --fix src/ tests/
 
 # Check single file
-ruff check src/components/sql_generator.py
+ruff check src/agents/sql_generator.py
 ```
 
 ---
@@ -221,9 +221,9 @@ ruff check src/components/sql_generator.py
 ### 2.6 ChromaDB & Indexing Commands
 ```bash
 # Re-index schemas (if schemas change)
-python -m src.pipeline.index_schemas
-python -m src.pipeline.build_bm25_index
-python -m src.pipeline.build_graph
+python scripts/index_schemas.py
+python scripts/build_bm25_index.py
+python scripts/build_graph.py
 
 # Check ChromaDB collection
 python -c "
@@ -496,7 +496,7 @@ query_chatbot("How many customers are there?")
 
 ### 6.1 Intent Classifier
 ```python
-from src.components.intent_classifier import IntentClassifier
+from src.agents.intent_classifier import IntentClassifier
 
 classifier = IntentClassifier()
 
@@ -516,7 +516,7 @@ print(result.confidence)    # 0.95
 
 ### 6.2 Schema Retriever
 ```python
-from src.components.schema_retriever import SchemaRetriever
+from src.agents.schema_retriever import SchemaRetriever
 
 retriever = SchemaRetriever()
 
@@ -537,7 +537,7 @@ for table in result.retrieved_tables:
 
 ### 6.3 SQL Generator
 ```python
-from src.components.sql_generator import SQLGenerator
+from src.agents.sql_generator import SQLGenerator
 
 generator = SQLGenerator()
 
@@ -558,7 +558,7 @@ print(result.sql)
 
 ### 6.4 SQL Validator
 ```python
-from src.components.sql_validator import SQLValidator
+from src.agents.sql_validator import SQLValidator
 
 validator = SQLValidator()
 
@@ -584,7 +584,7 @@ else:
 
 ### 6.5 Query Executor
 ```python
-from src.components.query_executor import QueryExecutor
+from src.agents.query_executor import QueryExecutor
 
 executor = QueryExecutor()
 
@@ -612,7 +612,7 @@ else:
 
 ### 6.6 Insight Generator
 ```python
-from src.components.insight_generator import InsightGenerator
+from src.agents.insight_generator import InsightGenerator
 
 generator = InsightGenerator()
 
@@ -911,7 +911,7 @@ echo "SELECT * FROM customers" | grep -E "DROP|DELETE|UPDATE|INSERT"
 
 # If clean, check validator logic
 python -c "
-from src.components.sql_validator import SQLValidator
+from src.agents.sql_validator import SQLValidator
 validator = SQLValidator()
 result = validator.validate_and_fix('SELECT * FROM customers LIMIT 10')
 print(f'Valid: {result.valid}')
@@ -1122,7 +1122,7 @@ class QueryIntent(str, Enum):
 
 **Update classifier prompt:**
 ```python
-# In src/components/intent_classifier.py
+# In src/agents/intent_classifier.py
 
 def _build_prompt(self, user_query: str) -> str:
     return f"""...
@@ -1158,7 +1158,7 @@ YOUR_NEW_DB_URL=postgresql://localhost:5432/your_new_db
 
 **Update executor:**
 ```python
-# In src/components/query_executor.py
+# In src/agents/query_executor.py
 # No code change needed - automatically loads from config
 ```
 
@@ -1176,7 +1176,7 @@ YOUR_NEW_DB_URL=postgresql://localhost:5432/your_new_db
 
 **2. Use faster LLM for simple queries**
 ```python
-# In src/components/intent_classifier.py
+# In src/agents/intent_classifier.py
 # For POC, use same model for consistency
 # For production, consider:
 if intent == QueryIntent.SIMPLE_SELECT:

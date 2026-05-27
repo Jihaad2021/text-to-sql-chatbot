@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.components.schema_retriever import SchemaRetriever
+from src.agents.schema_retriever import SchemaRetriever
 from src.models.agent_state import AgentState
 from src.utils.exceptions import SchemaRetrievalError
 
@@ -51,8 +51,8 @@ def mock_collection():
 @pytest.fixture
 def retriever(mock_collection):
     """Initialize SchemaRetriever with mocked ChromaDB."""
-    with patch("src.components.schema_retriever.chromadb.PersistentClient"):
-        with patch("src.components.schema_retriever.embedding_functions.OpenAIEmbeddingFunction"):
+    with patch("src.agents.schema_retriever.chromadb.PersistentClient"):
+        with patch("src.agents.schema_retriever.embedding_functions.OpenAIEmbeddingFunction"):
             with patch.object(SchemaRetriever, "__init__", lambda self, *args, **kwargs: None):
                 retriever = SchemaRetriever.__new__(SchemaRetriever)
                 retriever.name = "schema_retriever"

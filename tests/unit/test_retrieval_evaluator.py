@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.components.retrieval_evaluator import RetrievalEvaluator
+from src.agents.retrieval_evaluator import RetrievalEvaluator
 from src.models.agent_state import AgentState
 from src.models.retrieved_table import RetrievedTable
 

@@ -50,11 +50,12 @@ DEFAULT_MODELS = {
 
 # Env key mapping per agent name
 AGENT_ENV_KEYS = {
-    "intent_classifier": ("INTENT_CLASSIFIER_LLM", "INTENT_CLASSIFIER_MODEL"),
-    "retrieval_evaluator": ("RETRIEVAL_EVALUATOR_LLM", "RETRIEVAL_EVALUATOR_MODEL"),
-    "sql_generator": ("SQL_GENERATOR_LLM", "SQL_GENERATOR_MODEL"),
-    "sql_validator": ("SQL_VALIDATOR_LLM", "SQL_VALIDATOR_MODEL"),
-    "insight_generator": ("INSIGHT_GENERATOR_LLM", "INSIGHT_GENERATOR_MODEL"),
+    "query_rewriter":     ("QUERY_REWRITER_LLM",     "QUERY_REWRITER_MODEL"),
+    "intent_classifier":  ("INTENT_CLASSIFIER_LLM",  "INTENT_CLASSIFIER_MODEL"),
+    "retrieval_evaluator":("RETRIEVAL_EVALUATOR_LLM","RETRIEVAL_EVALUATOR_MODEL"),
+    "sql_generator":      ("SQL_GENERATOR_LLM",      "SQL_GENERATOR_MODEL"),
+    "sql_validator":      ("SQL_VALIDATOR_LLM",       "SQL_VALIDATOR_MODEL"),
+    "insight_generator":  ("INSIGHT_GENERATOR_LLM",  "INSIGHT_GENERATOR_MODEL"),
 }
 
 # API key env names per provider

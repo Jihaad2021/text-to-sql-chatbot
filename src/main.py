@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -19,14 +20,15 @@ from slowapi.util import get_remote_address
 
 load_dotenv()
 
-from src.components.insight_generator import InsightGenerator
-from src.components.intent_classifier import IntentClassifier
-from src.components.query_executor import QueryExecutor
-from src.components.query_planner import QueryPlanner
-from src.components.retrieval_evaluator import RetrievalEvaluator
-from src.components.schema_retriever import SchemaRetriever
-from src.components.sql_generator import SQLGenerator
-from src.components.sql_validator import SQLValidator
+from src.agents.insight_generator import InsightGenerator
+from src.agents.intent_classifier import IntentClassifier
+from src.agents.query_executor import QueryExecutor
+from src.agents.query_planner import QueryPlanner
+from src.agents.query_rewriter import QueryRewriter
+from src.agents.retrieval_evaluator import RetrievalEvaluator
+from src.agents.schema_retriever import SchemaRetriever
+from src.agents.sql_generator import SQLGenerator
+from src.agents.sql_validator import SQLValidator
 from src.core.config import Config
 from src.core.pipeline import TextToSQLPipeline
 from src.core.startup import validate_environment
@@ -50,6 +52,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("Initializing pipeline...")
     pipeline = TextToSQLPipeline(
+        query_rewriter=QueryRewriter(),
         intent_classifier=IntentClassifier(),
         query_planner=QueryPlanner(),
         schema_retriever=SchemaRetriever(),
@@ -277,7 +280,7 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
         ] if state.step_results else None
 
         return QueryResponse(
-            question=state.query,
+            question=state.original_query or body.question,
             sql=state.validated_sql,
             data=state.query_result,
             insights=state.insights,
@@ -295,6 +298,8 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
                 "tables_used": len(state.evaluated_tables),
                 "timing": state.timing,
                 "errors": state.errors,
+                "rewrite_notes": state.rewrite_notes,
+                "rewritten_query": state.query if state.rewrite_notes else None,
             },
         )
 
@@ -318,6 +323,8 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
             detail={"request_id": request_id, "error": "Internal server error"},
         )
 
+
+app.mount("/ui", StaticFiles(directory="src/ui/static", html=True), name="ui")
 
 if __name__ == "__main__":
     import uvicorn

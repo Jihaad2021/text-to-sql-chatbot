@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.components.sql_generator import SQLGenerator
+from src.agents.sql_generator import SQLGenerator
 from src.models.agent_state import AgentState
 from src.utils.exceptions import SQLGenerationError
 

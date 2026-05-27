@@ -15,7 +15,7 @@ This is Step 4 of the schema pipeline:
     → build_graph.py
 
 Usage:
-    python -m src.pipeline.build_bm25_index
+    python scripts/build_bm25_index.py
 
 Output:
     data/bm25_index.pkl — BM25 index + corpus metadata
