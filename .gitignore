@@ -218,3 +218,9 @@ __pycache__/
 htmlcov/
 test_results.json
 .DS_Store
+
+# Raw financial data — not committed (load via scripts/load_financial_data.py)
+raw/
+
+# Dashboard source — read-only reference, not part of this repo
+ai-dashbord-settlement-master/
