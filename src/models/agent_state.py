@@ -76,6 +76,7 @@ class AgentState:
     query_result: Optional[List[Dict[str, Any]]] = None
     row_count: int = 0
     insights: Optional[str] = None
+    sql_error: Optional[str] = None  # last DB execution error, fed back to SQLGenerator
 
     # Multi-step plan
     execution_plan: List[Any] = field(default_factory=list)  # list[ExecutionStep]

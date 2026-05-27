@@ -29,6 +29,10 @@ from src.components.sql_generator import SQLGenerator
 from src.components.sql_validator import SQLValidator
 from src.core.base_agent import BaseAgent
 from src.models.agent_state import AgentState, StepResult
+from src.utils.exceptions import QueryExecutionError
+
+# Maximum retries for SQL generation when PostgreSQL returns an execution error
+_SQL_RETRY_LIMIT = 2
 
 
 class TextToSQLPipeline:
@@ -121,13 +125,35 @@ class TextToSQLPipeline:
     # ─────────────────────────────────────────────
 
     def _run_sql_pipeline(self, state: AgentState) -> AgentState:
-        """SchemaRetriever → RetrievalEvaluator → SQLGenerator → SQLValidator → QueryExecutor."""
+        """SchemaRetriever → RetrievalEvaluator → SQLGenerator → SQLValidator → QueryExecutor.
+
+        If QueryExecutor raises a QueryExecutionError (e.g. wrong column name),
+        the error is fed back to SQLGenerator for up to _SQL_RETRY_LIMIT retries.
+        """
         state = self.schema_retriever.run(state)
         state = self.retrieval_evaluator.run(state)
-        state = self.sql_generator.run(state)
-        state = self.sql_validator.run(state)
-        state = self.query_executor.run(state)
-        return state
+
+        state.sql_error = None
+        for attempt in range(1, _SQL_RETRY_LIMIT + 2):  # attempts: 1, 2, 3 (limit+1)
+            state = self.sql_generator.run(state)
+            state = self.sql_validator.run(state)
+            try:
+                state = self.query_executor.run(state)
+                state.sql_error = None
+                return state
+            except QueryExecutionError as exc:
+                if attempt <= _SQL_RETRY_LIMIT:
+                    error_msg = str(exc)
+                    state.sql_error = error_msg
+                    state.sql = None
+                    state.validated_sql = None
+                    self.sql_generator.log(
+                        f"Execution error on attempt {attempt}, retrying with error context: {error_msg[:120]}",
+                        level="warning",
+                    )
+                else:
+                    raise
+        return state  # unreachable, satisfies mypy
 
     def _run_multi_step(self, state: AgentState) -> AgentState:
         """Execute each step sequentially, accumulating StepResults.

@@ -88,9 +88,7 @@ class RetrievalEvaluator(LLMBaseAgent):
         for i, table in enumerate(tables, 1):
             tables_info += f"\nTable {i}: {table.full_name}\n"
             tables_info += f"Description: {table.description}\n"
-            tables_info += f"Columns: {', '.join(table.columns[:10])}"
-            if len(table.columns) > 10:
-                tables_info += f"... (+{len(table.columns) - 10} more)"
+            tables_info += f"Columns: {', '.join(table.columns)}"
             tables_info += f"\nSimilarity Score: {table.similarity_score:.3f}\n"
             if table.relationships:
                 tables_info += f"Relationships: {'; '.join(table.relationships[:3])}\n"

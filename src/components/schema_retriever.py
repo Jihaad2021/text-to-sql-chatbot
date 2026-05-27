@@ -318,7 +318,7 @@ class SchemaRetriever(BaseAgent):
 
     def _detect_database(self, tables: list[RetrievedTable]) -> str:
         if not tables:
-            return "sales_db"
+            return "financial_db"
 
         db_scores: dict[str, float] = {}
         for i, table in enumerate(tables[:5]):

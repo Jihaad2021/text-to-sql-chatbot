@@ -24,10 +24,17 @@ Example:
 """
 
 import json
+import re
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState, ExecutionStep
 from src.utils.exceptions import AgentExecutionError
+
+# SQL keywords that signal a sub_query was incorrectly generated as SQL
+_SQL_DETECT_RE = re.compile(
+    r'^\s*(SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER)\b',
+    re.IGNORECASE,
+)
 
 # Maximum steps allowed in a single plan
 MAX_STEPS = 4
@@ -179,6 +186,13 @@ JSON:"""
                 agent_name=self.name,
                 message="Plan 'steps' must be a non-empty list",
             )
+        for step in plan["steps"]:
+            sub_query = step.get("sub_query", "")
+            if _SQL_DETECT_RE.match(sub_query):
+                raise AgentExecutionError(
+                    agent_name=self.name,
+                    message=f"sub_query contains SQL code in step {step.get('step_number', '?')}: {sub_query[:60]}",
+                )
 
     def _single_step_fallback(self, query: str) -> dict:
         """Return a trivial single-step plan for the original query."""

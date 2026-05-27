@@ -123,6 +123,7 @@ QUERY TYPE: {state.intent.get('category', '')}
 
         prev_steps_block = self._build_prev_steps_block(state)
         history_block = self._build_history_block(state.conversation_history)
+        error_block = self._build_error_block(state.sql_error, state.sql)
 
         return f"""You are a senior PostgreSQL data engineer working with a Telkomsel financial payment database.
 
@@ -158,7 +159,7 @@ SQL STYLE RULES:
 13. Do not generate INSERT, UPDATE, DELETE, or DROP statements.
 
 {history_block}{intent_hint}
-
+{error_block}
 {schema_context}
 
 {examples_context}
@@ -173,6 +174,22 @@ Start directly with SELECT or WITH.
 
 SQL:
 """
+
+    def _build_error_block(self, sql_error: str | None, failed_sql: str | None) -> str:
+        """Return a correction block when a previous SQL attempt failed at execution."""
+        if not sql_error:
+            return ""
+        lines = [
+            "\n⚠️  PREVIOUS SQL FAILED — YOU MUST FIX IT:\n",
+            f"Error from PostgreSQL: {sql_error}",
+        ]
+        if failed_sql:
+            lines.append(f"Failed SQL:\n{failed_sql}")
+        lines.append(
+            "\nAnalyse the error carefully — check column names, table names, types, and casts. "
+            "Generate a corrected SQL that avoids the same error.\n"
+        )
+        return "\n".join(lines)
 
     def _build_history_block(self, history: list[dict]) -> str:
         """Inject last 2 conversation turns so follow-up queries resolve correctly."""
