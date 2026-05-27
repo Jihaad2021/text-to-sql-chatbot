@@ -1,5 +1,5 @@
 """
-Metadata Enricher — Anthropic Claude
+Metadata Enricher — OpenAI
 
 Reads metadata.json (output from pg_metadata_extractor.py),
 generates rich descriptions for schemas, tables, and columns,
@@ -9,16 +9,14 @@ Usage:
     python -m src.pipeline.enrich_metadata
 
 Flow:
-    metadata.json → Claude API → metadata.yaml → ChromaDB indexer
+    metadata.json → OpenAI API → metadata.yaml → ChromaDB indexer
 """
 
 import json
 import time
 import os
 from dotenv import load_dotenv
-from anthropic import Anthropic
-
-from src.core.config import Config
+from openai import OpenAI
 
 load_dotenv()
 
@@ -28,8 +26,9 @@ load_dotenv()
 
 INPUT_FILE  = os.getenv("METADATA_INPUT_FILE", "metadata.json")
 OUTPUT_FILE = os.getenv("METADATA_OUTPUT_FILE", "metadata.yaml")
+MODEL       = os.getenv("METADATA_MODEL", "gpt-4o-mini")
 
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 # ─────────────────────────────────────────────
@@ -81,16 +80,16 @@ Sibling columns: {sibling_columns}
 # ─────────────────────────────────────────────
 
 def call_llm(prompt: str, retries: int = 3) -> str:
-    """Call Claude API with retry logic."""
+    """Call OpenAI API with retry logic."""
     for attempt in range(retries):
         try:
-            response = client.messages.create(
-                model=Config.MODEL,
+            response = client.chat.completions.create(
+                model=MODEL,
                 max_tokens=300,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}]
             )
-            return response.content[0].text.strip()
+            return response.choices[0].message.content.strip()
         except Exception as e:
             wait = 2 ** attempt
             print(f"      ⚠️  API error (attempt {attempt+1}/{retries}): {e}. Retry in {wait}s...")
@@ -247,7 +246,7 @@ def main():
 
     print(f"📊 Target        : {total_schemas} schema(s) | {total_tables} table(s) | {total_columns} column(s)")
     print(f"🔁 Est. API calls: {total_schemas + total_tables + total_columns}")
-    print(f"🤖 Model         : {Config.MODEL}\n")
+    print(f"🤖 Model         : {MODEL}\n")
 
     enriched_schemas = []
     for i, schema in enumerate(metadata.get("schemas", []), 1):

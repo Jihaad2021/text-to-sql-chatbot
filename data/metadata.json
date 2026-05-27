@@ -1,325 +1,472 @@
 {
   "databases": [
-    "sales_db",
-    "products_db",
-    "analytics_db"
+    "financial_db"
   ],
   "schemas": [
     {
-      "db_name": "sales_db",
+      "db_name": "financial_db",
       "schema": "public",
       "tables": [
         {
-          "table": "customers",
+          "table": "anomalies",
           "columns": [
             {
-              "name": "customer_id",
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
+            },
+            {
+              "name": "check_type",
               "type": "text"
             },
             {
-              "name": "customer_unique_id",
+              "name": "status",
               "type": "text"
             },
             {
-              "name": "customer_name",
+              "name": "entity_type",
               "type": "text"
             },
             {
-              "name": "customer_email",
+              "name": "entity_id",
               "type": "text"
             },
             {
-              "name": "customer_city",
+              "name": "anomaly_type",
               "type": "text"
             },
             {
-              "name": "customer_state",
+              "name": "severity",
               "type": "text"
             },
             {
-              "name": "customer_zip_code",
-              "type": "bigint"
+              "name": "total_trx",
+              "type": "double precision"
             },
             {
-              "name": "customer_created_at",
+              "name": "total_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "avg_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "zscore",
+              "type": "double precision"
+            },
+            {
+              "name": "threshold_value",
+              "type": "double precision"
+            },
+            {
+              "name": "actual_value",
+              "type": "double precision"
+            },
+            {
+              "name": "expected_value",
+              "type": "double precision"
+            },
+            {
+              "name": "deviation_pct",
+              "type": "double precision"
+            },
+            {
+              "name": "description",
               "type": "text"
+            },
+            {
+              "name": "recommended_action",
+              "type": "text"
+            },
+            {
+              "name": "impact_estimate",
+              "type": "double precision"
+            },
+            {
+              "name": "payment_provider",
+              "type": "text"
+            },
+            {
+              "name": "partner",
+              "type": "text"
+            },
+            {
+              "name": "product_name",
+              "type": "text"
+            },
+            {
+              "name": "service_code",
+              "type": "text"
+            },
+            {
+              "name": "first_detected",
+              "type": "date"
+            },
+            {
+              "name": "last_detected",
+              "type": "date"
+            },
+            {
+              "name": "frequency_days",
+              "type": "integer"
             }
           ],
           "foreign_keys": []
         },
         {
-          "table": "orders",
+          "table": "daily_unique_users",
           "columns": [
             {
-              "name": "order_id",
-              "type": "text"
+              "name": "id",
+              "type": "integer"
             },
             {
-              "name": "customer_id",
-              "type": "text"
+              "name": "date",
+              "type": "date"
             },
             {
-              "name": "order_status",
-              "type": "text"
+              "name": "unique_users",
+              "type": "bigint"
             },
             {
-              "name": "order_purchase_timestamp",
-              "type": "timestamp without time zone"
-            },
-            {
-              "name": "order_approved_at",
-              "type": "text"
-            },
-            {
-              "name": "order_delivered_timestamp",
-              "type": "text"
-            },
-            {
-              "name": "order_estimated_delivery_date",
-              "type": "text"
+              "name": "daily_unique_users",
+              "type": "bigint"
             }
           ],
-          "foreign_keys": [
-            {
-              "column": "customer_id",
-              "references": {
-                "schema": "public",
-                "table": "customers",
-                "column": "customer_id"
-              }
-            }
-          ]
+          "foreign_keys": []
         },
         {
-          "table": "payments",
+          "table": "financial_internal",
           "columns": [
             {
-              "name": "payment_id",
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
+            },
+            {
+              "name": "payment_provider",
               "type": "text"
             },
             {
-              "name": "order_id",
+              "name": "transaction_type",
               "type": "text"
             },
             {
-              "name": "payment_sequential",
+              "name": "item_type",
+              "type": "text"
+            },
+            {
+              "name": "total_trx",
               "type": "bigint"
             },
             {
-              "name": "payment_type",
-              "type": "text"
+              "name": "total_net_revenue",
+              "type": "double precision"
             },
             {
-              "name": "payment_installments",
-              "type": "bigint"
+              "name": "net_gap",
+              "type": "double precision"
             },
             {
-              "name": "payment_value",
+              "name": "total_platform_fee",
+              "type": "double precision"
+            },
+            {
+              "name": "total_admin_fee",
               "type": "double precision"
             }
           ],
-          "foreign_keys": [
-            {
-              "column": "order_id",
-              "references": {
-                "schema": "public",
-                "table": "orders",
-                "column": "order_id"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "db_name": "products_db",
-      "schema": "public",
-      "tables": [
+          "foreign_keys": []
+        },
         {
-          "table": "products",
+          "table": "daily_master",
           "columns": [
             {
-              "name": "product_id",
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
+            },
+            {
+              "name": "partner",
               "type": "text"
             },
             {
-              "name": "product_category_name",
-              "type": "text"
-            },
-            {
-              "name": "product_name_length",
+              "name": "total_trx",
               "type": "bigint"
             },
             {
-              "name": "product_description_length",
-              "type": "bigint"
+              "name": "success_trx",
+              "type": "double precision"
             },
             {
-              "name": "product_photos_qty",
-              "type": "bigint"
+              "name": "failed_trx",
+              "type": "double precision"
             },
             {
-              "name": "product_weight_g",
-              "type": "bigint"
+              "name": "total_revenue",
+              "type": "double precision"
             },
             {
-              "name": "product_length_cm",
-              "type": "bigint"
+              "name": "success_rate_pct",
+              "type": "double precision"
             },
             {
-              "name": "product_height_cm",
-              "type": "bigint"
-            },
-            {
-              "name": "product_width_cm",
+              "name": "unique_users",
               "type": "bigint"
             }
           ],
           "foreign_keys": []
         },
         {
-          "table": "order_items",
+          "table": "daily_user_partner",
           "columns": [
             {
-              "name": "order_id",
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
+            },
+            {
+              "name": "partner",
               "type": "text"
             },
             {
-              "name": "order_item_id",
+              "name": "unique_users",
               "type": "bigint"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
+          "table": "hourly_pattern_daily",
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
+            },
+            {
+              "name": "hour",
+              "type": "integer"
+            },
+            {
+              "name": "total_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "success_rate_pct",
+              "type": "double precision"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
+          "table": "product_summary",
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
             },
             {
               "name": "product_id",
               "type": "text"
             },
             {
-              "name": "seller_id",
+              "name": "product_name",
               "type": "text"
             },
             {
-              "name": "shipping_limit_date",
+              "name": "item_type",
+              "type": "text"
+            },
+            {
+              "name": "type_of_payment",
+              "type": "text"
+            },
+            {
+              "name": "payment_provider",
+              "type": "text"
+            },
+            {
+              "name": "total_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "total_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "success_trx",
+              "type": "double precision"
+            },
+            {
+              "name": "success_rate_pct",
+              "type": "double precision"
+            },
+            {
+              "name": "unique_buyers",
+              "type": "bigint"
+            },
+            {
+              "name": "repeat_buyers",
+              "type": "bigint"
+            },
+            {
+              "name": "settlement_gap",
+              "type": "double precision"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
+          "table": "daily_product_channel",
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
+            },
+            {
+              "name": "product_name",
+              "type": "text"
+            },
+            {
+              "name": "a0_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "a0_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "b3_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "b3_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "f0_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "f0_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "f4_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "f4_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "f5_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "f5_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "i1_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "i1_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "ig_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "ig_revenue",
+              "type": "double precision"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
+          "table": "channel_payment",
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
+            },
+            {
+              "name": "partner",
+              "type": "text"
+            },
+            {
+              "name": "channel",
+              "type": "text"
+            },
+            {
+              "name": "purchase_mode",
+              "type": "text"
+            },
+            {
+              "name": "total_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "total_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "success_rate_pct",
+              "type": "double precision"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
+          "table": "product_price_list",
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "product_id",
+              "type": "text"
+            },
+            {
+              "name": "product_name",
               "type": "text"
             },
             {
               "name": "price",
               "type": "double precision"
-            },
-            {
-              "name": "freight_value",
-              "type": "double precision"
-            }
-          ],
-          "foreign_keys": [
-            {
-              "column": "product_id",
-              "references": {
-                "schema": "public",
-                "table": "products",
-                "column": "product_id"
-              }
-            },
-            {
-              "column": "seller_id",
-              "references": {
-                "schema": "public",
-                "table": "sellers",
-                "column": "seller_id"
-              }
-            }
-          ]
-        },
-        {
-          "table": "sellers",
-          "columns": [
-            {
-              "name": "seller_id",
-              "type": "text"
-            },
-            {
-              "name": "seller_zip_code",
-              "type": "bigint"
-            },
-            {
-              "name": "seller_city",
-              "type": "text"
-            },
-            {
-              "name": "seller_state",
-              "type": "text"
-            }
-          ],
-          "foreign_keys": []
-        }
-      ]
-    },
-    {
-      "db_name": "analytics_db",
-      "schema": "public",
-      "tables": [
-        {
-          "table": "customer_segments",
-          "columns": [
-            {
-              "name": "customer_id",
-              "type": "text"
-            },
-            {
-              "name": "rfm_score",
-              "type": "bigint"
-            },
-            {
-              "name": "segment",
-              "type": "text"
-            },
-            {
-              "name": "lifetime_value",
-              "type": "double precision"
-            },
-            {
-              "name": "total_orders",
-              "type": "bigint"
-            },
-            {
-              "name": "avg_order_value",
-              "type": "double precision"
-            },
-            {
-              "name": "last_purchase_date",
-              "type": "text"
-            },
-            {
-              "name": "updated_at",
-              "type": "text"
-            }
-          ],
-          "foreign_keys": []
-        },
-        {
-          "table": "daily_metrics",
-          "columns": [
-            {
-              "name": "date",
-              "type": "text"
-            },
-            {
-              "name": "total_sales",
-              "type": "bigint"
-            },
-            {
-              "name": "total_orders",
-              "type": "bigint"
-            },
-            {
-              "name": "avg_order_value",
-              "type": "bigint"
-            },
-            {
-              "name": "new_customers",
-              "type": "bigint"
-            },
-            {
-              "name": "returning_customers",
-              "type": "bigint"
             }
           ],
           "foreign_keys": []

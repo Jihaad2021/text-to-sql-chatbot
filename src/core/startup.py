@@ -27,9 +27,7 @@ _LLM_KEYS: list[str] = [
 
 # At least one of these DB URLs must be present.
 _DB_URL_KEYS: list[str] = [
-    "SALES_DB_URL",
-    "PRODUCTS_DB_URL",
-    "ANALYTICS_DB_URL",
+    "FINANCIAL_DB_URL",
 ]
 
 # Required individually — no fallback.

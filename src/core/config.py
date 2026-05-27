@@ -51,9 +51,10 @@ class Config:
 
     # ── Databases ─────────────────────────────────────────────────
     ALLOWED_TABLES = {
-        'customers', 'orders', 'payments',
-        'products', 'sellers', 'order_items',
-        'customer_segments', 'daily_metrics'
+        'financial_internal', 'daily_master', 'daily_product_channel',
+        'channel_payment', 'product_price_list', 'anomalies',
+        'daily_unique_users', 'daily_user_partner',
+        'hourly_pattern_daily', 'product_summary',
     }
 
     DANGEROUS_KEYWORDS = {
@@ -63,7 +64,5 @@ class Config:
     }
 
     DB_URLS: dict[str, str | None] = {
-        'sales_db': os.getenv('SALES_DB_URL'),
-        'products_db': os.getenv('PRODUCTS_DB_URL'),
-        'analytics_db': os.getenv('ANALYTICS_DB_URL'),
+        'financial_db': os.getenv('FINANCIAL_DB_URL'),
     }

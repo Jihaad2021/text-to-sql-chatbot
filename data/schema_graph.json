@@ -5,1092 +5,1787 @@
   "nodes": [
     {
       "type": "database",
-      "name": "sales_db",
-      "id": "sales_db"
+      "name": "financial_db",
+      "id": "financial_db"
     },
     {
       "type": "schema",
       "name": "public",
-      "db": "sales_db",
-      "id": "sales_db.public"
+      "db": "financial_db",
+      "id": "financial_db.public"
     },
     {
       "type": "table",
-      "name": "customers",
-      "db": "sales_db",
+      "name": "anomalies",
+      "db": "financial_db",
       "schema": "public",
-      "description": "This table stores customer information and profiles with customer_id as the primary key, containing essential attributes like unique identifiers, names, email addresses, and geographic location details including city, state, and zip code along with account creation timestamps. It answers business questions about customer demographics, geographic distribution, account registration patterns, and customer lookup operations, supporting searches for terms like clients, buyers, users, pelanggan, konsumen, member, subscriber, and location-based queries for cities, states, regions, wilayah, daerah, and postal codes.",
+      "description": "Stores statistically detected transaction anomalies for Telkomsel's payment platform, with primary key 'id'.\nEach row represents one detected anomaly with its type, severity, affected entity, statistical z-score, and recommended action.\nAnswers questions about: what anomalies exist, which products or partners had spikes/drops, anomaly severity, and recommended actions.\nColumn 'check_type' is always 'trx_spike'. Column 'anomaly_type' values: 'spike' (sudden increase), 'drop' (sudden decrease).\nColumn 'severity' values: 'high', 'medium'. Column 'entity_type' is always 'system'. Column 'status' is always 'detected'.\nIndonesian synonyms: anomali, ketidaknormalan, lonjakan, penurunan, deteksi, peringatan, rekomendasi.",
       "columns": [
-        "customer_id",
-        "customer_unique_id",
-        "customer_name",
-        "customer_email",
-        "customer_city",
-        "customer_state",
-        "customer_zip_code",
-        "customer_created_at"
+        "id",
+        "date",
+        "check_type",
+        "status",
+        "entity_type",
+        "entity_id",
+        "anomaly_type",
+        "severity",
+        "total_trx",
+        "total_revenue",
+        "avg_revenue",
+        "zscore",
+        "threshold_value",
+        "actual_value",
+        "expected_value",
+        "deviation_pct",
+        "description",
+        "recommended_action",
+        "impact_estimate",
+        "payment_provider",
+        "partner",
+        "product_name",
+        "service_code",
+        "first_detected",
+        "last_detected",
+        "frequency_days"
       ],
-      "id": "sales_db.public.customers"
+      "id": "financial_db.public.anomalies"
     },
     {
       "type": "column",
-      "name": "customer_id",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK) for each anomaly record; used to uniquely identify and join anomaly entries.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.id"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "date",
+      "description": "Date (tanggal) when the anomaly was first detected; used to filter anomalies by time period.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.date"
+    },
+    {
+      "type": "column",
+      "name": "check_type",
       "data_type": "text",
-      "description": "The customer_id column holds unique text identifiers for customers serving as the primary key, commonly used for filtering specific customers, joining with order tables, and grouping sales data by customer.",
-      "table": "customers",
-      "db": "sales_db",
+      "description": "Type of statistical check performed; currently always 'trx_spike' (only one check type exists in data).",
+      "table": "anomalies",
+      "db": "financial_db",
       "schema": "public",
-      "id": "sales_db.public.customers.customer_id"
+      "id": "financial_db.public.anomalies.check_type"
     },
     {
       "type": "column",
-      "name": "customer_unique_id",
+      "name": "status",
       "data_type": "text",
-      "description": "The customer_unique_id column stores a unique text identifier for each customer that serves as the primary key and is commonly used for joining with other tables, filtering specific customers, and ensuring data integrity across the customer database.",
-      "table": "customers",
-      "db": "sales_db",
+      "description": "Current status of the anomaly; currently always 'detected'. Used to filter active anomalies.",
+      "table": "anomalies",
+      "db": "financial_db",
       "schema": "public",
-      "id": "sales_db.public.customers.customer_unique_id"
+      "id": "financial_db.public.anomalies.status"
     },
     {
       "type": "column",
-      "name": "customer_name",
+      "name": "entity_type",
       "data_type": "text",
-      "description": "The customer_name column stores the full name of each customer as text and is commonly used for filtering specific customers, grouping sales data by customer identity, and joining with order tables to display customer information in reports (nama pelanggan).",
-      "table": "customers",
-      "db": "sales_db",
+      "description": "Type of entity where anomaly was detected; currently always 'system'. Used for categorization.",
+      "table": "anomalies",
+      "db": "financial_db",
       "schema": "public",
-      "id": "sales_db.public.customers.customer_name"
+      "id": "financial_db.public.anomalies.entity_type"
     },
     {
       "type": "column",
-      "name": "customer_email",
+      "name": "entity_id",
       "data_type": "text",
-      "description": "The customer_email column stores the email address of each customer as text and is commonly used for filtering specific customers, joining with order or communication tables, and grouping customers for email marketing analysis (email in Indonesian).",
-      "table": "customers",
-      "db": "sales_db",
+      "description": "Identifier of the specific entity (product, partner, channel) where anomaly occurred; used to link to other tables.",
+      "table": "anomalies",
+      "db": "financial_db",
       "schema": "public",
-      "id": "sales_db.public.customers.customer_email"
+      "id": "financial_db.public.anomalies.entity_id"
     },
     {
       "type": "column",
-      "name": "customer_city",
+      "name": "anomaly_type",
       "data_type": "text",
-      "description": "The customer_city column stores the city name where each customer is located (kota) and is commonly used for filtering customers by geographic location, grouping sales data by city for regional analysis, and aggregating metrics like customer counts or revenue by urban area.",
-      "table": "customers",
-      "db": "sales_db",
+      "description": "Classification of anomaly direction: 'spike' (lonjakan — sudden increase) or 'drop' (penurunan — sudden decrease). Filter with WHERE anomaly_type = 'spike' or 'drop'.",
+      "table": "anomalies",
+      "db": "financial_db",
       "schema": "public",
-      "id": "sales_db.public.customers.customer_city"
+      "id": "financial_db.public.anomalies.anomaly_type"
     },
     {
       "type": "column",
-      "name": "customer_state",
+      "name": "severity",
       "data_type": "text",
-      "description": "The customer_state column stores the state or province name where each customer is located as text values, commonly used for filtering customers by geographic region, grouping sales data by state for regional analysis, and joining with location-based tables for demographic insights (provinsi).",
-      "table": "customers",
-      "db": "sales_db",
+      "description": "Business severity level: 'high' (kritis) or 'medium' (sedang). Use to prioritize anomalies.",
+      "table": "anomalies",
+      "db": "financial_db",
       "schema": "public",
-      "id": "sales_db.public.customers.customer_state"
+      "id": "financial_db.public.anomalies.severity"
     },
     {
       "type": "column",
-      "name": "customer_zip_code",
-      "data_type": "bigint",
-      "description": "The customer_zip_code column stores postal code numbers as integers for customer addresses, commonly used for filtering customers by geographic location, grouping sales data by postal regions, and joining with geographic or demographic tables for location-based analysis (kode pos).",
-      "table": "customers",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.customers.customer_zip_code"
-    },
-    {
-      "type": "column",
-      "name": "customer_created_at",
-      "data_type": "text",
-      "description": "The customer_created_at column stores the timestamp when a customer account was created as text format and is commonly used for filtering customers by registration date ranges, grouping customers by time periods for cohort analysis, and aggregating customer acquisition metrics over time (tanggal dibuat).",
-      "table": "customers",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.customers.customer_created_at"
-    },
-    {
-      "type": "table",
-      "name": "orders",
-      "db": "sales_db",
-      "schema": "public",
-      "description": "This table stores customer order transactions with order_id as the primary key, tracking essential order lifecycle attributes including customer_id, order_status, purchase timestamp, approval time, delivery timestamp, and estimated delivery date. It answers business questions about order tracking, delivery performance, customer purchase patterns, and order fulfillment metrics, supporting searches for terms like orders, purchases, transactions, deliveries, pesanan, pembelian, pengiriman, status pesanan, and waktu pengiriman.",
-      "columns": [
-        "order_id",
-        "customer_id",
-        "order_status",
-        "order_purchase_timestamp",
-        "order_approved_at",
-        "order_delivered_timestamp",
-        "order_estimated_delivery_date"
-      ],
-      "id": "sales_db.public.orders"
-    },
-    {
-      "type": "column",
-      "name": "order_id",
-      "data_type": "text",
-      "description": "The order_id column holds unique text identifiers for each order record serving as the primary key, commonly used for filtering specific orders, joining with other tables like order items or payments, and grouping order-related data in analytical queries.",
-      "table": "orders",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.orders.order_id"
-    },
-    {
-      "type": "column",
-      "name": "customer_id",
-      "data_type": "text",
-      "description": "The customer_id column stores unique text identifiers for customers who placed orders and serves as a foreign key for joining with customer tables, commonly used for filtering orders by specific customers and grouping orders for customer-level aggregations (pelanggan).",
-      "table": "orders",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.orders.customer_id"
-    },
-    {
-      "type": "column",
-      "name": "order_status",
-      "data_type": "text",
-      "description": "The order_status column holds text values representing the current state of an order (such as pending, approved, delivered, canceled) and is commonly used for filtering orders by their processing stage and grouping orders for status-based analytics (status).",
-      "table": "orders",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.orders.order_status"
-    },
-    {
-      "type": "column",
-      "name": "order_purchase_timestamp",
-      "data_type": "timestamp without time zone",
-      "description": "The order_purchase_timestamp column stores the exact date and time when a customer placed their order, commonly used for filtering orders by date ranges, grouping sales data by time periods, and calculating delivery timeframes by joining with delivery timestamps (tanggal pembelian).",
-      "table": "orders",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.orders.order_purchase_timestamp"
-    },
-    {
-      "type": "column",
-      "name": "order_approved_at",
-      "data_type": "text",
-      "description": "The order_approved_at column stores the timestamp when an order was approved as text, commonly used for filtering orders by approval date ranges, grouping sales by approval periods, and calculating time-based metrics like approval processing times (tanggal persetujuan).",
-      "table": "orders",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.orders.order_approved_at"
-    },
-    {
-      "type": "column",
-      "name": "order_delivered_timestamp",
-      "data_type": "text",
-      "description": "The order_delivered_timestamp column stores the actual delivery date and time as text when an order was delivered to the customer, commonly used for filtering orders by delivery periods, calculating delivery performance metrics, and grouping orders by delivery timeframes (tanggal pengiriman).",
-      "table": "orders",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.orders.order_delivered_timestamp"
-    },
-    {
-      "type": "column",
-      "name": "order_estimated_delivery_date",
-      "data_type": "text",
-      "description": "The order_estimated_delivery_date column stores the predicted delivery date as text for each order and is commonly used for filtering orders by expected delivery timeframes, grouping orders by delivery periods, and calculating delivery performance metrics (tanggal estimasi pengiriman).",
-      "table": "orders",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.orders.order_estimated_delivery_date"
-    },
-    {
-      "type": "table",
-      "name": "payments",
-      "db": "sales_db",
-      "schema": "public",
-      "description": "This table stores payment transaction records with payment_id as the primary key, capturing essential attributes like order_id, payment type, installment details, and monetary values for each payment made by customers.\n\nIt answers business questions about payment methods, transaction amounts, installment patterns, and revenue analysis, supporting queries about pembayaran (payments), metode bayar (payment methods), cicilan (installments), and nilai transaksi (transaction values).",
-      "columns": [
-        "payment_id",
-        "order_id",
-        "payment_sequential",
-        "payment_type",
-        "payment_installments",
-        "payment_value"
-      ],
-      "id": "sales_db.public.payments"
-    },
-    {
-      "type": "column",
-      "name": "payment_id",
-      "data_type": "text",
-      "description": "The payment_id column holds unique text identifiers for individual payments that serves as the primary key for filtering specific payment records and joining with other payment-related tables in the sales database.",
-      "table": "payments",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.payments.payment_id"
-    },
-    {
-      "type": "column",
-      "name": "order_id",
-      "data_type": "text",
-      "description": "The order_id column stores text identifiers that link payments to their corresponding orders, serving as a foreign key for joining with order tables and commonly used for filtering and grouping payment data by specific orders.",
-      "table": "payments",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.payments.order_id"
-    },
-    {
-      "type": "column",
-      "name": "payment_sequential",
-      "data_type": "bigint",
-      "description": "The payment_sequential column stores a sequential number indicating the order of payments within a transaction and is commonly used for filtering and ordering payment records chronologically, serving as a sequence identifier for multiple payment installments (urutan pembayaran).",
-      "table": "payments",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.payments.payment_sequential"
-    },
-    {
-      "type": "column",
-      "name": "payment_type",
-      "data_type": "text",
-      "description": "The payment_type column stores the method of payment used for transactions (such as credit card, debit card, or cash) as text values, commonly used for filtering and grouping payment data by payment method (metode pembayaran).",
-      "table": "payments",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.payments.payment_type"
-    },
-    {
-      "type": "column",
-      "name": "payment_installments",
-      "data_type": "bigint",
-      "description": "The payment_installments column stores the number of installment payments (cicilan) as a bigint value and is commonly used for filtering payment plans, grouping transactions by installment count, and aggregating payment statistics to analyze customer payment preferences.",
-      "table": "payments",
-      "db": "sales_db",
-      "schema": "public",
-      "id": "sales_db.public.payments.payment_installments"
-    },
-    {
-      "type": "column",
-      "name": "payment_value",
+      "name": "total_trx",
       "data_type": "double precision",
-      "description": "The payment_value column stores the monetary amount of each payment transaction as a double precision number, commonly used for aggregating total revenue, filtering by payment ranges, and calculating financial metrics in sales analysis queries (nilai pembayaran).",
-      "table": "payments",
-      "db": "sales_db",
+      "description": "Total transaction count at time of anomaly detection; used to assess anomaly scale.",
+      "table": "anomalies",
+      "db": "financial_db",
       "schema": "public",
-      "id": "sales_db.public.payments.payment_value"
+      "id": "financial_db.public.anomalies.total_trx"
     },
     {
-      "type": "database",
-      "name": "products_db",
-      "id": "products_db"
+      "type": "column",
+      "name": "total_revenue",
+      "data_type": "double precision",
+      "description": "Total revenue (pendapatan) at time of anomaly; used to estimate financial impact.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.total_revenue"
     },
     {
-      "type": "schema",
-      "name": "public",
-      "db": "products_db",
-      "id": "products_db.public"
+      "type": "column",
+      "name": "avg_revenue",
+      "data_type": "double precision",
+      "description": "Average revenue per transaction at time of anomaly; used as baseline for comparison.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.avg_revenue"
+    },
+    {
+      "type": "column",
+      "name": "zscore",
+      "data_type": "double precision",
+      "description": "Statistical Z-score of the anomaly (deviasi statistik); values < -2 or > 2 indicate significant anomaly. Higher absolute value = more extreme.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.zscore"
+    },
+    {
+      "type": "column",
+      "name": "threshold_value",
+      "data_type": "double precision",
+      "description": "Statistical threshold (ambang batas) used to trigger anomaly detection; compared against actual_value.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.threshold_value"
+    },
+    {
+      "type": "column",
+      "name": "actual_value",
+      "data_type": "double precision",
+      "description": "Actual observed metric value (nilai aktual) at time of anomaly; compared against expected_value.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.actual_value"
+    },
+    {
+      "type": "column",
+      "name": "expected_value",
+      "data_type": "double precision",
+      "description": "Expected/baseline metric value (nilai yang diharapkan) based on historical patterns.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.expected_value"
+    },
+    {
+      "type": "column",
+      "name": "deviation_pct",
+      "data_type": "double precision",
+      "description": "Percentage deviation from expected value (persentase deviasi = (actual - expected) / expected * 100). Negative = below expectation.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.deviation_pct"
+    },
+    {
+      "type": "column",
+      "name": "description",
+      "data_type": "text",
+      "description": "Human-readable description (deskripsi) of the anomaly; shown directly in the dashboard.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.description"
+    },
+    {
+      "type": "column",
+      "name": "recommended_action",
+      "data_type": "text",
+      "description": "Recommended corrective action (tindakan yang disarankan) for the anomaly.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.recommended_action"
+    },
+    {
+      "type": "column",
+      "name": "impact_estimate",
+      "data_type": "double precision",
+      "description": "Estimated financial impact in Rupiah (estimasi dampak finansial); used to prioritize response.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.impact_estimate"
+    },
+    {
+      "type": "column",
+      "name": "payment_provider",
+      "data_type": "text",
+      "description": "Payment provider associated with the anomaly; values: 'gopay', 'ovo', 'dana', 'shopeepay', 'qris', 'linkaja_app', 'linkaja_wco', 'tsel_wallet', 'indomaret', 'finnet_cc', 'finnet_va'.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.payment_provider"
+    },
+    {
+      "type": "column",
+      "name": "partner",
+      "data_type": "text",
+      "description": "Partner name associated with the anomaly; values: 'gopay', 'ovo', 'dana', 'shopeepay', 'qris', 'linkaja', 'linkajawco', 'linkaja_wco', 'telkomsel_wallet', 'indomaret', 'finnet'.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.partner"
+    },
+    {
+      "type": "column",
+      "name": "product_name",
+      "data_type": "text",
+      "description": "Name of the product (nama produk) associated with the anomaly; used to filter and join with product_summary.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.product_name"
+    },
+    {
+      "type": "column",
+      "name": "service_code",
+      "data_type": "text",
+      "description": "Internal service code (kode layanan internal) for the affected service.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.service_code"
+    },
+    {
+      "type": "column",
+      "name": "first_detected",
+      "data_type": "date",
+      "description": "Date when anomaly was first detected (pertama terdeteksi); useful for duration analysis.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.first_detected"
+    },
+    {
+      "type": "column",
+      "name": "last_detected",
+      "data_type": "date",
+      "description": "Date when anomaly was last detected (terakhir terdeteksi); used with first_detected to compute anomaly duration.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.last_detected"
+    },
+    {
+      "type": "column",
+      "name": "frequency_days",
+      "data_type": "integer",
+      "description": "Number of days the anomaly recurred (frekuensi hari); higher value means persistent anomaly.",
+      "table": "anomalies",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.anomalies.frequency_days"
     },
     {
       "type": "table",
-      "name": "products",
-      "db": "products_db",
+      "name": "daily_unique_users",
+      "db": "financial_db",
       "schema": "public",
-      "description": "This table stores product catalog information with product_id as the primary key, containing essential product attributes including category classification, name and description text lengths, photo quantities, weight in grams, and physical dimensions in centimeters.\n\nIt answers business questions about product characteristics, inventory analysis, shipping calculations, and catalog management, supporting searches for items, barang, produk, kategori, dimensi, berat, foto, and ukuran.",
+      "description": "Stores daily user counts for the entire Telkomsel payment platform. One row per day.\nColumn 'unique_users' = cumulative total registered users (scale: millions, e.g. 8,993,727).\nColumn 'daily_unique_users' = daily active users for that specific day (scale: hundreds of thousands, e.g. 856,451).\nThese two columns have very different scales and must not be confused.\nAnswers questions about: total registered users, daily active users, growth trends.\nIndonesian synonyms: pengguna harian, pengguna unik, pengguna aktif, pengguna terdaftar.\nJOIN: date column links to daily_master.date, daily_user_partner.date.",
       "columns": [
-        "product_id",
-        "product_category_name",
-        "product_name_length",
-        "product_description_length",
-        "product_photos_qty",
-        "product_weight_g",
-        "product_length_cm",
-        "product_height_cm",
-        "product_width_cm"
+        "id",
+        "date",
+        "unique_users",
+        "daily_unique_users"
       ],
-      "id": "products_db.public.products"
+      "id": "financial_db.public.daily_unique_users"
+    },
+    {
+      "type": "column",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK); used to identify each daily user count record.",
+      "table": "daily_unique_users",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_unique_users.id"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "date",
+      "description": "Date (tanggal) for this user count record; used to filter or group by date.",
+      "table": "daily_unique_users",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_unique_users.date"
+    },
+    {
+      "type": "column",
+      "name": "unique_users",
+      "data_type": "bigint",
+      "description": "CUMULATIVE total registered users on the platform (pengguna terdaftar kumulatif). Scale: millions (e.g. 8,993,727). Do NOT confuse with daily_unique_users.",
+      "table": "daily_unique_users",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_unique_users.unique_users"
+    },
+    {
+      "type": "column",
+      "name": "daily_unique_users",
+      "data_type": "bigint",
+      "description": "DAILY active users for this specific day (pengguna aktif harian). Scale: hundreds of thousands (e.g. 856,451). This is the correct column for 'berapa pengguna hari ini' queries.",
+      "table": "daily_unique_users",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_unique_users.daily_unique_users"
+    },
+    {
+      "type": "table",
+      "name": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "description": "Stores internal financial settlement data per payment provider per day for Telkomsel's platform. One row = one provider × transaction_type × item_type per day.\nPrimary key: 'id'. Key metrics: total_net_revenue (net revenue after deductions), net_gap (settlement discrepancy — negative means deficit, actual < expected), total_platform_fee, total_admin_fee.\nColumn 'payment_provider' values: 'dana', 'finnet_cc', 'finnet_va', 'gopay', 'indomaret', 'linkaja_app', 'linkaja_wco', 'ovo', 'qris', 'shopeepay', 'tsel_wallet'.\nNote: 'tsel_wallet' here = 'telkomsel_wallet' in other tables. 'finnet_cc' and 'finnet_va' are sub-variants of 'finnet'.\nColumn 'transaction_type' values: 'Recharge', 'Package'. Column 'item_type' values: 'recharge', 'package', 'topping'.\nAnswers questions about: net revenue per provider, settlement gaps, platform fees, admin fees, financial reconciliation (rekonsiliasi keuangan).\nIndonesian synonyms: pendapatan bersih, selisih settlement, biaya platform, biaya admin, rekonsiliasi.\nJOIN: date + payment_provider links to product_summary (use payment_provider); date links to daily_master.",
+      "columns": [
+        "id",
+        "date",
+        "payment_provider",
+        "transaction_type",
+        "item_type",
+        "total_trx",
+        "total_net_revenue",
+        "net_gap",
+        "total_platform_fee",
+        "total_admin_fee"
+      ],
+      "id": "financial_db.public.financial_internal"
+    },
+    {
+      "type": "column",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK) for each settlement record.",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.id"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "date",
+      "description": "Transaction date (tanggal transaksi); used to filter or group financial data by time period.",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.date"
+    },
+    {
+      "type": "column",
+      "name": "payment_provider",
+      "data_type": "text",
+      "description": "Payment provider name (nama provider pembayaran). Values: 'dana', 'finnet_cc', 'finnet_va', 'gopay', 'indomaret', 'linkaja_app', 'linkaja_wco', 'ovo', 'qris', 'shopeepay', 'tsel_wallet'. Note: 'tsel_wallet' = telkomsel wallet; 'finnet_cc' and 'finnet_va' are credit-card and virtual-account variants of finnet.",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.payment_provider"
+    },
+    {
+      "type": "column",
+      "name": "transaction_type",
+      "data_type": "text",
+      "description": "Type of transaction (tipe transaksi). Values: 'Recharge' (pengisian pulsa), 'Package' (pembelian paket). Used to filter by transaction category.",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.transaction_type"
+    },
+    {
+      "type": "column",
+      "name": "item_type",
+      "data_type": "text",
+      "description": "Type of product item (tipe produk). Values: 'recharge' (pulsa), 'package' (paket data), 'topping' (layanan tambahan/VAS). Used to segment revenue by product type.",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.item_type"
+    },
+    {
+      "type": "column",
+      "name": "total_trx",
+      "data_type": "bigint",
+      "description": "Total number of transactions (jumlah total transaksi) for this provider/type/date combination; used for volume aggregation.",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.total_trx"
+    },
+    {
+      "type": "column",
+      "name": "total_net_revenue",
+      "data_type": "double precision",
+      "description": "Net revenue after deductions (pendapatan bersih) in Rupiah; the primary revenue metric for financial analysis.",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.total_net_revenue"
+    },
+    {
+      "type": "column",
+      "name": "net_gap",
+      "data_type": "double precision",
+      "description": "Settlement gap = actual settlement minus expected amount (selisih settlement). Negative = deficit (kekurangan), positive = surplus. Key metric for reconciliation (rekonsiliasi).",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.net_gap"
+    },
+    {
+      "type": "column",
+      "name": "total_platform_fee",
+      "data_type": "double precision",
+      "description": "Total platform/service fee charged (biaya platform) in Rupiah; deducted from gross revenue.",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.total_platform_fee"
+    },
+    {
+      "type": "column",
+      "name": "total_admin_fee",
+      "data_type": "double precision",
+      "description": "Total administrative fee (biaya administrasi/biaya admin) in Rupiah; deducted from gross revenue.",
+      "table": "financial_internal",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.financial_internal.total_admin_fee"
+    },
+    {
+      "type": "table",
+      "name": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "description": "Daily transaction summary per payment partner/aggregator for Telkomsel's platform. One row = one partner per day.\nPrimary key: 'id'. This is the main aggregated transaction table for high-level analysis.\nColumn 'partner' values: 'dana', 'finnet', 'gopay', 'indomaret', 'linkaja', 'linkaja_wco', 'linkajawco', 'ovo', 'qris', 'shopeepay', 'telkomsel_wallet'.\nImportant: 'linkajawco' and 'linkaja_wco' are the same entity (data inconsistency) — always include both when filtering linkaja_wco.\nColumn 'success_rate_pct': transaction success rate. Business thresholds: ALERT if < 80%, Watch if 80–85%, Normal if > 85%, Excellent if > 95%.\nColumn 'success_trx': number of successful transactions (stored as float). Column 'failed_trx': number of failed transactions (stored as float).\nWeighted average success rate formula: SUM(success_trx) / SUM(total_trx) * 100.\nAnswers questions about: daily transaction volume per partner, revenue per partner, success rate per partner, unique users per partner, MoM/WoW comparisons.\nIndonesian synonyms: transaksi harian, mitra, partner, volume, pendapatan, tingkat keberhasilan, pengguna unik.\nJOIN: date + partner links to channel_payment and daily_user_partner; date links to hourly_pattern_daily and daily_unique_users.",
+      "columns": [
+        "id",
+        "date",
+        "partner",
+        "total_trx",
+        "success_trx",
+        "failed_trx",
+        "total_revenue",
+        "success_rate_pct",
+        "unique_users"
+      ],
+      "id": "financial_db.public.daily_master"
+    },
+    {
+      "type": "column",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK) for each daily partner record.",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.id"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "date",
+      "description": "Transaction date (tanggal); used to filter or group by day, week, or month.",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.date"
+    },
+    {
+      "type": "column",
+      "name": "partner",
+      "data_type": "text",
+      "description": "Payment partner/aggregator name (nama mitra/partner). Values: 'dana', 'finnet', 'gopay', 'indomaret', 'linkaja', 'linkaja_wco', 'linkajawco', 'ovo', 'qris', 'shopeepay', 'telkomsel_wallet'. IMPORTANT: 'linkajawco' and 'linkaja_wco' are the same entity — use WHERE partner IN ('linkajawco', 'linkaja_wco') to get complete linkaja_wco data.",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.partner"
+    },
+    {
+      "type": "column",
+      "name": "total_trx",
+      "data_type": "bigint",
+      "description": "Total transaction count (jumlah total transaksi) for this partner on this date; primary volume metric.",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.total_trx"
+    },
+    {
+      "type": "column",
+      "name": "success_trx",
+      "data_type": "double precision",
+      "description": "Number of successful transactions (transaksi berhasil) stored as float; used to compute weighted success rate = SUM(success_trx)/SUM(total_trx)*100.",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.success_trx"
+    },
+    {
+      "type": "column",
+      "name": "failed_trx",
+      "data_type": "double precision",
+      "description": "Number of failed transactions (transaksi gagal) stored as float; used for failure rate analysis.",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.failed_trx"
+    },
+    {
+      "type": "column",
+      "name": "total_revenue",
+      "data_type": "double precision",
+      "description": "Total revenue (total pendapatan) in Rupiah for this partner on this date; primary revenue metric.",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.total_revenue"
+    },
+    {
+      "type": "column",
+      "name": "success_rate_pct",
+      "data_type": "double precision",
+      "description": "Pre-computed success rate percentage (tingkat keberhasilan persen). Thresholds: ALERT < 80%, Watch 80–85%, Normal > 85%, Excellent > 95%. For accurate cross-partner SR, use SUM(success_trx)/SUM(total_trx)*100 instead.",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.success_rate_pct"
+    },
+    {
+      "type": "column",
+      "name": "unique_users",
+      "data_type": "bigint",
+      "description": "Number of unique users (pengguna unik) who transacted with this partner on this date.",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.unique_users"
+    },
+    {
+      "type": "table",
+      "name": "daily_user_partner",
+      "db": "financial_db",
+      "schema": "public",
+      "description": "Stores unique user counts per payment partner per day. One row = one partner per day.\nPrimary key: 'id'. Used for per-partner user engagement analysis.\nColumn 'partner' values: same as daily_master.partner — 'dana', 'finnet', 'gopay', 'indomaret', 'linkaja', 'linkaja_wco', 'linkajawco', 'ovo', 'qris', 'shopeepay', 'telkomsel_wallet'.\nNote: 'linkajawco' and 'linkaja_wco' are the same entity — always include both when filtering.\nAnswers questions about: how many unique users per partner, partner user growth, comparing user base across partners.\nIndonesian synonyms: pengguna unik per mitra, pengguna harian per partner, basis pengguna.\nJOIN: date + partner links to daily_master; date links to daily_unique_users.",
+      "columns": [
+        "id",
+        "date",
+        "partner",
+        "unique_users"
+      ],
+      "id": "financial_db.public.daily_user_partner"
+    },
+    {
+      "type": "column",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK) for each daily partner-user record.",
+      "table": "daily_user_partner",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_user_partner.id"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "date",
+      "description": "Date (tanggal) of the user count; used to filter or group by time period.",
+      "table": "daily_user_partner",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_user_partner.date"
+    },
+    {
+      "type": "column",
+      "name": "partner",
+      "data_type": "text",
+      "description": "Payment partner name (nama mitra). Values: same as daily_master.partner. IMPORTANT: 'linkajawco' and 'linkaja_wco' are the same entity — always filter with IN ('linkajawco', 'linkaja_wco') for complete data.",
+      "table": "daily_user_partner",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_user_partner.partner"
+    },
+    {
+      "type": "column",
+      "name": "unique_users",
+      "data_type": "bigint",
+      "description": "Number of unique users (pengguna unik) who transacted via this partner on this date; used for per-partner user analysis and comparison.",
+      "table": "daily_user_partner",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_user_partner.unique_users"
+    },
+    {
+      "type": "table",
+      "name": "hourly_pattern_daily",
+      "db": "financial_db",
+      "schema": "public",
+      "description": "Stores transaction patterns per hour of the day, aggregated daily. One row = one hour (0–23) per day.\nPrimary key: 'id'. Used for peak hour analysis and intraday patterns.\nColumn 'hour': integer 0–23. Business peak hours are 18–21. Business hours are 8–22. Night hours are 0–6.\nColumn 'success_rate_pct': hourly success rate. Alert threshold: below 80%.\nAnswers questions about: what hour has the most transactions, peak hours, success rate by hour, intraday transaction patterns.\nIndonesian synonyms: pola jam, jam sibuk, jam puncak, transaksi per jam, pola harian.\nJOIN: date links to daily_master.date, product_summary.date.",
+      "columns": [
+        "id",
+        "date",
+        "hour",
+        "total_trx",
+        "success_rate_pct"
+      ],
+      "id": "financial_db.public.hourly_pattern_daily"
+    },
+    {
+      "type": "column",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK) for each hourly record.",
+      "table": "hourly_pattern_daily",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.hourly_pattern_daily.id"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "date",
+      "description": "Date (tanggal) for this hourly pattern; used to filter by day.",
+      "table": "hourly_pattern_daily",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.hourly_pattern_daily.date"
+    },
+    {
+      "type": "column",
+      "name": "hour",
+      "data_type": "integer",
+      "description": "Hour of the day as integer 0–23 (jam, 0=midnight, 23=11pm). Business peak hours: 18–21. Business hours: 8–22. Night hours: 0–6. Use WHERE hour BETWEEN 18 AND 21 for peak hour analysis.",
+      "table": "hourly_pattern_daily",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.hourly_pattern_daily.hour"
+    },
+    {
+      "type": "column",
+      "name": "total_trx",
+      "data_type": "bigint",
+      "description": "Total transaction count (jumlah transaksi) during this hour; used to identify peak hours and traffic patterns.",
+      "table": "hourly_pattern_daily",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.hourly_pattern_daily.total_trx"
+    },
+    {
+      "type": "column",
+      "name": "success_rate_pct",
+      "data_type": "double precision",
+      "description": "Success rate percentage for this hour (tingkat keberhasilan per jam). Alert if below 80%. Used to detect hourly SR degradation.",
+      "table": "hourly_pattern_daily",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.hourly_pattern_daily.success_rate_pct"
+    },
+    {
+      "type": "table",
+      "name": "product_summary",
+      "db": "financial_db",
+      "schema": "public",
+      "description": "Per-product daily transaction summary — the most granular and largest table (514,606 rows, 930 unique products).\nOne row = one product × payment_provider × item_type × type_of_payment per day.\nPrimary key: 'id'. This is the main table for product-level analysis.\nColumn 'item_type' values: 'recharge' (pulsa top-up), 'package' (paket data/internet), 'topping' (VAS/layanan tambahan seperti streaming, antivirus).\nColumn 'type_of_payment' values: 'Prepaid', 'topping'.\nColumn 'payment_provider' values: 'dana', 'finnet_cc', 'finnet_va', 'gopay', 'indomaret', 'linkaja_app', 'linkaja_wco', 'ovo', 'qris', 'shopeepay', 'tsel_wallet'.\nNote: 'tsel_wallet' = 'telkomsel_wallet' in daily_master. 'linkaja_app' and 'linkaja_wco' are linkaja variants.\nColumn 'settlement_gap': difference between expected and actual settlement (can be negative).\nColumn 'unique_buyers': distinct customers who purchased. Column 'repeat_buyers': customers who purchased more than once.\nWeighted SR formula: SUM(success_trx) / SUM(total_trx) * 100.\nAnswers questions about: which products sell most, revenue by product, success rate per product, repeat buyers, settlement gaps per product.\nIndonesian synonyms: produk, penjualan produk, transaksi produk, pendapatan produk, pembeli unik, pembeli berulang.\nJOIN: product_name links to product_price_list.product_name and daily_product_channel.product_name; date links to daily_master.",
+      "columns": [
+        "id",
+        "date",
+        "product_id",
+        "product_name",
+        "item_type",
+        "type_of_payment",
+        "payment_provider",
+        "total_trx",
+        "total_revenue",
+        "success_trx",
+        "success_rate_pct",
+        "unique_buyers",
+        "repeat_buyers",
+        "settlement_gap"
+      ],
+      "id": "financial_db.public.product_summary"
+    },
+    {
+      "type": "column",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK) for each product-day record.",
+      "table": "product_summary",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.product_summary.id"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "date",
+      "description": "Transaction date (tanggal); used to filter or group product performance by time period.",
+      "table": "product_summary",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.product_summary.date"
     },
     {
       "type": "column",
       "name": "product_id",
       "data_type": "text",
-      "description": "The product_id column stores unique text identifiers for each product serving as the primary key, commonly used for filtering specific products, joining with other tables like orders or reviews, and grouping product-related data (id_produk).",
-      "table": "products",
-      "db": "products_db",
+      "description": "Internal product identifier (ID produk internal); may be NULL for unknown products. Use product_name for joining with other tables.",
+      "table": "product_summary",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.products.product_id"
+      "id": "financial_db.public.product_summary.product_id"
     },
     {
       "type": "column",
-      "name": "product_category_name",
+      "name": "product_name",
       "data_type": "text",
-      "description": "The product_category_name column stores the category name that each product belongs to as text values (kategori), commonly used for filtering products by category, grouping sales data by product type, and joining with category-related tables to analyze product performance across different market segments.",
-      "table": "products",
-      "db": "products_db",
+      "description": "Product name (nama produk); key join column to product_price_list and daily_product_channel. May be NULL — NULL product_name rows represent unidentified transactions.",
+      "table": "product_summary",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.products.product_category_name"
+      "id": "financial_db.public.product_summary.product_name"
     },
     {
       "type": "column",
-      "name": "product_name_length",
-      "data_type": "bigint",
-      "description": "The product_name_length column stores the character count of product names as a bigint value and is commonly used for filtering products by name length ranges, grouping products by name length categories, and calculating aggregate statistics like average or maximum name lengths across product categories (panjang nama produk).",
-      "table": "products",
-      "db": "products_db",
+      "name": "item_type",
+      "data_type": "text",
+      "description": "Product category (kategori produk). Values: 'recharge' (pengisian pulsa), 'package' (paket data/internet), 'topping' (layanan tambahan/VAS seperti streaming, antivirus). Used to segment analysis by product type.",
+      "table": "product_summary",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.products.product_name_length"
+      "id": "financial_db.public.product_summary.item_type"
     },
     {
       "type": "column",
-      "name": "product_description_length",
-      "data_type": "bigint",
-      "description": "The product_description_length column stores the character count of product descriptions as a bigint metric that is commonly used for filtering products by description detail level, grouping products into description length categories, and aggregating statistics about product information completeness (panjang deskripsi).",
-      "table": "products",
-      "db": "products_db",
+      "name": "type_of_payment",
+      "data_type": "text",
+      "description": "Payment type classification (tipe pembayaran). Values: 'Prepaid', 'topping'. Used to separate prepaid from add-on transactions.",
+      "table": "product_summary",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.products.product_description_length"
+      "id": "financial_db.public.product_summary.type_of_payment"
     },
     {
       "type": "column",
-      "name": "product_photos_qty",
-      "data_type": "bigint",
-      "description": "The product_photos_qty column stores the count of photos associated with each product as a bigint value, commonly used for filtering products by photo availability, grouping products by photo count ranges, and aggregating statistics on product photo quantities (jumlah foto).",
-      "table": "products",
-      "db": "products_db",
+      "name": "payment_provider",
+      "data_type": "text",
+      "description": "Payment provider used for this transaction (provider pembayaran). Values: 'dana', 'finnet_cc', 'finnet_va', 'gopay', 'indomaret', 'linkaja_app', 'linkaja_wco', 'ovo', 'qris', 'shopeepay', 'tsel_wallet'. Note: 'tsel_wallet' = telkomsel_wallet in daily_master.",
+      "table": "product_summary",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.products.product_photos_qty"
+      "id": "financial_db.public.product_summary.payment_provider"
     },
     {
       "type": "column",
-      "name": "product_weight_g",
+      "name": "total_trx",
       "data_type": "bigint",
-      "description": "The product_weight_g column stores the weight of products in grams (berat) as a bigint value and is commonly used for filtering products by weight ranges, grouping products into weight categories, and calculating aggregate statistics like average or total weight across product categories.",
-      "table": "products",
-      "db": "products_db",
+      "description": "Total transaction count (jumlah transaksi) for this product/provider/day; primary volume metric.",
+      "table": "product_summary",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.products.product_weight_g"
+      "id": "financial_db.public.product_summary.total_trx"
     },
     {
       "type": "column",
-      "name": "product_length_cm",
-      "data_type": "bigint",
-      "description": "The product_length_cm column stores the length measurement of products in centimeters as a bigint value (panjang), commonly used for filtering products by size dimensions, grouping items by length ranges, and calculating shipping costs or storage requirements.",
-      "table": "products",
-      "db": "products_db",
+      "name": "total_revenue",
+      "data_type": "double precision",
+      "description": "Total revenue (pendapatan) in Rupiah for this product/provider/day.",
+      "table": "product_summary",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.products.product_length_cm"
+      "id": "financial_db.public.product_summary.total_revenue"
     },
     {
       "type": "column",
-      "name": "product_height_cm",
-      "data_type": "bigint",
-      "description": "The product_height_cm column stores the height measurement of products in centimeters as a bigint value (tinggi), commonly used for filtering products by size dimensions, grouping items by height ranges, and calculating volume or shipping metrics in product analysis queries.",
-      "table": "products",
-      "db": "products_db",
+      "name": "success_trx",
+      "data_type": "double precision",
+      "description": "Successful transaction count (transaksi berhasil) stored as float; use SUM(success_trx)/SUM(total_trx)*100 for weighted SR.",
+      "table": "product_summary",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.products.product_height_cm"
+      "id": "financial_db.public.product_summary.success_trx"
     },
     {
       "type": "column",
-      "name": "product_width_cm",
-      "data_type": "bigint",
-      "description": "The product_width_cm column stores the width measurement of products in centimeters as a bigint value (lebar), commonly used for filtering products by size dimensions, grouping items by width ranges, and calculating volume or shipping metrics in product analysis queries.",
-      "table": "products",
-      "db": "products_db",
+      "name": "success_rate_pct",
+      "data_type": "double precision",
+      "description": "Pre-computed success rate (tingkat keberhasilan) in percent. Alert < 80%, Watch 80–85%, Normal > 85%.",
+      "table": "product_summary",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.products.product_width_cm"
+      "id": "financial_db.public.product_summary.success_rate_pct"
+    },
+    {
+      "type": "column",
+      "name": "unique_buyers",
+      "data_type": "bigint",
+      "description": "Count of distinct buyers (pembeli unik) for this product on this day.",
+      "table": "product_summary",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.product_summary.unique_buyers"
+    },
+    {
+      "type": "column",
+      "name": "repeat_buyers",
+      "data_type": "bigint",
+      "description": "Count of buyers who purchased this product more than once (pembeli berulang/repeat buyer).",
+      "table": "product_summary",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.product_summary.repeat_buyers"
+    },
+    {
+      "type": "column",
+      "name": "settlement_gap",
+      "data_type": "double precision",
+      "description": "Settlement discrepancy (selisih settlement) in Rupiah = actual - expected. Negative = underpayment/kekurangan, positive = overpayment/kelebihan.",
+      "table": "product_summary",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.product_summary.settlement_gap"
     },
     {
       "type": "table",
-      "name": "order_items",
-      "db": "products_db",
+      "name": "daily_product_channel",
+      "db": "financial_db",
       "schema": "public",
-      "description": "This table stores individual line items within customer orders, with order_item_id as the primary key and key attributes including the associated order_id, product_id, seller_id, item price, and shipping costs (freight_value). It answers business questions about order composition, product sales performance, seller revenue analysis, and shipping cost breakdowns, supporting queries about item details, barang pesanan, harga produk, biaya pengiriman, and penjual performance.",
+      "description": "Daily transaction and revenue breakdown per product across 7 internal Telkomsel distribution channels. One row = one product per day.\nPrimary key: 'id'. This table has 248,638 rows.\nThe 7 channel columns represent internal Telkomsel distribution/acquisition channels (kode internal kanal distribusi Telkomsel):\n  a0_trx / a0_revenue: Channel A0 transactions and revenue\n  b3_trx / b3_revenue: Channel B3 transactions and revenue\n  f0_trx / f0_revenue: Channel F0 transactions and revenue\n  f4_trx / f4_revenue: Channel F4 transactions and revenue\n  f5_trx / f5_revenue: Channel F5 transactions and revenue\n  i1_trx / i1_revenue: Channel I1 transactions and revenue\n  ig_trx / ig_revenue: Channel IG transactions and revenue\nTo get total transactions for a product: SUM(a0_trx + b3_trx + f0_trx + f4_trx + f5_trx + i1_trx + ig_trx).\nTo get total revenue for a product: SUM(a0_revenue + b3_revenue + f0_revenue + f4_revenue + f5_revenue + i1_revenue + ig_revenue).\nAnswers questions about: which channel has most transactions for a product, channel revenue contribution, per-channel product performance.\nIndonesian synonyms: kanal distribusi, channel, saluran, transaksi per kanal, pendapatan per kanal.\nJOIN: product_name links to product_summary.product_name and product_price_list.product_name; date links to daily_master.",
       "columns": [
-        "order_id",
-        "order_item_id",
-        "product_id",
-        "seller_id",
-        "shipping_limit_date",
-        "price",
-        "freight_value"
+        "id",
+        "date",
+        "product_name",
+        "a0_trx",
+        "a0_revenue",
+        "b3_trx",
+        "b3_revenue",
+        "f0_trx",
+        "f0_revenue",
+        "f4_trx",
+        "f4_revenue",
+        "f5_trx",
+        "f5_revenue",
+        "i1_trx",
+        "i1_revenue",
+        "ig_trx",
+        "ig_revenue"
       ],
-      "id": "products_db.public.order_items"
+      "id": "financial_db.public.daily_product_channel"
     },
     {
       "type": "column",
-      "name": "order_id",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK) for each product-channel daily record.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.id"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "date",
+      "description": "Transaction date (tanggal); used to filter product channel data by time period.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.date"
+    },
+    {
+      "type": "column",
+      "name": "product_name",
       "data_type": "text",
-      "description": "The order_id column stores text identifiers that reference specific orders and serves as a foreign key for joining with order tables, commonly used for filtering and grouping order items by their parent order.",
-      "table": "order_items",
-      "db": "products_db",
+      "description": "Product name (nama produk); key join column to product_summary and product_price_list.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.order_items.order_id"
+      "id": "financial_db.public.daily_product_channel.product_name"
     },
     {
       "type": "column",
-      "name": "order_item_id",
+      "name": "a0_trx",
       "data_type": "bigint",
-      "description": "The order_item_id column holds unique bigint identifiers for individual items within orders, serves as the primary key for the order_items table, and is used for joining with other tables to retrieve specific order item details and for filtering queries when analyzing particular line items.",
-      "table": "order_items",
-      "db": "products_db",
+      "description": "Transaction count via Channel A0 (jumlah transaksi kanal A0); internal Telkomsel distribution channel.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.order_items.order_item_id"
+      "id": "financial_db.public.daily_product_channel.a0_trx"
+    },
+    {
+      "type": "column",
+      "name": "a0_revenue",
+      "data_type": "double precision",
+      "description": "Revenue from Channel A0 (pendapatan kanal A0) in Rupiah.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.a0_revenue"
+    },
+    {
+      "type": "column",
+      "name": "b3_trx",
+      "data_type": "bigint",
+      "description": "Transaction count via Channel B3 (jumlah transaksi kanal B3); internal Telkomsel distribution channel.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.b3_trx"
+    },
+    {
+      "type": "column",
+      "name": "b3_revenue",
+      "data_type": "double precision",
+      "description": "Revenue from Channel B3 (pendapatan kanal B3) in Rupiah.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.b3_revenue"
+    },
+    {
+      "type": "column",
+      "name": "f0_trx",
+      "data_type": "bigint",
+      "description": "Transaction count via Channel F0 (jumlah transaksi kanal F0); internal Telkomsel distribution channel.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.f0_trx"
+    },
+    {
+      "type": "column",
+      "name": "f0_revenue",
+      "data_type": "double precision",
+      "description": "Revenue from Channel F0 (pendapatan kanal F0) in Rupiah.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.f0_revenue"
+    },
+    {
+      "type": "column",
+      "name": "f4_trx",
+      "data_type": "bigint",
+      "description": "Transaction count via Channel F4 (jumlah transaksi kanal F4); internal Telkomsel distribution channel.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.f4_trx"
+    },
+    {
+      "type": "column",
+      "name": "f4_revenue",
+      "data_type": "double precision",
+      "description": "Revenue from Channel F4 (pendapatan kanal F4) in Rupiah.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.f4_revenue"
+    },
+    {
+      "type": "column",
+      "name": "f5_trx",
+      "data_type": "bigint",
+      "description": "Transaction count via Channel F5 (jumlah transaksi kanal F5); internal Telkomsel distribution channel.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.f5_trx"
+    },
+    {
+      "type": "column",
+      "name": "f5_revenue",
+      "data_type": "double precision",
+      "description": "Revenue from Channel F5 (pendapatan kanal F5) in Rupiah.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.f5_revenue"
+    },
+    {
+      "type": "column",
+      "name": "i1_trx",
+      "data_type": "bigint",
+      "description": "Transaction count via Channel I1 (jumlah transaksi kanal I1); internal Telkomsel distribution channel.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.i1_trx"
+    },
+    {
+      "type": "column",
+      "name": "i1_revenue",
+      "data_type": "double precision",
+      "description": "Revenue from Channel I1 (pendapatan kanal I1) in Rupiah.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.i1_revenue"
+    },
+    {
+      "type": "column",
+      "name": "ig_trx",
+      "data_type": "bigint",
+      "description": "Transaction count via Channel IG (jumlah transaksi kanal IG); internal Telkomsel distribution channel.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.ig_trx"
+    },
+    {
+      "type": "column",
+      "name": "ig_revenue",
+      "data_type": "double precision",
+      "description": "Revenue from Channel IG (pendapatan kanal IG) in Rupiah.",
+      "table": "daily_product_channel",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_product_channel.ig_revenue"
+    },
+    {
+      "type": "table",
+      "name": "channel_payment",
+      "db": "financial_db",
+      "schema": "public",
+      "description": "Daily transactions per channel × partner combination. One row = one partner × channel × purchase_mode per day.\nPrimary key: 'id'. This table has 7,456 rows.\nColumn 'channel' values: 'a0', 'b3', 'f0', 'f4', 'f5', 'i1', 'ig' (internal Telkomsel distribution channels/kode kanal distribusi internal).\nColumn 'partner' values: same as daily_master.partner.\nColumn 'purchase_mode' values: 'SELF' (user buys for themselves / beli untuk diri sendiri), 'GIFT' (user sends to another number / kirim ke nomor lain).\nNote: 'linkajawco' and 'linkaja_wco' are the same entity — include both when filtering linkaja_wco.\nAnswers questions about: which channel-partner combo has highest transactions, SELF vs GIFT breakdown, success rate by channel, revenue by purchase mode.\nIndonesian synonyms: kanal pembayaran, mode pembelian, hadiah, diri sendiri, mitra, partner, tingkat keberhasilan per kanal.\nJOIN: date + partner links to daily_master; date links to hourly_pattern_daily.",
+      "columns": [
+        "id",
+        "date",
+        "partner",
+        "channel",
+        "purchase_mode",
+        "total_trx",
+        "total_revenue",
+        "success_rate_pct"
+      ],
+      "id": "financial_db.public.channel_payment"
+    },
+    {
+      "type": "column",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK) for each channel-partner-day record.",
+      "table": "channel_payment",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.channel_payment.id"
+    },
+    {
+      "type": "column",
+      "name": "date",
+      "data_type": "date",
+      "description": "Transaction date (tanggal); used to filter channel payment data by time period.",
+      "table": "channel_payment",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.channel_payment.date"
+    },
+    {
+      "type": "column",
+      "name": "partner",
+      "data_type": "text",
+      "description": "Payment partner name (nama mitra). Values: 'dana', 'finnet', 'gopay', 'indomaret', 'linkaja', 'linkaja_wco', 'linkajawco', 'ovo', 'qris', 'shopeepay', 'telkomsel_wallet'. IMPORTANT: 'linkajawco' and 'linkaja_wco' are the same entity.",
+      "table": "channel_payment",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.channel_payment.partner"
+    },
+    {
+      "type": "column",
+      "name": "channel",
+      "data_type": "text",
+      "description": "Internal Telkomsel distribution channel code (kode kanal distribusi internal). Values: 'a0', 'b3', 'f0', 'f4', 'f5', 'i1', 'ig'. These are internal acquisition/distribution channels, not payment methods.",
+      "table": "channel_payment",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.channel_payment.channel"
+    },
+    {
+      "type": "column",
+      "name": "purchase_mode",
+      "data_type": "text",
+      "description": "Purchase mode (mode pembelian). Values: 'SELF' (beli untuk diri sendiri/own number), 'GIFT' (beli untuk nomor lain/gift to another number). Used to separate self-purchase from gift transactions.",
+      "table": "channel_payment",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.channel_payment.purchase_mode"
+    },
+    {
+      "type": "column",
+      "name": "total_trx",
+      "data_type": "bigint",
+      "description": "Total transaction count (jumlah transaksi) for this channel-partner-mode combination on this date.",
+      "table": "channel_payment",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.channel_payment.total_trx"
+    },
+    {
+      "type": "column",
+      "name": "total_revenue",
+      "data_type": "double precision",
+      "description": "Total revenue (pendapatan) in Rupiah for this channel-partner-mode combination.",
+      "table": "channel_payment",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.channel_payment.total_revenue"
+    },
+    {
+      "type": "column",
+      "name": "success_rate_pct",
+      "data_type": "double precision",
+      "description": "Success rate percentage (tingkat keberhasilan). Alert < 80%, Watch 80–85%, Normal > 85%. Used to monitor channel health.",
+      "table": "channel_payment",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.channel_payment.success_rate_pct"
+    },
+    {
+      "type": "table",
+      "name": "product_price_list",
+      "db": "financial_db",
+      "schema": "public",
+      "description": "Reference/master table for Telkomsel digital product prices. Contains 2,366 product price records.\nPrimary key: 'id'. This is a static reference table (not time-series).\nProducts include: paket internet, pulsa, streaming services (Vision+, WeTV, Viu), antivirus (Norton, Trend Micro), productivity apps (Zoom), telco add-ons, etc.\nColumn 'price' is the product price in Rupiah.\nAnswers questions about: what is the price of a product, product catalog, product names, price lookup.\nIndonesian synonyms: harga produk, daftar harga, katalog produk, harga pulsa, harga paket.\nJOIN: product_name and product_id link to product_summary; product_name links to daily_product_channel.",
+      "columns": [
+        "id",
+        "product_id",
+        "product_name",
+        "price"
+      ],
+      "id": "financial_db.public.product_price_list"
+    },
+    {
+      "type": "column",
+      "name": "id",
+      "data_type": "integer",
+      "description": "Auto-increment primary key (PK) for each product price record.",
+      "table": "product_price_list",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.product_price_list.id"
     },
     {
       "type": "column",
       "name": "product_id",
       "data_type": "text",
-      "description": "The product_id column stores text identifiers for products within order items and serves as a foreign key for joining with product tables, commonly used in filtering and grouping operations to analyze sales by product (produk).",
-      "table": "order_items",
-      "db": "products_db",
+      "description": "Internal product identifier (ID produk); links to product_summary.product_id.",
+      "table": "product_price_list",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.order_items.product_id"
+      "id": "financial_db.public.product_price_list.product_id"
     },
     {
       "type": "column",
-      "name": "seller_id",
+      "name": "product_name",
       "data_type": "text",
-      "description": "The seller_id column stores text identifiers of sellers who fulfill order items and is commonly used for filtering orders by specific sellers, grouping sales data by seller, joining with seller information tables, and aggregating seller performance metrics like total sales or order counts.",
-      "table": "order_items",
-      "db": "products_db",
+      "description": "Product name (nama produk); primary join key to product_summary and daily_product_channel. Use ILIKE or LOWER() for case-insensitive search.",
+      "table": "product_price_list",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.order_items.seller_id"
-    },
-    {
-      "type": "column",
-      "name": "shipping_limit_date",
-      "data_type": "text",
-      "description": "The shipping_limit_date column stores the maximum date by which an order item must be shipped as text format, commonly used for filtering orders by shipping deadlines, grouping items by shipping timeframes, and calculating shipping performance metrics (batas tanggal pengiriman).",
-      "table": "order_items",
-      "db": "products_db",
-      "schema": "public",
-      "id": "products_db.public.order_items.shipping_limit_date"
+      "id": "financial_db.public.product_price_list.product_name"
     },
     {
       "type": "column",
       "name": "price",
       "data_type": "double precision",
-      "description": "The price column stores the monetary value of individual items in orders as a double precision number, commonly used for filtering by price ranges, aggregating total order values, and calculating revenue metrics (harga).",
-      "table": "order_items",
-      "db": "products_db",
+      "description": "Product price (harga produk) in Rupiah; used for pricing queries and revenue validation.",
+      "table": "product_price_list",
+      "db": "financial_db",
       "schema": "public",
-      "id": "products_db.public.order_items.price"
-    },
-    {
-      "type": "column",
-      "name": "freight_value",
-      "data_type": "double precision",
-      "description": "The freight_value column stores the shipping cost amount as a double precision number for each order item, commonly used for calculating total order costs through aggregation functions like SUM and filtering expensive shipments, serving as a cost metric (biaya pengiriman).",
-      "table": "order_items",
-      "db": "products_db",
-      "schema": "public",
-      "id": "products_db.public.order_items.freight_value"
-    },
-    {
-      "type": "table",
-      "name": "sellers",
-      "db": "products_db",
-      "schema": "public",
-      "description": "This table stores information about sellers or merchants in an e-commerce platform, with seller_id as the primary key and including their geographic location details such as zip code, city, and state.\n\nIt answers business questions about seller distribution, location-based analytics, and geographic performance metrics, supporting searches for terms like merchants, vendors, penjual, pedagang, lokasi penjual, wilayah, kota, and regional seller analysis.",
-      "columns": [
-        "seller_id",
-        "seller_zip_code",
-        "seller_city",
-        "seller_state"
-      ],
-      "id": "products_db.public.sellers"
-    },
-    {
-      "type": "column",
-      "name": "seller_id",
-      "data_type": "text",
-      "description": "The seller_id column holds unique text identifiers for each seller and serves as the primary key for filtering specific sellers and joining with other tables that reference sellers.",
-      "table": "sellers",
-      "db": "products_db",
-      "schema": "public",
-      "id": "products_db.public.sellers.seller_id"
-    },
-    {
-      "type": "column",
-      "name": "seller_zip_code",
-      "data_type": "bigint",
-      "description": "The seller_zip_code column stores the postal code as a bigint for each seller's location and is commonly used for filtering sellers by geographic area, grouping sales by postal regions, or joining with shipping/logistics tables to calculate delivery zones (kode pos).",
-      "table": "sellers",
-      "db": "products_db",
-      "schema": "public",
-      "id": "products_db.public.sellers.seller_zip_code"
-    },
-    {
-      "type": "column",
-      "name": "seller_city",
-      "data_type": "text",
-      "description": "The seller_city column stores the city name where each seller is located (kota) and is commonly used for filtering sellers by geographic location, grouping sales data by city for regional analysis, and joining with other location-based tables for geographic insights.",
-      "table": "sellers",
-      "db": "products_db",
-      "schema": "public",
-      "id": "products_db.public.sellers.seller_city"
-    },
-    {
-      "type": "column",
-      "name": "seller_state",
-      "data_type": "text",
-      "description": "The seller_state column stores the state or province name where each seller is located as text, commonly used for filtering sellers by geographic region, grouping sales data by state for regional analysis, and joining with location-based tables for geographic insights (provinsi).",
-      "table": "sellers",
-      "db": "products_db",
-      "schema": "public",
-      "id": "products_db.public.sellers.seller_state"
-    },
-    {
-      "type": "database",
-      "name": "analytics_db",
-      "id": "analytics_db"
-    },
-    {
-      "type": "schema",
-      "name": "public",
-      "db": "analytics_db",
-      "id": "analytics_db.public"
-    },
-    {
-      "type": "table",
-      "name": "customer_segments",
-      "db": "analytics_db",
-      "schema": "public",
-      "description": "This table stores customer segmentation data with customer_id as the primary key, containing RFM analysis scores, segment classifications, lifetime value metrics, order statistics, and purchase timing information for each customer.\n\nIt answers business questions about customer classification, value analysis, purchase behavior patterns, and retention metrics, supporting queries about pelanggan segments, customer lifetime value, buying frequency, average transaction size, and recency analysis for targeted marketing and customer relationship management.",
-      "columns": [
-        "customer_id",
-        "rfm_score",
-        "segment",
-        "lifetime_value",
-        "total_orders",
-        "avg_order_value",
-        "last_purchase_date",
-        "updated_at"
-      ],
-      "id": "analytics_db.public.customer_segments"
-    },
-    {
-      "type": "column",
-      "name": "customer_id",
-      "data_type": "text",
-      "description": "The customer_id column stores unique text identifiers for customers and serves as the primary key for joining with other customer-related tables, commonly used in WHERE clause filters and GROUP BY operations for customer segmentation analysis.",
-      "table": "customer_segments",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.customer_segments.customer_id"
-    },
-    {
-      "type": "column",
-      "name": "rfm_score",
-      "data_type": "bigint",
-      "description": "The rfm_score column stores a numerical RFM (Recency, Frequency, Monetary) scoring value as a bigint that quantifies customer behavior patterns and is commonly used for filtering high-value customers, grouping customers into behavioral segments, and aggregating to calculate average segment scores (skor).",
-      "table": "customer_segments",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.customer_segments.rfm_score"
-    },
-    {
-      "type": "column",
-      "name": "segment",
-      "data_type": "text",
-      "description": "The segment column stores customer categorization labels (such as \"VIP\", \"Regular\", \"At Risk\") used for filtering customers by behavioral groups and grouping analytics by customer type in marketing and retention analysis queries (segmen).",
-      "table": "customer_segments",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.customer_segments.segment"
-    },
-    {
-      "type": "column",
-      "name": "lifetime_value",
-      "data_type": "double precision",
-      "description": "The lifetime_value column stores the total monetary value a customer has generated over their entire relationship with the business as a double precision number, commonly used for filtering high-value customers, grouping customers into value tiers, and calculating aggregate metrics like average customer worth across segments (nilai seumur hidup).",
-      "table": "customer_segments",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.customer_segments.lifetime_value"
-    },
-    {
-      "type": "column",
-      "name": "total_orders",
-      "data_type": "bigint",
-      "description": "The total_orders column stores the cumulative count of orders placed by each customer as a bigint metric, commonly used for filtering high-value customers, grouping customers by purchase frequency ranges, and aggregating to calculate average orders per segment (total pesanan).",
-      "table": "customer_segments",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.customer_segments.total_orders"
-    },
-    {
-      "type": "column",
-      "name": "avg_order_value",
-      "data_type": "double precision",
-      "description": "The avg_order_value column stores the average monetary value of orders placed by each customer as a double precision number, commonly used for filtering high-value customers, grouping customers into spending tiers, and calculating segment-level aggregations in customer analytics queries (nilai rata-rata pesanan).",
-      "table": "customer_segments",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.customer_segments.avg_order_value"
-    },
-    {
-      "type": "column",
-      "name": "last_purchase_date",
-      "data_type": "text",
-      "description": "The last_purchase_date column stores the date of a customer's most recent purchase as text and is commonly used for filtering customers by recency, grouping customers into time-based cohorts, and calculating customer retention metrics in RFM analysis (tanggal pembelian terakhir).",
-      "table": "customer_segments",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.customer_segments.last_purchase_date"
-    },
-    {
-      "type": "column",
-      "name": "updated_at",
-      "data_type": "text",
-      "description": "The updated_at column stores the timestamp when customer segment data was last modified as text, commonly used for filtering recent updates and tracking data freshness in customer analytics queries (tanggal_diperbarui).",
-      "table": "customer_segments",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.customer_segments.updated_at"
-    },
-    {
-      "type": "table",
-      "name": "daily_metrics",
-      "db": "analytics_db",
-      "schema": "public",
-      "description": "This table stores daily business performance metrics with date as the primary key, tracking key attributes including total sales revenue, order counts, average order values, and customer acquisition data for each day.\n\nIt answers business questions about daily sales performance, order trends, customer behavior patterns, and revenue analysis, supporting searches for terms like daily sales, penjualan harian, order volume, nilai rata-rata pesanan, new customer acquisition, pelanggan baru, returning customers, and pelanggan kembali.",
-      "columns": [
-        "date",
-        "total_sales",
-        "total_orders",
-        "avg_order_value",
-        "new_customers",
-        "returning_customers"
-      ],
-      "id": "analytics_db.public.daily_metrics"
-    },
-    {
-      "type": "column",
-      "name": "date",
-      "data_type": "text",
-      "description": "The date column stores daily date values in text format and serves as the primary key for filtering time periods, grouping metrics by day, and joining with other time-based tables in daily sales analytics (tanggal).",
-      "table": "daily_metrics",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.daily_metrics.date"
-    },
-    {
-      "type": "column",
-      "name": "total_sales",
-      "data_type": "bigint",
-      "description": "The total_sales column stores the aggregate sales amount in bigint format for each day and is commonly used for filtering by sales thresholds, grouping by sales ranges, and calculating sum/average aggregations across date periods to analyze daily revenue performance (total_penjualan).",
-      "table": "daily_metrics",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.daily_metrics.total_sales"
-    },
-    {
-      "type": "column",
-      "name": "total_orders",
-      "data_type": "bigint",
-      "description": "The total_orders column stores the count of orders placed on each date as a bigint metric that is commonly used for aggregation operations like SUM and AVG to analyze order volume trends and can be filtered or grouped by date ranges for daily, weekly, or monthly reporting (total pesanan).",
-      "table": "daily_metrics",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.daily_metrics.total_orders"
-    },
-    {
-      "type": "column",
-      "name": "avg_order_value",
-      "data_type": "bigint",
-      "description": "The avg_order_value column stores the average monetary value per order in bigint format and serves as a key performance metric that can be filtered for trend analysis, grouped by time periods, and aggregated to calculate overall averages across different date ranges (nilai rata-rata pesanan).",
-      "table": "daily_metrics",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.daily_metrics.avg_order_value"
-    },
-    {
-      "type": "column",
-      "name": "new_customers",
-      "data_type": "bigint",
-      "description": "The new_customers column stores the count of first-time customers acquired on each date as a bigint metric that is commonly used for aggregation operations like SUM and AVG to analyze customer acquisition trends, and for filtering in time-series comparisons alongside its sibling metrics (pelanggan_baru).",
-      "table": "daily_metrics",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.daily_metrics.new_customers"
-    },
-    {
-      "type": "column",
-      "name": "returning_customers",
-      "data_type": "bigint",
-      "description": "The returning_customers column stores the count of customers who made repeat purchases on a given day as a bigint value, commonly used for filtering by customer retention thresholds, grouping by time periods for trend analysis, and aggregating to calculate total or average returning customer metrics across date ranges (pelanggan kembali).",
-      "table": "daily_metrics",
-      "db": "analytics_db",
-      "schema": "public",
-      "id": "analytics_db.public.daily_metrics.returning_customers"
+      "id": "financial_db.public.product_price_list.price"
     }
   ],
   "edges": [
     {
       "type": "contains",
-      "source": "sales_db",
-      "target": "sales_db.public"
+      "source": "financial_db",
+      "target": "financial_db.public"
     },
     {
       "type": "contains",
-      "source": "sales_db.public",
-      "target": "sales_db.public.customers"
+      "source": "financial_db.public",
+      "target": "financial_db.public.anomalies"
     },
     {
       "type": "contains",
-      "source": "sales_db.public",
-      "target": "sales_db.public.orders"
+      "source": "financial_db.public",
+      "target": "financial_db.public.daily_unique_users"
     },
     {
       "type": "contains",
-      "source": "sales_db.public",
-      "target": "sales_db.public.payments"
+      "source": "financial_db.public",
+      "target": "financial_db.public.financial_internal"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.customers",
-      "target": "sales_db.public.customers.customer_id"
+      "source": "financial_db.public",
+      "target": "financial_db.public.daily_master"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.customers",
-      "target": "sales_db.public.customers.customer_unique_id"
+      "source": "financial_db.public",
+      "target": "financial_db.public.daily_user_partner"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.customers",
-      "target": "sales_db.public.customers.customer_name"
+      "source": "financial_db.public",
+      "target": "financial_db.public.hourly_pattern_daily"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.customers",
-      "target": "sales_db.public.customers.customer_email"
+      "source": "financial_db.public",
+      "target": "financial_db.public.product_summary"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.customers",
-      "target": "sales_db.public.customers.customer_city"
+      "source": "financial_db.public",
+      "target": "financial_db.public.daily_product_channel"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.customers",
-      "target": "sales_db.public.customers.customer_state"
+      "source": "financial_db.public",
+      "target": "financial_db.public.channel_payment"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.customers",
-      "target": "sales_db.public.customers.customer_zip_code"
+      "source": "financial_db.public",
+      "target": "financial_db.public.product_price_list"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.customers",
-      "target": "sales_db.public.customers.customer_created_at"
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.id"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.orders",
-      "target": "sales_db.public.orders.order_id"
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.date"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.orders",
-      "target": "sales_db.public.orders.customer_id"
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.check_type"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.orders",
-      "target": "sales_db.public.orders.order_status"
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.status"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.orders",
-      "target": "sales_db.public.orders.order_purchase_timestamp"
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.entity_type"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.orders",
-      "target": "sales_db.public.orders.order_approved_at"
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.entity_id"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.orders",
-      "target": "sales_db.public.orders.order_delivered_timestamp"
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.anomaly_type"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.orders",
-      "target": "sales_db.public.orders.order_estimated_delivery_date"
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.severity"
     },
     {
-      "type": "joins_with",
-      "via": "customer_id → customer_id",
-      "source": "sales_db.public.orders",
-      "target": "sales_db.public.customers"
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.total_trx"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.total_revenue"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.avg_revenue"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.zscore"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.threshold_value"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.actual_value"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.expected_value"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.deviation_pct"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.description"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.recommended_action"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.impact_estimate"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.payment_provider"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.partner"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.product_name"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.service_code"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.first_detected"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.last_detected"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.anomalies",
+      "target": "financial_db.public.anomalies.frequency_days"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_unique_users",
+      "target": "financial_db.public.daily_unique_users.id"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_unique_users",
+      "target": "financial_db.public.daily_unique_users.date"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_unique_users",
+      "target": "financial_db.public.daily_unique_users.unique_users"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_unique_users",
+      "target": "financial_db.public.daily_unique_users.daily_unique_users"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.id"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.date"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.payment_provider"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.transaction_type"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.item_type"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.total_trx"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.total_net_revenue"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.net_gap"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.total_platform_fee"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.financial_internal.total_admin_fee"
     },
     {
-      "type": "fk",
-      "from_table": "orders",
-      "to_table": "customers",
-      "source": "sales_db.public.orders.customer_id",
-      "target": "sales_db.public.customers.customer_id"
+      "type": "contains",
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.id"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.date"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.partner"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.total_trx"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.success_trx"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.failed_trx"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.payments",
-      "target": "sales_db.public.payments.payment_id"
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.total_revenue"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.payments",
-      "target": "sales_db.public.payments.order_id"
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.success_rate_pct"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.payments",
-      "target": "sales_db.public.payments.payment_sequential"
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.unique_users"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.payments",
-      "target": "sales_db.public.payments.payment_type"
+      "source": "financial_db.public.daily_user_partner",
+      "target": "financial_db.public.daily_user_partner.id"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.payments",
-      "target": "sales_db.public.payments.payment_installments"
+      "source": "financial_db.public.daily_user_partner",
+      "target": "financial_db.public.daily_user_partner.date"
     },
     {
       "type": "contains",
-      "source": "sales_db.public.payments",
-      "target": "sales_db.public.payments.payment_value"
+      "source": "financial_db.public.daily_user_partner",
+      "target": "financial_db.public.daily_user_partner.partner"
     },
     {
-      "type": "joins_with",
-      "via": "order_id → order_id",
-      "source": "sales_db.public.payments",
-      "target": "sales_db.public.orders"
+      "type": "contains",
+      "source": "financial_db.public.daily_user_partner",
+      "target": "financial_db.public.daily_user_partner.unique_users"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.hourly_pattern_daily",
+      "target": "financial_db.public.hourly_pattern_daily.id"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.hourly_pattern_daily",
+      "target": "financial_db.public.hourly_pattern_daily.date"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.hourly_pattern_daily",
+      "target": "financial_db.public.hourly_pattern_daily.hour"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.hourly_pattern_daily",
+      "target": "financial_db.public.hourly_pattern_daily.total_trx"
     },
     {
-      "type": "fk",
-      "from_table": "payments",
-      "to_table": "orders",
-      "source": "sales_db.public.payments.order_id",
-      "target": "sales_db.public.orders.order_id"
+      "type": "contains",
+      "source": "financial_db.public.hourly_pattern_daily",
+      "target": "financial_db.public.hourly_pattern_daily.success_rate_pct"
     },
     {
       "type": "contains",
-      "source": "products_db",
-      "target": "products_db.public"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.id"
     },
     {
       "type": "contains",
-      "source": "products_db.public",
-      "target": "products_db.public.products"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.date"
     },
     {
       "type": "contains",
-      "source": "products_db.public",
-      "target": "products_db.public.order_items"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.product_id"
     },
     {
       "type": "contains",
-      "source": "products_db.public",
-      "target": "products_db.public.sellers"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.product_name"
     },
     {
       "type": "contains",
-      "source": "products_db.public.products",
-      "target": "products_db.public.products.product_id"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.item_type"
     },
     {
       "type": "contains",
-      "source": "products_db.public.products",
-      "target": "products_db.public.products.product_category_name"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.type_of_payment"
     },
     {
       "type": "contains",
-      "source": "products_db.public.products",
-      "target": "products_db.public.products.product_name_length"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.payment_provider"
     },
     {
       "type": "contains",
-      "source": "products_db.public.products",
-      "target": "products_db.public.products.product_description_length"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.total_trx"
     },
     {
       "type": "contains",
-      "source": "products_db.public.products",
-      "target": "products_db.public.products.product_photos_qty"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.total_revenue"
     },
     {
       "type": "contains",
-      "source": "products_db.public.products",
-      "target": "products_db.public.products.product_weight_g"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.success_trx"
     },
     {
       "type": "contains",
-      "source": "products_db.public.products",
-      "target": "products_db.public.products.product_length_cm"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.success_rate_pct"
     },
     {
       "type": "contains",
-      "source": "products_db.public.products",
-      "target": "products_db.public.products.product_height_cm"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.unique_buyers"
     },
     {
       "type": "contains",
-      "source": "products_db.public.products",
-      "target": "products_db.public.products.product_width_cm"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.repeat_buyers"
     },
     {
       "type": "contains",
-      "source": "products_db.public.order_items",
-      "target": "products_db.public.order_items.order_id"
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_summary.settlement_gap"
     },
     {
       "type": "contains",
-      "source": "products_db.public.order_items",
-      "target": "products_db.public.order_items.order_item_id"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.id"
     },
     {
       "type": "contains",
-      "source": "products_db.public.order_items",
-      "target": "products_db.public.order_items.product_id"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.date"
     },
     {
       "type": "contains",
-      "source": "products_db.public.order_items",
-      "target": "products_db.public.order_items.seller_id"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.product_name"
     },
     {
       "type": "contains",
-      "source": "products_db.public.order_items",
-      "target": "products_db.public.order_items.shipping_limit_date"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.a0_trx"
     },
     {
       "type": "contains",
-      "source": "products_db.public.order_items",
-      "target": "products_db.public.order_items.price"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.a0_revenue"
     },
     {
       "type": "contains",
-      "source": "products_db.public.order_items",
-      "target": "products_db.public.order_items.freight_value"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.b3_trx"
     },
     {
-      "type": "joins_with",
-      "via": "product_id → product_id",
-      "source": "products_db.public.order_items",
-      "target": "products_db.public.products"
+      "type": "contains",
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.b3_revenue"
     },
     {
-      "type": "fk",
-      "from_table": "order_items",
-      "to_table": "products",
-      "source": "products_db.public.order_items.product_id",
-      "target": "products_db.public.products.product_id"
+      "type": "contains",
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.f0_trx"
     },
     {
       "type": "contains",
-      "source": "products_db.public.sellers",
-      "target": "products_db.public.sellers.seller_id"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.f0_revenue"
     },
     {
       "type": "contains",
-      "source": "products_db.public.sellers",
-      "target": "products_db.public.sellers.seller_zip_code"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.f4_trx"
     },
     {
       "type": "contains",
-      "source": "products_db.public.sellers",
-      "target": "products_db.public.sellers.seller_city"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.f4_revenue"
     },
     {
       "type": "contains",
-      "source": "products_db.public.sellers",
-      "target": "products_db.public.sellers.seller_state"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.f5_trx"
     },
     {
       "type": "contains",
-      "source": "analytics_db",
-      "target": "analytics_db.public"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.f5_revenue"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public",
-      "target": "analytics_db.public.customer_segments"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.i1_trx"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public",
-      "target": "analytics_db.public.daily_metrics"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.i1_revenue"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.customer_segments",
-      "target": "analytics_db.public.customer_segments.customer_id"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.ig_trx"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.customer_segments",
-      "target": "analytics_db.public.customer_segments.rfm_score"
+      "source": "financial_db.public.daily_product_channel",
+      "target": "financial_db.public.daily_product_channel.ig_revenue"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.customer_segments",
-      "target": "analytics_db.public.customer_segments.segment"
+      "source": "financial_db.public.channel_payment",
+      "target": "financial_db.public.channel_payment.id"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.customer_segments",
-      "target": "analytics_db.public.customer_segments.lifetime_value"
+      "source": "financial_db.public.channel_payment",
+      "target": "financial_db.public.channel_payment.date"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.customer_segments",
-      "target": "analytics_db.public.customer_segments.total_orders"
+      "source": "financial_db.public.channel_payment",
+      "target": "financial_db.public.channel_payment.partner"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.customer_segments",
-      "target": "analytics_db.public.customer_segments.avg_order_value"
+      "source": "financial_db.public.channel_payment",
+      "target": "financial_db.public.channel_payment.channel"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.customer_segments",
-      "target": "analytics_db.public.customer_segments.last_purchase_date"
+      "source": "financial_db.public.channel_payment",
+      "target": "financial_db.public.channel_payment.purchase_mode"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.customer_segments",
-      "target": "analytics_db.public.customer_segments.updated_at"
+      "source": "financial_db.public.channel_payment",
+      "target": "financial_db.public.channel_payment.total_trx"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.daily_metrics",
-      "target": "analytics_db.public.daily_metrics.date"
+      "source": "financial_db.public.channel_payment",
+      "target": "financial_db.public.channel_payment.total_revenue"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.daily_metrics",
-      "target": "analytics_db.public.daily_metrics.total_sales"
+      "source": "financial_db.public.channel_payment",
+      "target": "financial_db.public.channel_payment.success_rate_pct"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.daily_metrics",
-      "target": "analytics_db.public.daily_metrics.total_orders"
+      "source": "financial_db.public.product_price_list",
+      "target": "financial_db.public.product_price_list.id"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.daily_metrics",
-      "target": "analytics_db.public.daily_metrics.avg_order_value"
+      "source": "financial_db.public.product_price_list",
+      "target": "financial_db.public.product_price_list.product_id"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.daily_metrics",
-      "target": "analytics_db.public.daily_metrics.new_customers"
+      "source": "financial_db.public.product_price_list",
+      "target": "financial_db.public.product_price_list.product_name"
     },
     {
       "type": "contains",
-      "source": "analytics_db.public.daily_metrics",
-      "target": "analytics_db.public.daily_metrics.returning_customers"
+      "source": "financial_db.public.product_price_list",
+      "target": "financial_db.public.product_price_list.price"
     }
   ]
 }

@@ -1,18 +1,108 @@
-# Few-Shot SQL Examples
+# Few-Shot SQL Examples — Telkomsel Financial DB
+# NOTE: Always use ::numeric cast before ROUND() to avoid PostgreSQL type errors.
 
 examples:
-  - question: "Show all customers"
-    sql: "SELECT * FROM customers LIMIT 100;"
-  
-  - question: "How many orders were placed?"
-    sql: "SELECT COUNT(*) as total_orders FROM orders;"
-  
-  - question: "Total sales this month"
+  - question: "berapa total transaksi bulan April 2026?"
     sql: |
-      SELECT SUM(payment_value) as total_sales
-      FROM payments p
-      JOIN orders o ON p.order_id = o.order_id
-      WHERE EXTRACT(MONTH FROM o.order_purchase_timestamp) = EXTRACT(MONTH FROM CURRENT_DATE)
-        AND EXTRACT(YEAR FROM o.order_purchase_timestamp) = EXTRACT(YEAR FROM CURRENT_DATE);
+      SELECT SUM(total_trx) AS total_transaksi
+      FROM daily_master
+      WHERE date >= '2026-04-01' AND date <= '2026-04-30';
 
-# TODO: Add more examples (target: 7-10 examples)
+  - question: "success rate per partner bulan Mei 2026"
+    sql: |
+      SELECT
+        partner,
+        ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct,
+        SUM(total_trx) AS total_transaksi
+      FROM daily_master
+      WHERE date >= '2026-05-01' AND date <= '2026-05-06'
+      GROUP BY partner
+      ORDER BY success_rate_pct DESC;
+
+  - question: "total transaksi linkaja termasuk semua variannya"
+    sql: |
+      SELECT
+        SUM(total_trx)     AS total_transaksi,
+        SUM(total_revenue) AS total_revenue,
+        ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct
+      FROM daily_master
+      WHERE partner IN ('linkaja', 'linkaja_wco', 'linkajawco', 'linkaja_app', 'linkaja_basic', 'linkaja_wec');
+
+  - question: "10 produk dengan revenue tertinggi"
+    sql: |
+      SELECT
+        product_name,
+        SUM(total_revenue) AS total_revenue,
+        SUM(total_trx)     AS total_transaksi
+      FROM product_summary
+      GROUP BY product_name
+      ORDER BY total_revenue DESC
+      LIMIT 10;
+
+  - question: "total revenue gopay vs ovo vs dana"
+    sql: |
+      SELECT
+        CASE
+          WHEN partner IN ('gopay', 'gopay_basic', 'gopay_wec') THEN 'gopay'
+          WHEN partner IN ('ovo', 'ovo_wec')                    THEN 'ovo'
+          WHEN partner IN ('dana', 'dana_wec')                  THEN 'dana'
+        END AS partner_group,
+        SUM(total_revenue) AS total_revenue,
+        SUM(total_trx)     AS total_transaksi
+      FROM daily_master
+      WHERE partner IN ('gopay','gopay_basic','gopay_wec','ovo','ovo_wec','dana','dana_wec')
+      GROUP BY partner_group
+      ORDER BY total_revenue DESC;
+
+  - question: "jam berapa paling banyak transaksi?"
+    sql: |
+      SELECT
+        hour AS jam,
+        SUM(total_trx) AS total_transaksi,
+        ROUND(AVG(success_rate_pct)::numeric, 2) AS avg_success_rate
+      FROM hourly_pattern_daily
+      GROUP BY hour
+      ORDER BY total_transaksi DESC
+      LIMIT 5;
+
+  - question: "tren transaksi harian bulan April 2026"
+    sql: |
+      SELECT
+        date,
+        SUM(total_trx)     AS total_transaksi,
+        SUM(total_revenue) AS total_revenue,
+        ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct
+      FROM daily_master
+      WHERE date >= '2026-04-01' AND date <= '2026-04-30'
+      GROUP BY date
+      ORDER BY date;
+
+  - question: "berapa pengguna aktif harian rata-rata?"
+    sql: |
+      SELECT
+        ROUND(AVG(daily_unique_users)::numeric, 0) AS rata_rata_pengguna_aktif_harian
+      FROM daily_unique_users;
+
+  - question: "produk dengan success rate di bawah 80 persen"
+    sql: |
+      SELECT
+        product_name,
+        ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct,
+        SUM(total_trx) AS total_transaksi
+      FROM product_summary
+      GROUP BY product_name
+      HAVING SUM(total_trx) > 100
+      ORDER BY success_rate_pct ASC
+      LIMIT 20;
+
+  - question: "net gap terbesar per payment provider"
+    sql: |
+      SELECT
+        payment_provider,
+        SUM(net_gap)            AS total_net_gap,
+        SUM(total_net_revenue)  AS total_net_revenue,
+        SUM(total_platform_fee) AS total_platform_fee
+      FROM financial_internal
+      GROUP BY payment_provider
+      ORDER BY total_net_gap ASC
+      LIMIT 10;

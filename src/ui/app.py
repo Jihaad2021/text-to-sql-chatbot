@@ -156,12 +156,12 @@ with st.sidebar:
 
     st.markdown("""
     **✅ Pertanyaan yang bagus:**
-    - Gunakan kata kerja: *tampilkan*, *berapa*, *siapa*
-    - Sebutkan entitas: *customer*, *order*, *produk*
-    - Spesifik: *"top 5 customer berdasarkan spending"*
+    - Gunakan kata kerja: *tampilkan*, *berapa*, *success rate*
+    - Sebutkan entitas: *partner*, *produk*, *transaksi*, *revenue*
+    - Spesifik: *"success rate per partner bulan Mei 2026"*
 
     **❌ Hindari:**
-    - Terlalu singkat: *"data customer"*
+    - Terlalu singkat: *"data transaksi"*
     - Tanpa konteks: *"tampilkan semua"*
     """)
 
@@ -169,21 +169,23 @@ with st.sidebar:
     st.subheader("📌 Contoh Pertanyaan")
 
     examples = [
-        "Berapa jumlah total customer?",
-        "Tampilkan customer dari Jakarta",
-        "Siapa 5 customer dengan spending tertinggi?",
-        "Berapa total nilai semua pembayaran?",
-        "Tampilkan semua orders yang statusnya delivered",
-        "Berapa jumlah produk yang tersedia?",
-        "Seller mana yang paling banyak menjual?",
-        "Berapa rata-rata nilai order per customer?",
+        "Berapa total transaksi bulan April 2026?",
+        "Success rate per partner bulan Mei 2026",
+        "10 produk dengan revenue tertinggi",
+        "Total transaksi linkaja semua variannya",
+        "Revenue gopay vs ovo vs dana",
+        "Jam berapa paling banyak transaksi?",
+        "Produk dengan success rate di bawah 80%",
+        "Net gap terbesar per payment provider",
+        "Tren transaksi harian bulan April 2026",
+        "Berapa pengguna aktif harian rata-rata?",
     ]
 
     for ex in examples:
         st.markdown(f"• {ex}")
 
     st.markdown("---")
-    st.caption("🔄 Database dipilih otomatis oleh sistem berdasarkan pertanyaan Anda.")
+    st.caption("🔄 Data: Telkomsel Payment Platform • Mar–Mei 2026")
 
 # ─────────────────────────────────────────────
 # QUERY INPUT
@@ -194,7 +196,7 @@ with st.form(key="query_form"):
     with col_input:
         user_question = st.text_input(
             "💬 Pertanyaan Anda:",
-            placeholder="Contoh: Siapa 5 customer dengan total pembelian tertinggi?",
+            placeholder="Contoh: success rate per partner bulan Mei 2026, urutkan dari yang terendah",
             label_visibility="collapsed"
         )
 
@@ -234,10 +236,10 @@ if ask_button and user_question:
                     # Suggestion chips
                     st.markdown("**💡 Coba pertanyaan seperti ini:**")
                     suggestions = [
-                        "Tampilkan semua customer",
-                        "Berapa total order?",
-                        "Siapa customer dengan spending tertinggi?",
-                        "Berapa jumlah produk?"
+                        "Berapa total transaksi bulan April 2026?",
+                        "Success rate per partner bulan Mei 2026",
+                        "10 produk dengan revenue tertinggi",
+                        "Net gap per payment provider",
                     ]
                     cols = st.columns(len(suggestions))
                     for i, sug in enumerate(suggestions):
@@ -270,13 +272,18 @@ if ask_button and user_question:
                         if result.get("data") and len(result["data"]) > 0:
                             df = pd.DataFrame(result["data"])
 
-                            # Format currency columns
+                            # Format only genuine money columns as Rupiah
+                            # Exclude transaction-count columns (_trx, transaksi, users)
+                            MONEY_KEYWORDS = ["revenue", "gap", "fee", "price"]
+                            TRX_KEYWORDS = ["_trx", "transaksi", "users", "unique"]
                             for col in df.columns:
-                                if any(k in col.lower() for k in ["value", "revenue", "spending", "price", "total"]):
-                                    if df[col].dtype in ["float64", "int64"]:
-                                        df[col] = df[col].apply(
-                                            lambda x: f"Rp {x:,.2f}" if pd.notnull(x) else ""
-                                        )
+                                col_lower = col.lower()
+                                is_money = any(k in col_lower for k in MONEY_KEYWORDS)
+                                is_trx = any(k in col_lower for k in TRX_KEYWORDS)
+                                if is_money and not is_trx and df[col].dtype in ["float64", "int64"]:
+                                    df[col] = df[col].apply(
+                                        lambda x: f"Rp {x:,.0f}" if pd.notnull(x) else ""
+                                    )
 
                             st.dataframe(df, use_container_width=True, height=400)
 

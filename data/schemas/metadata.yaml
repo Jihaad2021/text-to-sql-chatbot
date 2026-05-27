@@ -1,308 +1,536 @@
 databases:
-  - "sales_db"
-  - "products_db"
-  - "analytics_db"
+  - "financial_db"
 
 schemas:
-  - db_name: "sales_db"
+  - db_name: "financial_db"
     schema: "public"
     description: |
-      This sales database stores customer information, order transactions, and payment records to answer queries about sales performance, revenue analysis, customer purchasing behavior, transaction history, payment status, and business metrics using terms like sales, transaksi, penjualan, income, purchases, buyers, and financial data.
+      Financial database for Telkomsel's digital product payment platform (pulsa/recharge, paket data/package, layanan tambahan/topping).
+      Contains 10 tables covering daily transactions, product performance, payment channel analytics, partner operations, and anomaly detection for the period 2026-03-01 to 2026-05-06.
+      Covers 930+ digital products, 11 payment partners (gopay, ovo, dana, shopeepay, linkaja, qris, indomaret, telkomsel_wallet, finnet_cc, finnet_va, tsel_wallet),
+      and 7 distribution channels (a0, b3, f0, f4, f5, i1, ig).
+      Key synonyms: transaksi, pendapatan, revenue, partner, mitra, produk, saluran, kanal, success rate, tingkat keberhasilan, pengguna, pelanggan.
     tables:
-      - table: "customers"
+      - table: "anomalies"
         description: |
-          This table stores customer information and profiles with customer_id as the primary key, containing essential attributes like unique identifiers, names, email addresses, and geographic location details including city, state, and zip code along with account creation timestamps. It answers business questions about customer demographics, geographic distribution, account registration patterns, and customer lookup operations, supporting searches for terms like clients, buyers, users, pelanggan, konsumen, member, subscriber, and location-based queries for cities, states, regions, wilayah, daerah, and postal codes.
+          Stores statistically detected transaction anomalies for Telkomsel's payment platform, with primary key 'id'.
+          Each row represents one detected anomaly with its type, severity, affected entity, statistical z-score, and recommended action.
+          Answers questions about: what anomalies exist, which products or partners had spikes/drops, anomaly severity, and recommended actions.
+          Column 'check_type' is always 'trx_spike'. Column 'anomaly_type' values: 'spike' (sudden increase), 'drop' (sudden decrease).
+          Column 'severity' values: 'high', 'medium'. Column 'entity_type' is always 'system'. Column 'status' is always 'detected'.
+          Indonesian synonyms: anomali, ketidaknormalan, lonjakan, penurunan, deteksi, peringatan, rekomendasi.
         columns:
-          - name: "customer_id"
+          - name: "id"
             description: |
-              The customer_id column holds unique text identifiers for customers serving as the primary key, commonly used for filtering specific customers, joining with order tables, and grouping sales data by customer.
+              Auto-increment primary key (PK) for each anomaly record; used to uniquely identify and join anomaly entries.
+            type: "integer"
+          - name: "date"
+            description: |
+              Date (tanggal) when the anomaly was first detected; used to filter anomalies by time period.
+            type: "date"
+          - name: "check_type"
+            description: |
+              Type of statistical check performed; currently always 'trx_spike' (only one check type exists in data).
             type: "text"
-          - name: "customer_unique_id"
+          - name: "status"
             description: |
-              The customer_unique_id column stores a unique text identifier for each customer that serves as the primary key and is commonly used for joining with other tables, filtering specific customers, and ensuring data integrity across the customer database.
+              Current status of the anomaly; currently always 'detected'. Used to filter active anomalies.
             type: "text"
-          - name: "customer_name"
+          - name: "entity_type"
             description: |
-              The customer_name column stores the full name of each customer as text and is commonly used for filtering specific customers, grouping sales data by customer identity, and joining with order tables to display customer information in reports (nama pelanggan).
+              Type of entity where anomaly was detected; currently always 'system'. Used for categorization.
             type: "text"
-          - name: "customer_email"
+          - name: "entity_id"
             description: |
-              The customer_email column stores the email address of each customer as text and is commonly used for filtering specific customers, joining with order or communication tables, and grouping customers for email marketing analysis (email in Indonesian).
+              Identifier of the specific entity (product, partner, channel) where anomaly occurred; used to link to other tables.
             type: "text"
-          - name: "customer_city"
+          - name: "anomaly_type"
             description: |
-              The customer_city column stores the city name where each customer is located (kota) and is commonly used for filtering customers by geographic location, grouping sales data by city for regional analysis, and aggregating metrics like customer counts or revenue by urban area.
+              Classification of anomaly direction: 'spike' (lonjakan — sudden increase) or 'drop' (penurunan — sudden decrease). Filter with WHERE anomaly_type = 'spike' or 'drop'.
             type: "text"
-          - name: "customer_state"
+          - name: "severity"
             description: |
-              The customer_state column stores the state or province name where each customer is located as text values, commonly used for filtering customers by geographic region, grouping sales data by state for regional analysis, and joining with location-based tables for demographic insights (provinsi).
+              Business severity level: 'high' (kritis) or 'medium' (sedang). Use to prioritize anomalies.
             type: "text"
-          - name: "customer_zip_code"
+          - name: "total_trx"
             description: |
-              The customer_zip_code column stores postal code numbers as integers for customer addresses, commonly used for filtering customers by geographic location, grouping sales data by postal regions, and joining with geographic or demographic tables for location-based analysis (kode pos).
-            type: "bigint"
-          - name: "customer_created_at"
-            description: |
-              The customer_created_at column stores the timestamp when a customer account was created as text format and is commonly used for filtering customers by registration date ranges, grouping customers by time periods for cohort analysis, and aggregating customer acquisition metrics over time (tanggal dibuat).
-            type: "text"
-      - table: "orders"
-        description: |
-          This table stores customer order transactions with order_id as the primary key, tracking essential order lifecycle attributes including customer_id, order_status, purchase timestamp, approval time, delivery timestamp, and estimated delivery date. It answers business questions about order tracking, delivery performance, customer purchase patterns, and order fulfillment metrics, supporting searches for terms like orders, purchases, transactions, deliveries, pesanan, pembelian, pengiriman, status pesanan, and waktu pengiriman.
-        columns:
-          - name: "order_id"
-            description: |
-              The order_id column holds unique text identifiers for each order record serving as the primary key, commonly used for filtering specific orders, joining with other tables like order items or payments, and grouping order-related data in analytical queries.
-            type: "text"
-          - name: "customer_id"
-            description: |
-              The customer_id column stores unique text identifiers for customers who placed orders and serves as a foreign key for joining with customer tables, commonly used for filtering orders by specific customers and grouping orders for customer-level aggregations (pelanggan).
-            type: "text"
-          - name: "order_status"
-            description: |
-              The order_status column holds text values representing the current state of an order (such as pending, approved, delivered, canceled) and is commonly used for filtering orders by their processing stage and grouping orders for status-based analytics (status).
-            type: "text"
-          - name: "order_purchase_timestamp"
-            description: |
-              The order_purchase_timestamp column stores the exact date and time when a customer placed their order, commonly used for filtering orders by date ranges, grouping sales data by time periods, and calculating delivery timeframes by joining with delivery timestamps (tanggal pembelian).
-            type: "timestamp without time zone"
-          - name: "order_approved_at"
-            description: |
-              The order_approved_at column stores the timestamp when an order was approved as text, commonly used for filtering orders by approval date ranges, grouping sales by approval periods, and calculating time-based metrics like approval processing times (tanggal persetujuan).
-            type: "text"
-          - name: "order_delivered_timestamp"
-            description: |
-              The order_delivered_timestamp column stores the actual delivery date and time as text when an order was delivered to the customer, commonly used for filtering orders by delivery periods, calculating delivery performance metrics, and grouping orders by delivery timeframes (tanggal pengiriman).
-            type: "text"
-          - name: "order_estimated_delivery_date"
-            description: |
-              The order_estimated_delivery_date column stores the predicted delivery date as text for each order and is commonly used for filtering orders by expected delivery timeframes, grouping orders by delivery periods, and calculating delivery performance metrics (tanggal estimasi pengiriman).
-            type: "text"
-        foreign_keys:
-          - column: "customer_id"
-            references:
-              schema: "public"
-              table:  "customers"
-              column: "customer_id"
-      - table: "payments"
-        description: |
-          This table stores payment transaction records with payment_id as the primary key, capturing essential attributes like order_id, payment type, installment details, and monetary values for each payment made by customers.
-          
-          It answers business questions about payment methods, transaction amounts, installment patterns, and revenue analysis, supporting queries about pembayaran (payments), metode bayar (payment methods), cicilan (installments), and nilai transaksi (transaction values).
-        columns:
-          - name: "payment_id"
-            description: |
-              The payment_id column holds unique text identifiers for individual payments that serves as the primary key for filtering specific payment records and joining with other payment-related tables in the sales database.
-            type: "text"
-          - name: "order_id"
-            description: |
-              The order_id column stores text identifiers that link payments to their corresponding orders, serving as a foreign key for joining with order tables and commonly used for filtering and grouping payment data by specific orders.
-            type: "text"
-          - name: "payment_sequential"
-            description: |
-              The payment_sequential column stores a sequential number indicating the order of payments within a transaction and is commonly used for filtering and ordering payment records chronologically, serving as a sequence identifier for multiple payment installments (urutan pembayaran).
-            type: "bigint"
-          - name: "payment_type"
-            description: |
-              The payment_type column stores the method of payment used for transactions (such as credit card, debit card, or cash) as text values, commonly used for filtering and grouping payment data by payment method (metode pembayaran).
-            type: "text"
-          - name: "payment_installments"
-            description: |
-              The payment_installments column stores the number of installment payments (cicilan) as a bigint value and is commonly used for filtering payment plans, grouping transactions by installment count, and aggregating payment statistics to analyze customer payment preferences.
-            type: "bigint"
-          - name: "payment_value"
-            description: |
-              The payment_value column stores the monetary amount of each payment transaction as a double precision number, commonly used for aggregating total revenue, filtering by payment ranges, and calculating financial metrics in sales analysis queries (nilai pembayaran).
+              Total transaction count at time of anomaly detection; used to assess anomaly scale.
             type: "double precision"
-        foreign_keys:
-          - column: "order_id"
-            references:
-              schema: "public"
-              table:  "orders"
-              column: "order_id"
-
-  - db_name: "products_db"
-    schema: "public"
-    description: |
-      This products database stores e-commerce marketplace data including product catalogs, sales transactions, order details, and seller information to answer queries about inventory, revenue, sales performance, purchase history, merchant analytics, and product demand across the platform.
-    tables:
-      - table: "products"
+          - name: "total_revenue"
+            description: |
+              Total revenue (pendapatan) at time of anomaly; used to estimate financial impact.
+            type: "double precision"
+          - name: "avg_revenue"
+            description: |
+              Average revenue per transaction at time of anomaly; used as baseline for comparison.
+            type: "double precision"
+          - name: "zscore"
+            description: |
+              Statistical Z-score of the anomaly (deviasi statistik); values < -2 or > 2 indicate significant anomaly. Higher absolute value = more extreme.
+            type: "double precision"
+          - name: "threshold_value"
+            description: |
+              Statistical threshold (ambang batas) used to trigger anomaly detection; compared against actual_value.
+            type: "double precision"
+          - name: "actual_value"
+            description: |
+              Actual observed metric value (nilai aktual) at time of anomaly; compared against expected_value.
+            type: "double precision"
+          - name: "expected_value"
+            description: |
+              Expected/baseline metric value (nilai yang diharapkan) based on historical patterns.
+            type: "double precision"
+          - name: "deviation_pct"
+            description: |
+              Percentage deviation from expected value (persentase deviasi = (actual - expected) / expected * 100). Negative = below expectation.
+            type: "double precision"
+          - name: "description"
+            description: |
+              Human-readable description (deskripsi) of the anomaly; shown directly in the dashboard.
+            type: "text"
+          - name: "recommended_action"
+            description: |
+              Recommended corrective action (tindakan yang disarankan) for the anomaly.
+            type: "text"
+          - name: "impact_estimate"
+            description: |
+              Estimated financial impact in Rupiah (estimasi dampak finansial); used to prioritize response.
+            type: "double precision"
+          - name: "payment_provider"
+            description: |
+              Payment provider associated with the anomaly; values: 'gopay', 'ovo', 'dana', 'shopeepay', 'qris', 'linkaja_app', 'linkaja_wco', 'tsel_wallet', 'indomaret', 'finnet_cc', 'finnet_va'.
+            type: "text"
+          - name: "partner"
+            description: |
+              Partner name associated with the anomaly; values: 'gopay', 'ovo', 'dana', 'shopeepay', 'qris', 'linkaja', 'linkajawco', 'linkaja_wco', 'telkomsel_wallet', 'indomaret', 'finnet'.
+            type: "text"
+          - name: "product_name"
+            description: |
+              Name of the product (nama produk) associated with the anomaly; used to filter and join with product_summary.
+            type: "text"
+          - name: "service_code"
+            description: |
+              Internal service code (kode layanan internal) for the affected service.
+            type: "text"
+          - name: "first_detected"
+            description: |
+              Date when anomaly was first detected (pertama terdeteksi); useful for duration analysis.
+            type: "date"
+          - name: "last_detected"
+            description: |
+              Date when anomaly was last detected (terakhir terdeteksi); used with first_detected to compute anomaly duration.
+            type: "date"
+          - name: "frequency_days"
+            description: |
+              Number of days the anomaly recurred (frekuensi hari); higher value means persistent anomaly.
+            type: "integer"
+      - table: "daily_unique_users"
         description: |
-          This table stores product catalog information with product_id as the primary key, containing essential product attributes including category classification, name and description text lengths, photo quantities, weight in grams, and physical dimensions in centimeters.
-          
-          It answers business questions about product characteristics, inventory analysis, shipping calculations, and catalog management, supporting searches for items, barang, produk, kategori, dimensi, berat, foto, and ukuran.
+          Stores daily user counts for the entire Telkomsel payment platform. One row per day.
+          Column 'unique_users' = cumulative total registered users (scale: millions, e.g. 8,993,727).
+          Column 'daily_unique_users' = daily active users for that specific day (scale: hundreds of thousands, e.g. 856,451).
+          These two columns have very different scales and must not be confused.
+          Answers questions about: total registered users, daily active users, growth trends.
+          Indonesian synonyms: pengguna harian, pengguna unik, pengguna aktif, pengguna terdaftar.
+          JOIN: date column links to daily_master.date, daily_user_partner.date.
         columns:
+          - name: "id"
+            description: |
+              Auto-increment primary key (PK); used to identify each daily user count record.
+            type: "integer"
+          - name: "date"
+            description: |
+              Date (tanggal) for this user count record; used to filter or group by date.
+            type: "date"
+          - name: "unique_users"
+            description: |
+              CUMULATIVE total registered users on the platform (pengguna terdaftar kumulatif). Scale: millions (e.g. 8,993,727). Do NOT confuse with daily_unique_users.
+            type: "bigint"
+          - name: "daily_unique_users"
+            description: |
+              DAILY active users for this specific day (pengguna aktif harian). Scale: hundreds of thousands (e.g. 856,451). This is the correct column for 'berapa pengguna hari ini' queries.
+            type: "bigint"
+      - table: "financial_internal"
+        description: |
+          Stores internal financial settlement data per payment provider per day for Telkomsel's platform. One row = one provider × transaction_type × item_type per day.
+          Primary key: 'id'. Key metrics: total_net_revenue (net revenue after deductions), net_gap (settlement discrepancy — negative means deficit, actual < expected), total_platform_fee, total_admin_fee.
+          Column 'payment_provider' values: 'dana', 'finnet_cc', 'finnet_va', 'gopay', 'indomaret', 'linkaja_app', 'linkaja_wco', 'ovo', 'qris', 'shopeepay', 'tsel_wallet'.
+          Note: 'tsel_wallet' here = 'telkomsel_wallet' in other tables. 'finnet_cc' and 'finnet_va' are sub-variants of 'finnet'.
+          Column 'transaction_type' values: 'Recharge', 'Package'. Column 'item_type' values: 'recharge', 'package', 'topping'.
+          Answers questions about: net revenue per provider, settlement gaps, platform fees, admin fees, financial reconciliation (rekonsiliasi keuangan).
+          Indonesian synonyms: pendapatan bersih, selisih settlement, biaya platform, biaya admin, rekonsiliasi.
+          JOIN: date + payment_provider links to product_summary (use payment_provider); date links to daily_master.
+        columns:
+          - name: "id"
+            description: |
+              Auto-increment primary key (PK) for each settlement record.
+            type: "integer"
+          - name: "date"
+            description: |
+              Transaction date (tanggal transaksi); used to filter or group financial data by time period.
+            type: "date"
+          - name: "payment_provider"
+            description: |
+              Payment provider name (nama provider pembayaran). Values: 'dana', 'finnet_cc', 'finnet_va', 'gopay', 'indomaret', 'linkaja_app', 'linkaja_wco', 'ovo', 'qris', 'shopeepay', 'tsel_wallet'. Note: 'tsel_wallet' = telkomsel wallet; 'finnet_cc' and 'finnet_va' are credit-card and virtual-account variants of finnet.
+            type: "text"
+          - name: "transaction_type"
+            description: |
+              Type of transaction (tipe transaksi). Values: 'Recharge' (pengisian pulsa), 'Package' (pembelian paket). Used to filter by transaction category.
+            type: "text"
+          - name: "item_type"
+            description: |
+              Type of product item (tipe produk). Values: 'recharge' (pulsa), 'package' (paket data), 'topping' (layanan tambahan/VAS). Used to segment revenue by product type.
+            type: "text"
+          - name: "total_trx"
+            description: |
+              Total number of transactions (jumlah total transaksi) for this provider/type/date combination; used for volume aggregation.
+            type: "bigint"
+          - name: "total_net_revenue"
+            description: |
+              Net revenue after deductions (pendapatan bersih) in Rupiah; the primary revenue metric for financial analysis.
+            type: "double precision"
+          - name: "net_gap"
+            description: |
+              Settlement gap = actual settlement minus expected amount (selisih settlement). Negative = deficit (kekurangan), positive = surplus. Key metric for reconciliation (rekonsiliasi).
+            type: "double precision"
+          - name: "total_platform_fee"
+            description: |
+              Total platform/service fee charged (biaya platform) in Rupiah; deducted from gross revenue.
+            type: "double precision"
+          - name: "total_admin_fee"
+            description: |
+              Total administrative fee (biaya administrasi/biaya admin) in Rupiah; deducted from gross revenue.
+            type: "double precision"
+      - table: "daily_master"
+        description: |
+          Daily transaction summary per payment partner/aggregator for Telkomsel's platform. One row = one partner per day.
+          Primary key: 'id'. This is the main aggregated transaction table for high-level analysis.
+          Column 'partner' values: 'dana', 'finnet', 'gopay', 'indomaret', 'linkaja', 'linkaja_wco', 'linkajawco', 'ovo', 'qris', 'shopeepay', 'telkomsel_wallet'.
+          Important: 'linkajawco' and 'linkaja_wco' are the same entity (data inconsistency) — always include both when filtering linkaja_wco.
+          Column 'success_rate_pct': transaction success rate. Business thresholds: ALERT if < 80%, Watch if 80–85%, Normal if > 85%, Excellent if > 95%.
+          Column 'success_trx': number of successful transactions (stored as float). Column 'failed_trx': number of failed transactions (stored as float).
+          Weighted average success rate formula: SUM(success_trx) / SUM(total_trx) * 100.
+          Answers questions about: daily transaction volume per partner, revenue per partner, success rate per partner, unique users per partner, MoM/WoW comparisons.
+          Indonesian synonyms: transaksi harian, mitra, partner, volume, pendapatan, tingkat keberhasilan, pengguna unik.
+          JOIN: date + partner links to channel_payment and daily_user_partner; date links to hourly_pattern_daily and daily_unique_users.
+        columns:
+          - name: "id"
+            description: |
+              Auto-increment primary key (PK) for each daily partner record.
+            type: "integer"
+          - name: "date"
+            description: |
+              Transaction date (tanggal); used to filter or group by day, week, or month.
+            type: "date"
+          - name: "partner"
+            description: |
+              Payment partner/aggregator name (nama mitra/partner). Values: 'dana', 'finnet', 'gopay', 'indomaret', 'linkaja', 'linkaja_wco', 'linkajawco', 'ovo', 'qris', 'shopeepay', 'telkomsel_wallet'. IMPORTANT: 'linkajawco' and 'linkaja_wco' are the same entity — use WHERE partner IN ('linkajawco', 'linkaja_wco') to get complete linkaja_wco data.
+            type: "text"
+          - name: "total_trx"
+            description: |
+              Total transaction count (jumlah total transaksi) for this partner on this date; primary volume metric.
+            type: "bigint"
+          - name: "success_trx"
+            description: |
+              Number of successful transactions (transaksi berhasil) stored as float; used to compute weighted success rate = SUM(success_trx)/SUM(total_trx)*100.
+            type: "double precision"
+          - name: "failed_trx"
+            description: |
+              Number of failed transactions (transaksi gagal) stored as float; used for failure rate analysis.
+            type: "double precision"
+          - name: "total_revenue"
+            description: |
+              Total revenue (total pendapatan) in Rupiah for this partner on this date; primary revenue metric.
+            type: "double precision"
+          - name: "success_rate_pct"
+            description: |
+              Pre-computed success rate percentage (tingkat keberhasilan persen). Thresholds: ALERT < 80%, Watch 80–85%, Normal > 85%, Excellent > 95%. For accurate cross-partner SR, use SUM(success_trx)/SUM(total_trx)*100 instead.
+            type: "double precision"
+          - name: "unique_users"
+            description: |
+              Number of unique users (pengguna unik) who transacted with this partner on this date.
+            type: "bigint"
+      - table: "daily_user_partner"
+        description: |
+          Stores unique user counts per payment partner per day. One row = one partner per day.
+          Primary key: 'id'. Used for per-partner user engagement analysis.
+          Column 'partner' values: same as daily_master.partner — 'dana', 'finnet', 'gopay', 'indomaret', 'linkaja', 'linkaja_wco', 'linkajawco', 'ovo', 'qris', 'shopeepay', 'telkomsel_wallet'.
+          Note: 'linkajawco' and 'linkaja_wco' are the same entity — always include both when filtering.
+          Answers questions about: how many unique users per partner, partner user growth, comparing user base across partners.
+          Indonesian synonyms: pengguna unik per mitra, pengguna harian per partner, basis pengguna.
+          JOIN: date + partner links to daily_master; date links to daily_unique_users.
+        columns:
+          - name: "id"
+            description: |
+              Auto-increment primary key (PK) for each daily partner-user record.
+            type: "integer"
+          - name: "date"
+            description: |
+              Date (tanggal) of the user count; used to filter or group by time period.
+            type: "date"
+          - name: "partner"
+            description: |
+              Payment partner name (nama mitra). Values: same as daily_master.partner. IMPORTANT: 'linkajawco' and 'linkaja_wco' are the same entity — always filter with IN ('linkajawco', 'linkaja_wco') for complete data.
+            type: "text"
+          - name: "unique_users"
+            description: |
+              Number of unique users (pengguna unik) who transacted via this partner on this date; used for per-partner user analysis and comparison.
+            type: "bigint"
+      - table: "hourly_pattern_daily"
+        description: |
+          Stores transaction patterns per hour of the day, aggregated daily. One row = one hour (0–23) per day.
+          Primary key: 'id'. Used for peak hour analysis and intraday patterns.
+          Column 'hour': integer 0–23. Business peak hours are 18–21. Business hours are 8–22. Night hours are 0–6.
+          Column 'success_rate_pct': hourly success rate. Alert threshold: below 80%.
+          Answers questions about: what hour has the most transactions, peak hours, success rate by hour, intraday transaction patterns.
+          Indonesian synonyms: pola jam, jam sibuk, jam puncak, transaksi per jam, pola harian.
+          JOIN: date links to daily_master.date, product_summary.date.
+        columns:
+          - name: "id"
+            description: |
+              Auto-increment primary key (PK) for each hourly record.
+            type: "integer"
+          - name: "date"
+            description: |
+              Date (tanggal) for this hourly pattern; used to filter by day.
+            type: "date"
+          - name: "hour"
+            description: |
+              Hour of the day as integer 0–23 (jam, 0=midnight, 23=11pm). Business peak hours: 18–21. Business hours: 8–22. Night hours: 0–6. Use WHERE hour BETWEEN 18 AND 21 for peak hour analysis.
+            type: "integer"
+          - name: "total_trx"
+            description: |
+              Total transaction count (jumlah transaksi) during this hour; used to identify peak hours and traffic patterns.
+            type: "bigint"
+          - name: "success_rate_pct"
+            description: |
+              Success rate percentage for this hour (tingkat keberhasilan per jam). Alert if below 80%. Used to detect hourly SR degradation.
+            type: "double precision"
+      - table: "product_summary"
+        description: |
+          Per-product daily transaction summary — the most granular and largest table (514,606 rows, 930 unique products).
+          One row = one product × payment_provider × item_type × type_of_payment per day.
+          Primary key: 'id'. This is the main table for product-level analysis.
+          Column 'item_type' values: 'recharge' (pulsa top-up), 'package' (paket data/internet), 'topping' (VAS/layanan tambahan seperti streaming, antivirus).
+          Column 'type_of_payment' values: 'Prepaid', 'topping'.
+          Column 'payment_provider' values: 'dana', 'finnet_cc', 'finnet_va', 'gopay', 'indomaret', 'linkaja_app', 'linkaja_wco', 'ovo', 'qris', 'shopeepay', 'tsel_wallet'.
+          Note: 'tsel_wallet' = 'telkomsel_wallet' in daily_master. 'linkaja_app' and 'linkaja_wco' are linkaja variants.
+          Column 'settlement_gap': difference between expected and actual settlement (can be negative).
+          Column 'unique_buyers': distinct customers who purchased. Column 'repeat_buyers': customers who purchased more than once.
+          Weighted SR formula: SUM(success_trx) / SUM(total_trx) * 100.
+          Answers questions about: which products sell most, revenue by product, success rate per product, repeat buyers, settlement gaps per product.
+          Indonesian synonyms: produk, penjualan produk, transaksi produk, pendapatan produk, pembeli unik, pembeli berulang.
+          JOIN: product_name links to product_price_list.product_name and daily_product_channel.product_name; date links to daily_master.
+        columns:
+          - name: "id"
+            description: |
+              Auto-increment primary key (PK) for each product-day record.
+            type: "integer"
+          - name: "date"
+            description: |
+              Transaction date (tanggal); used to filter or group product performance by time period.
+            type: "date"
           - name: "product_id"
             description: |
-              The product_id column stores unique text identifiers for each product serving as the primary key, commonly used for filtering specific products, joining with other tables like orders or reviews, and grouping product-related data (id_produk).
+              Internal product identifier (ID produk internal); may be NULL for unknown products. Use product_name for joining with other tables.
             type: "text"
-          - name: "product_category_name"
+          - name: "product_name"
             description: |
-              The product_category_name column stores the category name that each product belongs to as text values (kategori), commonly used for filtering products by category, grouping sales data by product type, and joining with category-related tables to analyze product performance across different market segments.
+              Product name (nama produk); key join column to product_price_list and daily_product_channel. May be NULL — NULL product_name rows represent unidentified transactions.
             type: "text"
-          - name: "product_name_length"
+          - name: "item_type"
             description: |
-              The product_name_length column stores the character count of product names as a bigint value and is commonly used for filtering products by name length ranges, grouping products by name length categories, and calculating aggregate statistics like average or maximum name lengths across product categories (panjang nama produk).
-            type: "bigint"
-          - name: "product_description_length"
+              Product category (kategori produk). Values: 'recharge' (pengisian pulsa), 'package' (paket data/internet), 'topping' (layanan tambahan/VAS seperti streaming, antivirus). Used to segment analysis by product type.
+            type: "text"
+          - name: "type_of_payment"
             description: |
-              The product_description_length column stores the character count of product descriptions as a bigint metric that is commonly used for filtering products by description detail level, grouping products into description length categories, and aggregating statistics about product information completeness (panjang deskripsi).
-            type: "bigint"
-          - name: "product_photos_qty"
+              Payment type classification (tipe pembayaran). Values: 'Prepaid', 'topping'. Used to separate prepaid from add-on transactions.
+            type: "text"
+          - name: "payment_provider"
             description: |
-              The product_photos_qty column stores the count of photos associated with each product as a bigint value, commonly used for filtering products by photo availability, grouping products by photo count ranges, and aggregating statistics on product photo quantities (jumlah foto).
-            type: "bigint"
-          - name: "product_weight_g"
+              Payment provider used for this transaction (provider pembayaran). Values: 'dana', 'finnet_cc', 'finnet_va', 'gopay', 'indomaret', 'linkaja_app', 'linkaja_wco', 'ovo', 'qris', 'shopeepay', 'tsel_wallet'. Note: 'tsel_wallet' = telkomsel_wallet in daily_master.
+            type: "text"
+          - name: "total_trx"
             description: |
-              The product_weight_g column stores the weight of products in grams (berat) as a bigint value and is commonly used for filtering products by weight ranges, grouping products into weight categories, and calculating aggregate statistics like average or total weight across product categories.
+              Total transaction count (jumlah transaksi) for this product/provider/day; primary volume metric.
             type: "bigint"
-          - name: "product_length_cm"
+          - name: "total_revenue"
             description: |
-              The product_length_cm column stores the length measurement of products in centimeters as a bigint value (panjang), commonly used for filtering products by size dimensions, grouping items by length ranges, and calculating shipping costs or storage requirements.
-            type: "bigint"
-          - name: "product_height_cm"
+              Total revenue (pendapatan) in Rupiah for this product/provider/day.
+            type: "double precision"
+          - name: "success_trx"
             description: |
-              The product_height_cm column stores the height measurement of products in centimeters as a bigint value (tinggi), commonly used for filtering products by size dimensions, grouping items by height ranges, and calculating volume or shipping metrics in product analysis queries.
-            type: "bigint"
-          - name: "product_width_cm"
+              Successful transaction count (transaksi berhasil) stored as float; use SUM(success_trx)/SUM(total_trx)*100 for weighted SR.
+            type: "double precision"
+          - name: "success_rate_pct"
             description: |
-              The product_width_cm column stores the width measurement of products in centimeters as a bigint value (lebar), commonly used for filtering products by size dimensions, grouping items by width ranges, and calculating volume or shipping metrics in product analysis queries.
+              Pre-computed success rate (tingkat keberhasilan) in percent. Alert < 80%, Watch 80–85%, Normal > 85%.
+            type: "double precision"
+          - name: "unique_buyers"
+            description: |
+              Count of distinct buyers (pembeli unik) for this product on this day.
             type: "bigint"
-      - table: "order_items"
+          - name: "repeat_buyers"
+            description: |
+              Count of buyers who purchased this product more than once (pembeli berulang/repeat buyer).
+            type: "bigint"
+          - name: "settlement_gap"
+            description: |
+              Settlement discrepancy (selisih settlement) in Rupiah = actual - expected. Negative = underpayment/kekurangan, positive = overpayment/kelebihan.
+            type: "double precision"
+      - table: "daily_product_channel"
         description: |
-          This table stores individual line items within customer orders, with order_item_id as the primary key and key attributes including the associated order_id, product_id, seller_id, item price, and shipping costs (freight_value). It answers business questions about order composition, product sales performance, seller revenue analysis, and shipping cost breakdowns, supporting queries about item details, barang pesanan, harga produk, biaya pengiriman, and penjual performance.
+          Daily transaction and revenue breakdown per product across 7 internal Telkomsel distribution channels. One row = one product per day.
+          Primary key: 'id'. This table has 248,638 rows.
+          The 7 channel columns represent internal Telkomsel distribution/acquisition channels (kode internal kanal distribusi Telkomsel):
+            a0_trx / a0_revenue: Channel A0 transactions and revenue
+            b3_trx / b3_revenue: Channel B3 transactions and revenue
+            f0_trx / f0_revenue: Channel F0 transactions and revenue
+            f4_trx / f4_revenue: Channel F4 transactions and revenue
+            f5_trx / f5_revenue: Channel F5 transactions and revenue
+            i1_trx / i1_revenue: Channel I1 transactions and revenue
+            ig_trx / ig_revenue: Channel IG transactions and revenue
+          To get total transactions for a product: SUM(a0_trx + b3_trx + f0_trx + f4_trx + f5_trx + i1_trx + ig_trx).
+          To get total revenue for a product: SUM(a0_revenue + b3_revenue + f0_revenue + f4_revenue + f5_revenue + i1_revenue + ig_revenue).
+          Answers questions about: which channel has most transactions for a product, channel revenue contribution, per-channel product performance.
+          Indonesian synonyms: kanal distribusi, channel, saluran, transaksi per kanal, pendapatan per kanal.
+          JOIN: product_name links to product_summary.product_name and product_price_list.product_name; date links to daily_master.
         columns:
-          - name: "order_id"
+          - name: "id"
             description: |
-              The order_id column stores text identifiers that reference specific orders and serves as a foreign key for joining with order tables, commonly used for filtering and grouping order items by their parent order.
+              Auto-increment primary key (PK) for each product-channel daily record.
+            type: "integer"
+          - name: "date"
+            description: |
+              Transaction date (tanggal); used to filter product channel data by time period.
+            type: "date"
+          - name: "product_name"
+            description: |
+              Product name (nama produk); key join column to product_summary and product_price_list.
             type: "text"
-          - name: "order_item_id"
+          - name: "a0_trx"
             description: |
-              The order_item_id column holds unique bigint identifiers for individual items within orders, serves as the primary key for the order_items table, and is used for joining with other tables to retrieve specific order item details and for filtering queries when analyzing particular line items.
+              Transaction count via Channel A0 (jumlah transaksi kanal A0); internal Telkomsel distribution channel.
             type: "bigint"
+          - name: "a0_revenue"
+            description: |
+              Revenue from Channel A0 (pendapatan kanal A0) in Rupiah.
+            type: "double precision"
+          - name: "b3_trx"
+            description: |
+              Transaction count via Channel B3 (jumlah transaksi kanal B3); internal Telkomsel distribution channel.
+            type: "bigint"
+          - name: "b3_revenue"
+            description: |
+              Revenue from Channel B3 (pendapatan kanal B3) in Rupiah.
+            type: "double precision"
+          - name: "f0_trx"
+            description: |
+              Transaction count via Channel F0 (jumlah transaksi kanal F0); internal Telkomsel distribution channel.
+            type: "bigint"
+          - name: "f0_revenue"
+            description: |
+              Revenue from Channel F0 (pendapatan kanal F0) in Rupiah.
+            type: "double precision"
+          - name: "f4_trx"
+            description: |
+              Transaction count via Channel F4 (jumlah transaksi kanal F4); internal Telkomsel distribution channel.
+            type: "bigint"
+          - name: "f4_revenue"
+            description: |
+              Revenue from Channel F4 (pendapatan kanal F4) in Rupiah.
+            type: "double precision"
+          - name: "f5_trx"
+            description: |
+              Transaction count via Channel F5 (jumlah transaksi kanal F5); internal Telkomsel distribution channel.
+            type: "bigint"
+          - name: "f5_revenue"
+            description: |
+              Revenue from Channel F5 (pendapatan kanal F5) in Rupiah.
+            type: "double precision"
+          - name: "i1_trx"
+            description: |
+              Transaction count via Channel I1 (jumlah transaksi kanal I1); internal Telkomsel distribution channel.
+            type: "bigint"
+          - name: "i1_revenue"
+            description: |
+              Revenue from Channel I1 (pendapatan kanal I1) in Rupiah.
+            type: "double precision"
+          - name: "ig_trx"
+            description: |
+              Transaction count via Channel IG (jumlah transaksi kanal IG); internal Telkomsel distribution channel.
+            type: "bigint"
+          - name: "ig_revenue"
+            description: |
+              Revenue from Channel IG (pendapatan kanal IG) in Rupiah.
+            type: "double precision"
+      - table: "channel_payment"
+        description: |
+          Daily transactions per channel × partner combination. One row = one partner × channel × purchase_mode per day.
+          Primary key: 'id'. This table has 7,456 rows.
+          Column 'channel' values: 'a0', 'b3', 'f0', 'f4', 'f5', 'i1', 'ig' (internal Telkomsel distribution channels/kode kanal distribusi internal).
+          Column 'partner' values: same as daily_master.partner.
+          Column 'purchase_mode' values: 'SELF' (user buys for themselves / beli untuk diri sendiri), 'GIFT' (user sends to another number / kirim ke nomor lain).
+          Note: 'linkajawco' and 'linkaja_wco' are the same entity — include both when filtering linkaja_wco.
+          Answers questions about: which channel-partner combo has highest transactions, SELF vs GIFT breakdown, success rate by channel, revenue by purchase mode.
+          Indonesian synonyms: kanal pembayaran, mode pembelian, hadiah, diri sendiri, mitra, partner, tingkat keberhasilan per kanal.
+          JOIN: date + partner links to daily_master; date links to hourly_pattern_daily.
+        columns:
+          - name: "id"
+            description: |
+              Auto-increment primary key (PK) for each channel-partner-day record.
+            type: "integer"
+          - name: "date"
+            description: |
+              Transaction date (tanggal); used to filter channel payment data by time period.
+            type: "date"
+          - name: "partner"
+            description: |
+              Payment partner name (nama mitra). Values: 'dana', 'finnet', 'gopay', 'indomaret', 'linkaja', 'linkaja_wco', 'linkajawco', 'ovo', 'qris', 'shopeepay', 'telkomsel_wallet'. IMPORTANT: 'linkajawco' and 'linkaja_wco' are the same entity.
+            type: "text"
+          - name: "channel"
+            description: |
+              Internal Telkomsel distribution channel code (kode kanal distribusi internal). Values: 'a0', 'b3', 'f0', 'f4', 'f5', 'i1', 'ig'. These are internal acquisition/distribution channels, not payment methods.
+            type: "text"
+          - name: "purchase_mode"
+            description: |
+              Purchase mode (mode pembelian). Values: 'SELF' (beli untuk diri sendiri/own number), 'GIFT' (beli untuk nomor lain/gift to another number). Used to separate self-purchase from gift transactions.
+            type: "text"
+          - name: "total_trx"
+            description: |
+              Total transaction count (jumlah transaksi) for this channel-partner-mode combination on this date.
+            type: "bigint"
+          - name: "total_revenue"
+            description: |
+              Total revenue (pendapatan) in Rupiah for this channel-partner-mode combination.
+            type: "double precision"
+          - name: "success_rate_pct"
+            description: |
+              Success rate percentage (tingkat keberhasilan). Alert < 80%, Watch 80–85%, Normal > 85%. Used to monitor channel health.
+            type: "double precision"
+      - table: "product_price_list"
+        description: |
+          Reference/master table for Telkomsel digital product prices. Contains 2,366 product price records.
+          Primary key: 'id'. This is a static reference table (not time-series).
+          Products include: paket internet, pulsa, streaming services (Vision+, WeTV, Viu), antivirus (Norton, Trend Micro), productivity apps (Zoom), telco add-ons, etc.
+          Column 'price' is the product price in Rupiah.
+          Answers questions about: what is the price of a product, product catalog, product names, price lookup.
+          Indonesian synonyms: harga produk, daftar harga, katalog produk, harga pulsa, harga paket.
+          JOIN: product_name and product_id link to product_summary; product_name links to daily_product_channel.
+        columns:
+          - name: "id"
+            description: |
+              Auto-increment primary key (PK) for each product price record.
+            type: "integer"
           - name: "product_id"
             description: |
-              The product_id column stores text identifiers for products within order items and serves as a foreign key for joining with product tables, commonly used in filtering and grouping operations to analyze sales by product (produk).
+              Internal product identifier (ID produk); links to product_summary.product_id.
             type: "text"
-          - name: "seller_id"
+          - name: "product_name"
             description: |
-              The seller_id column stores text identifiers of sellers who fulfill order items and is commonly used for filtering orders by specific sellers, grouping sales data by seller, joining with seller information tables, and aggregating seller performance metrics like total sales or order counts.
-            type: "text"
-          - name: "shipping_limit_date"
-            description: |
-              The shipping_limit_date column stores the maximum date by which an order item must be shipped as text format, commonly used for filtering orders by shipping deadlines, grouping items by shipping timeframes, and calculating shipping performance metrics (batas tanggal pengiriman).
+              Product name (nama produk); primary join key to product_summary and daily_product_channel. Use ILIKE or LOWER() for case-insensitive search.
             type: "text"
           - name: "price"
             description: |
-              The price column stores the monetary value of individual items in orders as a double precision number, commonly used for filtering by price ranges, aggregating total order values, and calculating revenue metrics (harga).
+              Product price (harga produk) in Rupiah; used for pricing queries and revenue validation.
             type: "double precision"
-          - name: "freight_value"
-            description: |
-              The freight_value column stores the shipping cost amount as a double precision number for each order item, commonly used for calculating total order costs through aggregation functions like SUM and filtering expensive shipments, serving as a cost metric (biaya pengiriman).
-            type: "double precision"
-        foreign_keys:
-          - column: "product_id"
-            references:
-              schema: "public"
-              table:  "products"
-              column: "product_id"
-          - column: "seller_id"
-            references:
-              schema: "public"
-              table:  "sellers"
-              column: "seller_id"
-      - table: "sellers"
-        description: |
-          This table stores information about sellers or merchants in an e-commerce platform, with seller_id as the primary key and including their geographic location details such as zip code, city, and state.
-          
-          It answers business questions about seller distribution, location-based analytics, and geographic performance metrics, supporting searches for terms like merchants, vendors, penjual, pedagang, lokasi penjual, wilayah, kota, and regional seller analysis.
-        columns:
-          - name: "seller_id"
-            description: |
-              The seller_id column holds unique text identifiers for each seller and serves as the primary key for filtering specific sellers and joining with other tables that reference sellers.
-            type: "text"
-          - name: "seller_zip_code"
-            description: |
-              The seller_zip_code column stores the postal code as a bigint for each seller's location and is commonly used for filtering sellers by geographic area, grouping sales by postal regions, or joining with shipping/logistics tables to calculate delivery zones (kode pos).
-            type: "bigint"
-          - name: "seller_city"
-            description: |
-              The seller_city column stores the city name where each seller is located (kota) and is commonly used for filtering sellers by geographic location, grouping sales data by city for regional analysis, and joining with other location-based tables for geographic insights.
-            type: "text"
-          - name: "seller_state"
-            description: |
-              The seller_state column stores the state or province name where each seller is located as text, commonly used for filtering sellers by geographic region, grouping sales data by state for regional analysis, and joining with location-based tables for geographic insights (provinsi).
-            type: "text"
-
-  - db_name: "analytics_db"
-    schema: "public"
-    description: |
-      This analytics database stores customer segmentation data and daily business performance metrics to answer queries about customer groups, daily revenue, sales trends, transaction volumes, performance indicators, and business intelligence reporting across different customer segments and time periods.
-    tables:
-      - table: "customer_segments"
-        description: |
-          This table stores customer segmentation data with customer_id as the primary key, containing RFM analysis scores, segment classifications, lifetime value metrics, order statistics, and purchase timing information for each customer.
-          
-          It answers business questions about customer classification, value analysis, purchase behavior patterns, and retention metrics, supporting queries about pelanggan segments, customer lifetime value, buying frequency, average transaction size, and recency analysis for targeted marketing and customer relationship management.
-        columns:
-          - name: "customer_id"
-            description: |
-              The customer_id column stores unique text identifiers for customers and serves as the primary key for joining with other customer-related tables, commonly used in WHERE clause filters and GROUP BY operations for customer segmentation analysis.
-            type: "text"
-          - name: "rfm_score"
-            description: |
-              The rfm_score column stores a numerical RFM (Recency, Frequency, Monetary) scoring value as a bigint that quantifies customer behavior patterns and is commonly used for filtering high-value customers, grouping customers into behavioral segments, and aggregating to calculate average segment scores (skor).
-            type: "bigint"
-          - name: "segment"
-            description: |
-              The segment column stores customer categorization labels (such as "VIP", "Regular", "At Risk") used for filtering customers by behavioral groups and grouping analytics by customer type in marketing and retention analysis queries (segmen).
-            type: "text"
-          - name: "lifetime_value"
-            description: |
-              The lifetime_value column stores the total monetary value a customer has generated over their entire relationship with the business as a double precision number, commonly used for filtering high-value customers, grouping customers into value tiers, and calculating aggregate metrics like average customer worth across segments (nilai seumur hidup).
-            type: "double precision"
-          - name: "total_orders"
-            description: |
-              The total_orders column stores the cumulative count of orders placed by each customer as a bigint metric, commonly used for filtering high-value customers, grouping customers by purchase frequency ranges, and aggregating to calculate average orders per segment (total pesanan).
-            type: "bigint"
-          - name: "avg_order_value"
-            description: |
-              The avg_order_value column stores the average monetary value of orders placed by each customer as a double precision number, commonly used for filtering high-value customers, grouping customers into spending tiers, and calculating segment-level aggregations in customer analytics queries (nilai rata-rata pesanan).
-            type: "double precision"
-          - name: "last_purchase_date"
-            description: |
-              The last_purchase_date column stores the date of a customer's most recent purchase as text and is commonly used for filtering customers by recency, grouping customers into time-based cohorts, and calculating customer retention metrics in RFM analysis (tanggal pembelian terakhir).
-            type: "text"
-          - name: "updated_at"
-            description: |
-              The updated_at column stores the timestamp when customer segment data was last modified as text, commonly used for filtering recent updates and tracking data freshness in customer analytics queries (tanggal_diperbarui).
-            type: "text"
-      - table: "daily_metrics"
-        description: |
-          This table stores daily business performance metrics with date as the primary key, tracking key attributes including total sales revenue, order counts, average order values, and customer acquisition data for each day.
-          
-          It answers business questions about daily sales performance, order trends, customer behavior patterns, and revenue analysis, supporting searches for terms like daily sales, penjualan harian, order volume, nilai rata-rata pesanan, new customer acquisition, pelanggan baru, returning customers, and pelanggan kembali.
-        columns:
-          - name: "date"
-            description: |
-              The date column stores daily date values in text format and serves as the primary key for filtering time periods, grouping metrics by day, and joining with other time-based tables in daily sales analytics (tanggal).
-            type: "text"
-          - name: "total_sales"
-            description: |
-              The total_sales column stores the aggregate sales amount in bigint format for each day and is commonly used for filtering by sales thresholds, grouping by sales ranges, and calculating sum/average aggregations across date periods to analyze daily revenue performance (total_penjualan).
-            type: "bigint"
-          - name: "total_orders"
-            description: |
-              The total_orders column stores the count of orders placed on each date as a bigint metric that is commonly used for aggregation operations like SUM and AVG to analyze order volume trends and can be filtered or grouped by date ranges for daily, weekly, or monthly reporting (total pesanan).
-            type: "bigint"
-          - name: "avg_order_value"
-            description: |
-              The avg_order_value column stores the average monetary value per order in bigint format and serves as a key performance metric that can be filtered for trend analysis, grouped by time periods, and aggregated to calculate overall averages across different date ranges (nilai rata-rata pesanan).
-            type: "bigint"
-          - name: "new_customers"
-            description: |
-              The new_customers column stores the count of first-time customers acquired on each date as a bigint metric that is commonly used for aggregation operations like SUM and AVG to analyze customer acquisition trends, and for filtering in time-series comparisons alongside its sibling metrics (pelanggan_baru).
-            type: "bigint"
-          - name: "returning_customers"
-            description: |
-              The returning_customers column stores the count of customers who made repeat purchases on a given day as a bigint value, commonly used for filtering by customer retention thresholds, grouping by time periods for trend analysis, and aggregating to calculate total or average returning customer metrics across date ranges (pelanggan kembali).
-            type: "bigint"

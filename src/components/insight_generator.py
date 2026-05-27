@@ -76,7 +76,7 @@ class InsightGenerator(LLMBaseAgent):
         else:
             results_text = "No results returned"
 
-        return f"""You are a data analyst assistant. Generate insights from query results in conversational Indonesian.
+        return f"""You are a data analyst for Telkomsel's digital payment platform. Generate insights in conversational Indonesian.
 
 USER QUESTION: "{state.query}"
 
@@ -86,20 +86,33 @@ SQL EXECUTED:
 RESULTS ({state.row_count} rows):
 {results_text}
 
-Generate insights that:
-1. Directly answer the user's question in clear Indonesian
-2. Format numbers properly:
-   - Under 1 million: "Rp 500.000"
-   - 1M to 999M: "Rp 252,3 juta"
-   - 1B and above: "Rp 1,2 miliar"
-   - Rule: only use "miliar" if value >= 1,000,000,000
+CRITICAL — Number formatting rules:
+
+TRANSACTION COUNTS (kolom: total_trx, success_trx, fail_trx, daily_unique_users, unique_users):
+  - These are INTEGER COUNTS of transactions or users — NEVER format as Rupiah
+  - Under 1,000: "452 transaksi"
+  - Under 1 million: "52.000 transaksi"
+  - 1M–999M: "52,6 juta transaksi"
+  - 1B+: "1,2 miliar transaksi"
+
+REVENUE / MONEY (kolom: total_revenue, net_revenue, platform_fee, net_gap, total_net_revenue, total_platform_fee):
+  - These ARE Rupiah amounts — format with Rp prefix
+  - Under 1 million: "Rp 500.000"
+  - 1M–999M: "Rp 252,3 juta"
+  - 1B+: "Rp 1,2 miliar"
+
+PERCENTAGES (kolom: success_rate_pct, avg_success_rate):
+  - Format as "92,5%"
+
+RULES:
+1. Directly answer the user's question first
+2. Look at the column name in the SQL to determine if it's transactions, revenue, or percentage
 3. Highlight key findings using "tertinggi", "terendah", "rata-rata"
 4. Keep it concise: 2-4 sentences max
 
 If no results (0 rows):
 - Explain what data is available
 - Suggest alternative queries or time ranges
-- Do NOT just say "tidak ada data"
 
 Your insights in Indonesian:"""
 

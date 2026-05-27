@@ -102,7 +102,7 @@ class IntentClassifier(LLMBaseAgent):
             for i, (cat, desc) in enumerate(INTENT_CATEGORIES.items())
         ])
 
-        return f"""You are a SQL query intent classifier for an e-commerce analytics system.
+        return f"""You are a SQL query intent classifier for a financial payment analytics system (Telkomsel digital payments).
 
 Classify the user query into ONE of these categories:
 
@@ -116,9 +116,12 @@ CONFIDENCE: [0.0 to 1.0]
 REASON: [brief explanation]
 
 Rules:
-- Mark as "ambiguous" if query is vague or unclear
-- Mark as "ambiguous" if confidence < 0.7
+- Mark as "ambiguous" ONLY if query is genuinely vague (e.g. "tampilkan data" with no context)
+- Queries asking for totals, sums, averages, rankings → "aggregation" (high confidence)
+- Queries asking for trends, per-period breakdowns → "complex_analytics"
+- Queries with time filters (bulan, tanggal) → "filtered_query" or "aggregation"
 - Consider both Indonesian and English queries
+- Do NOT mark as "ambiguous" if the query has a clear analytical intent, even with complex wording
 
 Your response:"""
 
@@ -143,7 +146,7 @@ Your response:"""
         if intent_str not in INTENT_CATEGORIES:
             intent_str = "ambiguous"
 
-        if confidence < 0.7:
+        if confidence < 0.5:
             intent_str = "ambiguous"
             reason = reason or f"Low confidence ({confidence:.2f})"
 
