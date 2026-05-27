@@ -5,13 +5,35 @@ This module defines the AgentState dataclass that serves as the
 single source of truth flowing through the entire pipeline.
 
 Example:
-    >>> state = AgentState(query="berapa total customer?", database="sales_db")
+    >>> state = AgentState(query="berapa total customer?", database="financial_db")
     >>> state.current_stage = "intent_classifier"
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+
+@dataclass
+class ExecutionStep:
+    """One step in a multi-step analytical plan."""
+
+    step_number: int
+    description: str   # e.g. "Ambil revenue April per partner"
+    sub_query: str     # natural language sub-query for this step
+    depends_on: list[int] = field(default_factory=list)
+
+
+@dataclass
+class StepResult:
+    """Result of executing one step."""
+
+    step_number: int
+    description: str
+    sql: str
+    data: list[dict]
+    row_count: int
+    summary: str  # short text summary injected into next-step context
 
 
 @dataclass
@@ -35,11 +57,15 @@ class AgentState:
         needs_clarification: Whether query needs clarification
         clarification_reason: Why clarification is needed
         created_at: State creation timestamp
+        execution_plan: Steps in a multi-step analytical plan
+        step_results: Results of executed steps
+        is_multi_step: Whether this is a multi-step query
+        conversation_history: Prior turns passed in from client
     """
 
     # Input
     query: str
-    database: str = "sales_db"
+    database: str = "financial_db"
 
     # Agent outputs
     intent: Optional[Dict[str, Any]] = None
@@ -50,6 +76,14 @@ class AgentState:
     query_result: Optional[List[Dict[str, Any]]] = None
     row_count: int = 0
     insights: Optional[str] = None
+
+    # Multi-step plan
+    execution_plan: List[Any] = field(default_factory=list)  # list[ExecutionStep]
+    step_results: List[Any] = field(default_factory=list)    # list[StepResult]
+    is_multi_step: bool = False
+
+    # Conversational memory — passed in from client each request
+    conversation_history: List[Dict[str, Any]] = field(default_factory=list)
 
     # Tracking
     errors: List[str] = field(default_factory=list)

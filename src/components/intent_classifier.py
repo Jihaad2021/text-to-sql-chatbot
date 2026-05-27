@@ -9,6 +9,7 @@ Inherits: LLMBaseAgent
 
 Reads from state:
     - state.query
+    - state.conversation_history
 
 Writes to state:
     - state.intent (dict: category, confidence, reason, sql_strategy)
@@ -70,12 +71,12 @@ class IntentClassifier(LLMBaseAgent):
         Classify intent of user query.
 
         Args:
-            state: Pipeline state with state.query
+            state: Pipeline state with state.query and state.conversation_history
 
         Returns:
             Updated state with intent classification results
         """
-        prompt = self._build_prompt(state.query)
+        prompt = self._build_prompt(state)
         response = self._call_llm(prompt, max_tokens=500, temperature=0)
         intent = self._parse_response(response)
 
@@ -95,20 +96,22 @@ class IntentClassifier(LLMBaseAgent):
 
         return state
 
-    def _build_prompt(self, query: str) -> str:
-        """Build classification prompt."""
+    def _build_prompt(self, state: AgentState) -> str:
+        """Build classification prompt, including recent conversation context if available."""
         categories_text = "\n".join([
             f"{i + 1}. {cat} - {desc}"
             for i, (cat, desc) in enumerate(INTENT_CATEGORIES.items())
         ])
+
+        history_block = self._build_history_block(state.conversation_history)
 
         return f"""You are a SQL query intent classifier for a financial payment analytics system (Telkomsel digital payments).
 
 Classify the user query into ONE of these categories:
 
 {categories_text}
-
-USER QUERY: "{query}"
+{history_block}
+USER QUERY: "{state.query}"
 
 Respond in this EXACT format:
 INTENT: [category]
@@ -122,8 +125,26 @@ Rules:
 - Queries with time filters (bulan, tanggal) → "filtered_query" or "aggregation"
 - Consider both Indonesian and English queries
 - Do NOT mark as "ambiguous" if the query has a clear analytical intent, even with complex wording
+- Use conversation context to resolve follow-up queries (e.g. "sekarang breakdown per channel")
 
 Your response:"""
+
+    def _build_history_block(self, history: list[dict]) -> str:
+        """Return formatted last 2 conversation turns, or empty string."""
+        if not history:
+            return ""
+
+        recent = history[-2:]
+        lines = ["\nRECENT CONVERSATION:"]
+        for turn in recent:
+            q = turn.get("query", "")
+            a = turn.get("insights", "")
+            if q:
+                lines.append(f"Q: {q}")
+            if a:
+                lines.append(f"A: {a[:200]}{'...' if len(a) > 200 else ''}")
+        lines.append("")
+        return "\n".join(lines)
 
     def _parse_response(self, response: str) -> dict[str, str | float]:
         """Parse LLM response into intent dict."""

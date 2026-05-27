@@ -26,6 +26,14 @@ st.set_page_config(
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # ─────────────────────────────────────────────
+# SESSION STATE
+# ─────────────────────────────────────────────
+if "conversation_history" not in st.session_state:
+    st.session_state.conversation_history = []
+if "chat_display" not in st.session_state:
+    st.session_state.chat_display = []  # list of {role, content, type, data}
+
+# ─────────────────────────────────────────────
 # CSS
 # ─────────────────────────────────────────────
 st.markdown("""
@@ -137,6 +145,28 @@ st.markdown("""
         font-family: 'IBM Plex Sans', sans-serif;
     }
 
+    .chat-user {
+        display: flex;
+        justify-content: flex-end;
+        margin: 0.5rem 0;
+    }
+
+    .chat-user-bubble {
+        background: #3b82f6;
+        color: #fff;
+        padding: 0.6rem 1rem;
+        border-radius: 1rem 1rem 0.25rem 1rem;
+        max-width: 70%;
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
+
+    .chat-assistant {
+        display: flex;
+        justify-content: flex-start;
+        margin: 0.5rem 0;
+    }
+
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 </style>
@@ -187,6 +217,12 @@ with st.sidebar:
     st.markdown("---")
     st.caption("🔄 Data: Telkomsel Payment Platform • Mar–Mei 2026")
 
+    st.markdown("---")
+    if st.button("🗑️ Bersihkan Percakapan", use_container_width=True):
+        st.session_state.conversation_history = []
+        st.session_state.chat_display = []
+        st.rerun()
+
 # ─────────────────────────────────────────────
 # QUERY INPUT
 # ─────────────────────────────────────────────
@@ -204,6 +240,111 @@ with st.form(key="query_form"):
         ask_button = st.form_submit_button("🚀 Tanya", type="primary", use_container_width=True)
 
 # ─────────────────────────────────────────────
+# RENDER CHAT HISTORY
+# ─────────────────────────────────────────────
+def _render_data_table(data: list, row_count: int) -> None:
+    """Render query result as a formatted dataframe with download button."""
+    if not data:
+        st.info("ℹ️ Query tidak mengembalikan data.")
+        return
+
+    df = pd.DataFrame(data)
+    MONEY_KEYWORDS = ["revenue", "gap", "fee", "price"]
+    TRX_KEYWORDS = ["_trx", "transaksi", "users", "unique"]
+    for col in df.columns:
+        col_lower = col.lower()
+        is_money = any(k in col_lower for k in MONEY_KEYWORDS)
+        is_trx = any(k in col_lower for k in TRX_KEYWORDS)
+        if is_money and not is_trx and df[col].dtype in ["float64", "int64"]:
+            df[col] = df[col].apply(
+                lambda x: f"Rp {x:,.0f}" if pd.notnull(x) else ""
+            )
+
+    st.dataframe(df, use_container_width=True, height=400)
+    col_info, col_download = st.columns([3, 1])
+    with col_info:
+        st.caption(f"📈 {row_count} baris data")
+    with col_download:
+        csv = pd.DataFrame(data).to_csv(index=False)
+        st.download_button(
+            "📥 Download CSV",
+            data=csv,
+            file_name="query_result.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+
+def _render_assistant_entry(entry: dict) -> None:
+    """Render one assistant chat entry with insight, SQL tab, results, and plan expander."""
+    result = entry.get("result", {})
+    metadata = result.get("metadata", {})
+
+    if metadata.get("needs_clarification"):
+        reason = metadata.get("clarification_reason", "")
+        st.markdown(f"""
+        <div class="clarification-box">
+            <div class="clarification-title">⚠️ Pertanyaan Perlu Diperjelas</div>
+            <p style="margin: 0.5rem 0; color: #78350f;">{reason}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    detected_db = metadata.get("database", "")
+    if detected_db:
+        st.markdown(
+            f'🗄️ Database: <span class="db-badge">{detected_db}</span>',
+            unsafe_allow_html=True,
+        )
+
+    # Multi-step plan expander
+    if result.get("is_multi_step") and result.get("step_results"):
+        with st.expander("📋 Plan Analisis", expanded=False):
+            for step in result["step_results"]:
+                st.markdown(
+                    f"**Step {step['step_number']}: {step['description']}** "
+                    f"— {step['row_count']} baris"
+                )
+                if step.get("sql"):
+                    st.code(step["sql"], language="sql")
+
+    tab1, tab2, tab3 = st.tabs(["📊 Hasil", "🔍 SQL Query", "⚙️ Detail"])
+
+    with tab1:
+        if result.get("insights"):
+            st.markdown(
+                f'<div class="insight-box">💡 {result["insights"]}</div>',
+                unsafe_allow_html=True,
+            )
+        _render_data_table(result.get("data") or [], result.get("row_count", 0))
+
+    with tab2:
+        if result.get("sql"):
+            st.code(result["sql"], language="sql")
+
+    with tab3:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("⏱️ Waktu", f"{result.get('execution_time_ms', 0) / 1000:.2f} s")
+        with c2:
+            st.metric("🗄️ Database", detected_db)
+        with c3:
+            st.metric("📊 Baris", result.get("row_count", 0))
+        with st.expander("🔎 Detail Lengkap"):
+            st.json(metadata)
+
+
+for entry in st.session_state.chat_display:
+    if entry["role"] == "user":
+        st.markdown(
+            f'<div class="chat-user"><div class="chat-user-bubble">💬 {entry["content"]}</div></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        with st.container():
+            _render_assistant_entry(entry)
+
+# ─────────────────────────────────────────────
 # PROCESS QUERY
 # ─────────────────────────────────────────────
 if ask_button and user_question:
@@ -211,134 +352,53 @@ if ask_button and user_question:
         try:
             response = requests.post(
                 f"{API_URL}/query",
-                json={"question": user_question},
-                timeout=60
+                json={
+                    "question": user_question,
+                    "database": "financial_db",
+                    "conversation_history": st.session_state.conversation_history,
+                },
+                timeout=120,
             )
 
             if response.status_code == 200:
                 result = response.json()
-                metadata = result.get("metadata", {})
 
-                # ── Needs Clarification ──────────────────
-                if metadata.get("needs_clarification"):
-                    reason = metadata.get("clarification_reason", "")
-                    st.markdown(f"""
-                    <div class="clarification-box">
-                        <div class="clarification-title">⚠️ Pertanyaan Perlu Diperjelas</div>
-                        <p style="margin: 0.5rem 0; color: #78350f;">{reason}</p>
-                        <p style="margin: 0.5rem 0; color: #78350f; font-size: 0.9rem;">
-                            <strong>Saran:</strong> Coba pertanyaan yang lebih spesifik dengan menyebutkan entitas data
-                            (customer, order, produk, dll) dan kata kerja yang jelas (tampilkan, berapa, siapa).
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                # Update conversation memory from server response
+                st.session_state.conversation_history = result.get(
+                    "conversation_history", []
+                )
 
-                    # Suggestion chips
-                    st.markdown("**💡 Coba pertanyaan seperti ini:**")
-                    suggestions = [
-                        "Berapa total transaksi bulan April 2026?",
-                        "Success rate per partner bulan Mei 2026",
-                        "10 produk dengan revenue tertinggi",
-                        "Net gap per payment provider",
-                    ]
-                    cols = st.columns(len(suggestions))
-                    for i, sug in enumerate(suggestions):
-                        with cols[i]:
-                            st.markdown(f'<span class="suggestion-chip">📌 {sug}</span>', unsafe_allow_html=True)
-
-                # ── Success ──────────────────────────────
-                else:
-                    # Database badge
-                    detected_db = metadata.get("database", "")
-                    if detected_db:
-                        st.markdown(
-                            f'🗄️ Database yang digunakan: <span class="db-badge">{detected_db}</span>',
-                            unsafe_allow_html=True
-                        )
-                        st.markdown("")
-
-                    # Tabs
-                    tab1, tab2, tab3 = st.tabs(["📊 Hasil", "🔍 SQL Query", "⚙️ Detail"])
-
-                    with tab1:
-                        # Insights
-                        if result.get("insights"):
-                            st.markdown(
-                                f'<div class="insight-box">💡 {result["insights"]}</div>',
-                                unsafe_allow_html=True
-                            )
-
-                        # Data table
-                        if result.get("data") and len(result["data"]) > 0:
-                            df = pd.DataFrame(result["data"])
-
-                            # Format only genuine money columns as Rupiah
-                            # Exclude transaction-count columns (_trx, transaksi, users)
-                            MONEY_KEYWORDS = ["revenue", "gap", "fee", "price"]
-                            TRX_KEYWORDS = ["_trx", "transaksi", "users", "unique"]
-                            for col in df.columns:
-                                col_lower = col.lower()
-                                is_money = any(k in col_lower for k in MONEY_KEYWORDS)
-                                is_trx = any(k in col_lower for k in TRX_KEYWORDS)
-                                if is_money and not is_trx and df[col].dtype in ["float64", "int64"]:
-                                    df[col] = df[col].apply(
-                                        lambda x: f"Rp {x:,.0f}" if pd.notnull(x) else ""
-                                    )
-
-                            st.dataframe(df, use_container_width=True, height=400)
-
-                            col_info, col_download = st.columns([3, 1])
-                            with col_info:
-                                st.caption(f"📈 {result['row_count']} baris data")
-                            with col_download:
-                                csv = pd.DataFrame(result["data"]).to_csv(index=False)
-                                st.download_button(
-                                    "📥 Download CSV",
-                                    data=csv,
-                                    file_name="query_result.csv",
-                                    mime="text/csv",
-                                    use_container_width=True
-                                )
-                        else:
-                            st.info("ℹ️ Query tidak mengembalikan data.")
-
-                    with tab2:
-                        if result.get("sql"):
-                            st.code(result["sql"], language="sql")
-
-                    with tab3:
-                        c1, c2, c3 = st.columns(3)
-                        with c1:
-                            st.metric("⏱️ Waktu", f"{result['execution_time_ms'] / 1000:.2f} s")
-                        with c2:
-                            st.metric("🗄️ Database", detected_db)
-                        with c3:
-                            st.metric("📊 Baris", result["row_count"])
-
-                        with st.expander("🔎 Detail Lengkap"):
-                            st.json(metadata)
+                # Append to display thread
+                st.session_state.chat_display.append(
+                    {"role": "user", "content": user_question}
+                )
+                st.session_state.chat_display.append(
+                    {"role": "assistant", "result": result}
+                )
 
             else:
                 error_detail = response.json().get("detail", response.text)
                 st.markdown(
                     f'<div class="error-box">❌ <strong>Error:</strong> {error_detail}</div>',
-                    unsafe_allow_html=True
+                    unsafe_allow_html=True,
                 )
+
+            st.rerun()
 
         except requests.exceptions.Timeout:
             st.markdown(
                 '<div class="error-box">⏱️ <strong>Timeout:</strong> Query terlalu lama. Coba pertanyaan yang lebih sederhana.</div>',
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
         except requests.exceptions.ConnectionError:
             st.markdown(
                 '<div class="error-box">🔌 <strong>Connection Error:</strong> Tidak bisa terhubung ke API. Pastikan server berjalan di http://localhost:8000</div>',
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
         except Exception as e:
             st.markdown(
                 f'<div class="error-box">❌ <strong>Error:</strong> {str(e)}</div>',
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
 
 elif ask_button and not user_question:

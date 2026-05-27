@@ -11,6 +11,7 @@ Reads from state:
     - state.query
     - state.evaluated_tables (list[RetrievedTable])
     - state.intent (dict: category, sql_strategy)
+    - state.step_results (list[StepResult], optional — for multi-step queries)
 
 Writes to state:
     - state.sql (generated SQL string)
@@ -25,6 +26,7 @@ Example:
     SELECT COUNT(*) as total FROM customers;
 """
 
+import json
 import re
 
 import yaml
@@ -33,6 +35,9 @@ from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.exceptions import SQLGenerationError
+
+# Maximum rows per previous step shown in context to avoid prompt overflow
+_PREV_STEP_ROW_PREVIEW = 5
 
 
 class SQLGenerator(LLMBaseAgent):
@@ -116,6 +121,9 @@ QUERY TYPE: {state.intent.get('category', '')}
             examples_context += f"Question: {example['question']}\n"
             examples_context += f"SQL:\n{example['sql']}\n\n"
 
+        prev_steps_block = self._build_prev_steps_block(state)
+        history_block = self._build_history_block(state.conversation_history)
+
         return f"""You are a senior PostgreSQL data engineer working with a Telkomsel financial payment database.
 
 Your task is to convert natural language questions into safe and correct PostgreSQL SQL queries.
@@ -149,12 +157,12 @@ SQL STYLE RULES:
 12. Prefer CTE (WITH ...) for complex queries.
 13. Do not generate INSERT, UPDATE, DELETE, or DROP statements.
 
-{intent_hint}
+{history_block}{intent_hint}
 
 {schema_context}
 
 {examples_context}
-
+{prev_steps_block}
 Generate SQL for the following question.
 
 Question:
@@ -165,6 +173,38 @@ Start directly with SELECT or WITH.
 
 SQL:
 """
+
+    def _build_history_block(self, history: list[dict]) -> str:
+        """Inject last 2 conversation turns so follow-up queries resolve correctly."""
+        if not history:
+            return ""
+        recent = history[-2:]
+        lines = ["RECENT CONVERSATION (use to resolve references like 'sekarang', 'yang tadi', 'periode tersebut'):\n"]
+        for turn in recent:
+            q = turn.get("query", "")
+            sql = turn.get("sql_summary", "")
+            if q:
+                lines.append(f"Previous question: {q}")
+            if sql:
+                lines.append(f"Previous SQL used: {sql}")
+        lines.append("")
+        return "\n".join(lines)
+
+    def _build_prev_steps_block(self, state: AgentState) -> str:
+        """Return a formatted block of previous step results, or empty string."""
+        if not state.step_results:
+            return ""
+
+        lines = ["PREVIOUS STEP RESULTS:\n"]
+        for step in state.step_results:
+            preview = step.data[:_PREV_STEP_ROW_PREVIEW]
+            rows_json = json.dumps(preview, indent=2, default=str)
+            lines.append(f"Step {step.step_number} ({step.description}):")
+            lines.append(f"SQL: {step.sql}")
+            lines.append(f"Results ({step.row_count} rows): {rows_json}\n")
+
+        lines.append("Use these results to inform your SQL for the current step.\n")
+        return "\n".join(lines)
 
     def _clean_sql(self, sql: str) -> str:
         """Remove markdown and extract only SQL from response."""

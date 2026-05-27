@@ -22,6 +22,7 @@ load_dotenv()
 from src.components.insight_generator import InsightGenerator
 from src.components.intent_classifier import IntentClassifier
 from src.components.query_executor import QueryExecutor
+from src.components.query_planner import QueryPlanner
 from src.components.retrieval_evaluator import RetrievalEvaluator
 from src.components.schema_retriever import SchemaRetriever
 from src.components.sql_generator import SQLGenerator
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing pipeline...")
     pipeline = TextToSQLPipeline(
         intent_classifier=IntentClassifier(),
+        query_planner=QueryPlanner(),
         schema_retriever=SchemaRetriever(),
         retrieval_evaluator=RetrievalEvaluator(),
         sql_generator=SQLGenerator(),
@@ -59,7 +61,7 @@ async def lifespan(app: FastAPI):
     )
     logger.info(
         "Pipeline ready — "
-        "Intent → Retrieval → Evaluation → Generation → Validation → Execution → Insights"
+        "Intent → Planning → Retrieval → Evaluation → Generation → Validation → Execution → Insights"
     )
 
     yield
@@ -102,7 +104,8 @@ _ALLOWED_DATABASES = set(Config.DB_URLS.keys())
 
 class QueryRequest(BaseModel):
     question: str
-    database: str = "sales_db"
+    database: str = "financial_db"
+    conversation_history: List[Dict[str, Any]] = []
 
     @field_validator("question")
     @classmethod
@@ -129,6 +132,9 @@ class QueryResponse(BaseModel):
     insights: Optional[str] = None
     row_count: int
     execution_time_ms: float
+    is_multi_step: bool = False
+    step_results: Optional[List[Dict[str, Any]]] = None
+    conversation_history: List[Dict[str, Any]] = []
     metadata: Dict[str, Any]
 
 
@@ -142,12 +148,13 @@ def root() -> dict:
         "message": "Text-to-SQL Chatbot API v3.0",
         "pipeline": [
             "1. IntentClassifier",
-            "2. SchemaRetriever",
-            "3. RetrievalEvaluator",
-            "4. SQLGenerator",
-            "5. SQLValidator",
-            "6. QueryExecutor",
-            "7. InsightGenerator",
+            "2. QueryPlanner",
+            "3. SchemaRetriever",
+            "4. RetrievalEvaluator",
+            "5. SQLGenerator",
+            "6. SQLValidator",
+            "7. QueryExecutor",
+            "8. InsightGenerator",
         ],
         "endpoints": {
             "health": "/health",
@@ -186,13 +193,13 @@ def list_databases() -> dict:
         databases = sorted({t.split(".")[0] for t in all_tables if "." in t})
         return {
             "databases": databases,
-            "default": databases[0] if databases else "sales_db",
+            "default": databases[0] if databases else "financial_db",
             "total_tables": len(all_tables),
         }
     except Exception as e:
         return {
             "databases": sorted(_ALLOWED_DATABASES),
-            "default": "sales_db",
+            "default": "financial_db",
             "error": str(e),
         }
 
@@ -206,7 +213,11 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
     Rate limited to RATE_LIMIT_PER_MINUTE requests per IP per minute.
     """
     request_id = str(uuid.uuid4())
-    state = AgentState(query=body.question, database=body.database)
+    state = AgentState(
+        query=body.question,
+        database=body.database,
+        conversation_history=body.conversation_history,
+    )
 
     try:
         state = pipeline.run(state)
@@ -240,9 +251,29 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
                 "intent": state.intent,
                 "row_count": state.row_count,
                 "execution_time_ms": round(total_ms, 1),
+                "is_multi_step": state.is_multi_step,
                 "success": True,
             },
         )
+
+        updated_history = list(body.conversation_history) + [{
+            "query": body.question,
+            "insights": state.insights or "",
+            "sql_summary": (state.validated_sql or "")[:300],
+            "row_count": state.row_count,
+            "is_multi_step": state.is_multi_step,
+        }]
+
+        serialized_steps = [
+            {
+                "step_number": sr.step_number,
+                "description": sr.description,
+                "sql": sr.sql,
+                "row_count": sr.row_count,
+                "summary": sr.summary,
+            }
+            for sr in state.step_results
+        ] if state.step_results else None
 
         return QueryResponse(
             question=state.query,
@@ -251,6 +282,9 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
             insights=state.insights,
             row_count=state.row_count,
             execution_time_ms=total_ms,
+            is_multi_step=state.is_multi_step,
+            step_results=serialized_steps,
+            conversation_history=updated_history,
             metadata={
                 "request_id": request_id,
                 "pipeline_stage": "complete",

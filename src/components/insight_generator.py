@@ -11,6 +11,9 @@ Reads from state:
     - state.validated_sql
     - state.query_result
     - state.row_count
+    - state.is_multi_step (bool)
+    - state.step_results (list[StepResult], for multi-step queries)
+    - state.conversation_history (optional)
 
 Writes to state:
     - state.insights (str)
@@ -68,7 +71,13 @@ class InsightGenerator(LLMBaseAgent):
         return state
 
     def _build_prompt(self, state: AgentState) -> str:
-        """Build insight generation prompt."""
+        """Branch to multi-step or single-step prompt based on state."""
+        if state.is_multi_step and state.step_results:
+            return self._build_multi_step_prompt(state)
+        return self._build_single_step_prompt(state)
+
+    def _build_single_step_prompt(self, state: AgentState) -> str:
+        """Build insight prompt for a single-step query."""
         if state.query_result and state.row_count > 0:
             results_text = json.dumps(state.query_result[:10], indent=2, default=str)
             if state.row_count > 10:
@@ -76,8 +85,10 @@ class InsightGenerator(LLMBaseAgent):
         else:
             results_text = "No results returned"
 
-        return f"""You are a data analyst for Telkomsel's digital payment platform. Generate insights in conversational Indonesian.
+        history_block = self._build_history_block(state.conversation_history)
 
+        return f"""You are a data analyst for Telkomsel's digital payment platform. Generate insights in conversational Indonesian.
+{history_block}
 USER QUESTION: "{state.query}"
 
 SQL EXECUTED:
@@ -115,6 +126,55 @@ If no results (0 rows):
 - Suggest alternative queries or time ranges
 
 Your insights in Indonesian:"""
+
+    def _build_multi_step_prompt(self, state: AgentState) -> str:
+        """Build insight prompt that synthesises all step results."""
+        history_block = self._build_history_block(state.conversation_history)
+        steps_block = self._build_steps_block(state.step_results)
+
+        return f"""You are a data analyst for Telkomsel's digital payment platform.
+{history_block}
+USER ORIGINAL QUESTION: "{state.query}"
+
+ANALYSIS STEPS EXECUTED:
+
+{steps_block}
+
+Synthesize all step results into a coherent analytical answer in Indonesian.
+Apply the same number formatting rules (transaction counts vs Rupiah revenue).
+Lead with the direct answer to the original question, then supporting evidence from each step.
+Max 5-6 sentences.
+
+Your insights in Indonesian:"""
+
+    def _build_steps_block(self, step_results: list) -> str:
+        """Format step results for the multi-step prompt."""
+        lines = []
+        for step in step_results:
+            preview = json.dumps(step.data[:10], indent=2, default=str)
+            lines.append(f"STEP {step.step_number}: {step.description}")
+            lines.append(f"SQL: {step.sql}")
+            lines.append(f"Results ({step.row_count} rows):")
+            lines.append(preview)
+            lines.append("")
+        return "\n".join(lines)
+
+    def _build_history_block(self, history: list[dict]) -> str:
+        """Return formatted last 2 conversation turns, or empty string."""
+        if not history:
+            return ""
+
+        recent = history[-2:]
+        lines = ["\nRECENT CONVERSATION:"]
+        for turn in recent:
+            q = turn.get("query", "")
+            a = turn.get("insights", "")
+            if q:
+                lines.append(f"Q: {q}")
+            if a:
+                lines.append(f"A: {a[:200]}{'...' if len(a) > 200 else ''}")
+        lines.append("")
+        return "\n".join(lines)
 
     def _fallback(self, state: AgentState) -> str:
         """Fallback insight if LLM call fails."""

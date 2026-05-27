@@ -1,5 +1,5 @@
 """
-TextToSQLPipeline — Orchestrator for the 7-agent pipeline.
+TextToSQLPipeline — Orchestrator for the 8-agent pipeline.
 
 Separates pipeline sequencing from the API layer.
 The pipeline owns the agents, runs them in order, and exposes
@@ -8,10 +8,11 @@ health-check and resource-cleanup interfaces.
 Usage:
     >>> pipeline = TextToSQLPipeline(
     ...     intent_classifier=IntentClassifier(),
+    ...     query_planner=QueryPlanner(),
     ...     schema_retriever=SchemaRetriever(),
     ...     ...
     ... )
-    >>> state = AgentState(query="berapa total customer?", database="sales_db")
+    >>> state = AgentState(query="berapa total customer?", database="financial_db")
     >>> state = pipeline.run(state)
     >>> print(state.insights)
 """
@@ -21,29 +22,35 @@ from typing import Any
 from src.components.insight_generator import InsightGenerator
 from src.components.intent_classifier import IntentClassifier
 from src.components.query_executor import QueryExecutor
+from src.components.query_planner import QueryPlanner
 from src.components.retrieval_evaluator import RetrievalEvaluator
 from src.components.schema_retriever import SchemaRetriever
 from src.components.sql_generator import SQLGenerator
 from src.components.sql_validator import SQLValidator
 from src.core.base_agent import BaseAgent
-from src.models.agent_state import AgentState
+from src.models.agent_state import AgentState, StepResult
 
 
 class TextToSQLPipeline:
     """
-    Orchestrates the 7-agent Text-to-SQL pipeline.
+    Orchestrates the 8-agent Text-to-SQL pipeline.
 
     Pipeline sequence:
-        IntentClassifier → SchemaRetriever → RetrievalEvaluator
+        IntentClassifier → QueryPlanner → SchemaRetriever → RetrievalEvaluator
         → SQLGenerator → SQLValidator → QueryExecutor → InsightGenerator
 
     Early stop: pipeline returns after IntentClassifier if the query
     needs clarification (state.needs_clarification is True).
+
+    Multi-step: QueryPlanner may split the query into sequential sub-queries,
+    each of which runs the full SQL sub-pipeline before InsightGenerator
+    synthesises all results.
     """
 
     def __init__(
         self,
         intent_classifier: IntentClassifier,
+        query_planner: QueryPlanner,
         schema_retriever: SchemaRetriever,
         retrieval_evaluator: RetrievalEvaluator,
         sql_generator: SQLGenerator,
@@ -52,6 +59,7 @@ class TextToSQLPipeline:
         insight_generator: InsightGenerator,
     ) -> None:
         self.intent_classifier   = intent_classifier
+        self.query_planner       = query_planner
         self.schema_retriever    = schema_retriever
         self.retrieval_evaluator = retrieval_evaluator
         self.sql_generator       = sql_generator
@@ -64,6 +72,7 @@ class TextToSQLPipeline:
         """All agents in pipeline order."""
         return [
             self.intent_classifier,
+            self.query_planner,
             self.schema_retriever,
             self.retrieval_evaluator,
             self.sql_generator,
@@ -88,18 +97,79 @@ class TextToSQLPipeline:
         Returns:
             Fully populated AgentState after all steps complete
         """
+        # 1. Classify intent (early exit if ambiguous)
         state = self.intent_classifier.run(state)
-
         if state.needs_clarification:
             return state
 
+        # 2. Plan
+        state = self.query_planner.run(state)
+
+        if state.is_multi_step:
+            state = self._run_multi_step(state)
+        else:
+            # Single step — use sub_query from plan (may be same as original)
+            state.query = state.execution_plan[0].sub_query
+            state = self._run_sql_pipeline(state)
+
+        # 3. Synthesise insights
+        state = self.insight_generator.run(state)
+        return state
+
+    # ─────────────────────────────────────────────
+    # HELPERS
+    # ─────────────────────────────────────────────
+
+    def _run_sql_pipeline(self, state: AgentState) -> AgentState:
+        """SchemaRetriever → RetrievalEvaluator → SQLGenerator → SQLValidator → QueryExecutor."""
         state = self.schema_retriever.run(state)
         state = self.retrieval_evaluator.run(state)
         state = self.sql_generator.run(state)
         state = self.sql_validator.run(state)
         state = self.query_executor.run(state)
-        state = self.insight_generator.run(state)
+        return state
 
+    def _run_multi_step(self, state: AgentState) -> AgentState:
+        """Execute each step sequentially, accumulating StepResults.
+
+        If a step fails, it is recorded with empty data and execution continues
+        so InsightGenerator can still synthesise partial results.
+        """
+        original_query = state.query
+
+        for step in state.execution_plan:
+            state.query = step.sub_query
+            state.sql = None
+            state.validated_sql = None
+            state.query_result = None
+            state.row_count = 0
+            state.retrieved_tables = []
+            state.evaluated_tables = []
+
+            try:
+                state = self._run_sql_pipeline(state)
+                step_result = StepResult(
+                    step_number=step.step_number,
+                    description=step.description,
+                    sql=state.validated_sql or "",
+                    data=state.query_result or [],
+                    row_count=state.row_count,
+                    summary=f"Step {step.step_number} ({step.description}): {state.row_count} rows",
+                )
+            except Exception as exc:
+                step_result = StepResult(
+                    step_number=step.step_number,
+                    description=step.description,
+                    sql="",
+                    data=[],
+                    row_count=0,
+                    summary=f"Step {step.step_number} failed: {exc}",
+                )
+                state.add_error(f"Step {step.step_number} error: {exc}")
+
+            state.step_results.append(step_result)
+
+        state.query = original_query
         return state
 
     # ─────────────────────────────────────────────
