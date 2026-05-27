@@ -17,6 +17,8 @@ Usage:
     >>> print(state.insights)
 """
 
+import copy
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from src.components.insight_generator import InsightGenerator
@@ -28,7 +30,9 @@ from src.components.schema_retriever import SchemaRetriever
 from src.components.sql_generator import SQLGenerator
 from src.components.sql_validator import SQLValidator
 from src.core.base_agent import BaseAgent
-from src.models.agent_state import AgentState, StepResult
+from src.core.config import Config
+from src.core.query_cache import QueryCache, build_snapshot, restore_snapshot
+from src.models.agent_state import AgentState, ExecutionStep, StepResult
 from src.utils.exceptions import QueryExecutionError
 
 # Maximum retries for SQL generation when PostgreSQL returns an execution error
@@ -40,8 +44,15 @@ class TextToSQLPipeline:
     Orchestrates the 8-agent Text-to-SQL pipeline.
 
     Pipeline sequence:
-        IntentClassifier → QueryPlanner → SchemaRetriever → RetrievalEvaluator
+        IntentClassifier ┐
+                         ├─ (parallel) ─► merge → SchemaRetriever → RetrievalEvaluator
+        QueryPlanner     ┘
         → SQLGenerator → SQLValidator → QueryExecutor → InsightGenerator
+
+    Optimisations:
+        - IntentClassifier and QueryPlanner run in parallel (both only need state.query)
+        - Identical queries are served from an in-memory TTL cache
+        - QueryExecutor errors trigger SQLGenerator self-correction (up to 2 retries)
 
     Early stop: pipeline returns after IntentClassifier if the query
     needs clarification (state.needs_clarification is True).
@@ -71,6 +82,8 @@ class TextToSQLPipeline:
         self.query_executor      = query_executor
         self.insight_generator   = insight_generator
 
+        self._cache = QueryCache(ttl_seconds=Config.CACHE_TTL_SECONDS)
+
     @property
     def agents(self) -> list[BaseAgent]:
         """All agents in pipeline order."""
@@ -93,6 +106,8 @@ class TextToSQLPipeline:
         """
         Execute the full pipeline against a shared AgentState.
 
+        Checks the result cache first. On a miss, runs IntentClassifier and
+        QueryPlanner in parallel, then proceeds with the SQL sub-pipeline.
         Returns early (after intent classification) if the query is ambiguous.
 
         Args:
@@ -101,27 +116,100 @@ class TextToSQLPipeline:
         Returns:
             Fully populated AgentState after all steps complete
         """
-        # 1. Classify intent (early exit if ambiguous)
-        state = self.intent_classifier.run(state)
+        # ── Cache check ──────────────────────────────────────────
+        if Config.CACHE_TTL_SECONDS > 0:
+            cached = self._cache.get(state.query, state.database)
+            if cached:
+                self.intent_classifier.log(f"Cache hit for query: {state.query[:60]}")
+                return restore_snapshot(state, cached)
+
+        # ── 1 + 2: IntentClassifier ∥ QueryPlanner ───────────────
+        state = self._run_initial_agents_parallel(state)
+
         if state.needs_clarification:
             return state
 
-        # 2. Plan
-        state = self.query_planner.run(state)
-
+        # ── 3–7: SQL sub-pipeline + InsightGenerator ─────────────
         if state.is_multi_step:
             state = self._run_multi_step(state)
         else:
-            # Single step — use sub_query from plan (may be same as original)
             state.query = state.execution_plan[0].sub_query
             state = self._run_sql_pipeline(state)
 
-        # 3. Synthesise insights
         state = self.insight_generator.run(state)
+
+        # ── Cache store ──────────────────────────────────────────
+        if Config.CACHE_TTL_SECONDS > 0:
+            self._cache.put(state.query, state.database, build_snapshot(state))
+
         return state
 
     # ─────────────────────────────────────────────
-    # HELPERS
+    # PARALLEL INITIAL AGENTS
+    # ─────────────────────────────────────────────
+
+    def _run_initial_agents_parallel(self, state: AgentState) -> AgentState:
+        """Run IntentClassifier and QueryPlanner concurrently.
+
+        Both agents only read state.query and state.conversation_history,
+        so they can safely run on independent deep-copies. Their results are
+        merged back into the shared state before returning.
+
+        If QueryPlanner fails, the pipeline falls back to a single-step plan
+        so IntentClassifier's result is never lost.
+        """
+        ic_state = copy.deepcopy(state)
+        qp_state = copy.deepcopy(state)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            ic_future = executor.submit(self.intent_classifier.run, ic_state)
+            qp_future = executor.submit(self.query_planner.run, qp_state)
+
+            try:
+                ic_result = ic_future.result()
+            except Exception as exc:
+                # Copy error to original state before re-raising so callers can inspect it
+                state.add_error(str(exc))
+                raise
+
+            try:
+                qp_result = qp_future.result()
+            except Exception as exc:
+                # QP failed — use single-step fallback so IC result is preserved
+                self.query_planner.log(
+                    f"QueryPlanner failed in parallel run, using single-step fallback: {exc}",
+                    level="warning",
+                )
+                qp_result = qp_state
+                qp_result.is_multi_step = False
+                qp_result.execution_plan = [
+                    ExecutionStep(
+                        step_number=1,
+                        description="Execute original query",
+                        sub_query=state.query,
+                        depends_on=[],
+                    )
+                ]
+
+        # Merge IC results
+        state.intent               = ic_result.intent
+        state.needs_clarification  = ic_result.needs_clarification
+        state.clarification_reason = ic_result.clarification_reason
+        state.timing.update(ic_result.timing)
+        state.errors.extend(ic_result.errors)
+
+        # Merge QP results (execution plan is used even on clarification path
+        # so it's available if the caller inspects it, but pipeline returns early)
+        state.is_multi_step   = qp_result.is_multi_step
+        state.execution_plan  = qp_result.execution_plan
+        state.timing.update(qp_result.timing)
+        if qp_result.errors:
+            state.errors.extend(qp_result.errors)
+
+        return state
+
+    # ─────────────────────────────────────────────
+    # SQL SUB-PIPELINE
     # ─────────────────────────────────────────────
 
     def _run_sql_pipeline(self, state: AgentState) -> AgentState:
@@ -153,7 +241,7 @@ class TextToSQLPipeline:
                     )
                 else:
                     raise
-        return state  # unreachable, satisfies mypy
+        return state  # unreachable — satisfies mypy
 
     def _run_multi_step(self, state: AgentState) -> AgentState:
         """Execute each step sequentially, accumulating StepResults.
@@ -207,7 +295,7 @@ class TextToSQLPipeline:
         Check real connectivity for all external dependencies.
 
         Returns:
-            Dict with keys: databases, retrieval, agents, overall_healthy
+            Dict with keys: databases, retrieval, agents, overall_healthy, cache
         """
         db_status = self.query_executor.check_connectivity()
 
@@ -231,10 +319,14 @@ class TextToSQLPipeline:
                 agent.name: agent.get_metrics()
                 for agent in self.agents
             },
+            "cache": {
+                "entries": self._cache.size(),
+                "ttl_seconds": Config.CACHE_TTL_SECONDS,
+            },
         }
 
     # ─────────────────────────────────────────────
-    # HELPERS
+    # MISC
     # ─────────────────────────────────────────────
 
     def get_all_tables(self) -> list[str]:

@@ -41,6 +41,10 @@ class Config:
     # ── SQL Validator ─────────────────────────────────────────────
     ENABLE_AI_VALIDATION = os.getenv("ENABLE_AI_VALIDATION", "false").lower() == "true"
 
+    # ── Query Cache ───────────────────────────────────────────────
+    # TTL for in-memory result cache. Set to 0 to disable caching.
+    CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "600"))
+
     # ── API ───────────────────────────────────────────────────────
     # Max requests per minute per IP on the /query endpoint.
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
