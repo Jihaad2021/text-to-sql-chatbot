@@ -182,6 +182,7 @@ def health_check() -> JSONResponse:
             "databases": health["databases"],
             "retrieval": health["retrieval"],
             "agents": health["agents"],
+            "cache": health.get("cache", {}),
         },
     )
 

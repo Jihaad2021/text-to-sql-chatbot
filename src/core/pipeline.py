@@ -116,11 +116,14 @@ class TextToSQLPipeline:
         Returns:
             Fully populated AgentState after all steps complete
         """
+        # Save original query — state.query may be replaced by sub_query later
+        original_query = state.query
+
         # ── Cache check ──────────────────────────────────────────
         if Config.CACHE_TTL_SECONDS > 0:
-            cached = self._cache.get(state.query, state.database)
+            cached = self._cache.get(original_query, state.database)
             if cached:
-                self.intent_classifier.log(f"Cache hit for query: {state.query[:60]}")
+                self.intent_classifier.log(f"Cache hit for query: {original_query[:60]}")
                 return restore_snapshot(state, cached)
 
         # ── 1 + 2: IntentClassifier ∥ QueryPlanner ───────────────
@@ -138,9 +141,9 @@ class TextToSQLPipeline:
 
         state = self.insight_generator.run(state)
 
-        # ── Cache store ──────────────────────────────────────────
+        # ── Cache store (keyed by original query, not sub_query) ──
         if Config.CACHE_TTL_SECONDS > 0:
-            self._cache.put(state.query, state.database, build_snapshot(state))
+            self._cache.put(original_query, state.database, build_snapshot(state))
 
         return state
 
