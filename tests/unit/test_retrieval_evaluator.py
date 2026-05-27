@@ -16,19 +16,18 @@ import pytest
 from src.components.retrieval_evaluator import RetrievalEvaluator
 from src.models.agent_state import AgentState
 from src.models.retrieved_table import RetrievedTable
-from src.utils.exceptions import RetrievalEvaluationError
 
 
 @pytest.fixture
 def evaluator():
-    """Initialize RetrievalEvaluator with mocked Anthropic client."""
+    """Initialize RetrievalEvaluator with mocked LLM client."""
     with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
         return RetrievalEvaluator()
 
 
-def make_state_with_tables(tables: list, query: str = "berapa total customer?") -> AgentState:
+def make_state_with_tables(tables: list, query: str = "berapa total transaksi bulan April 2026?") -> AgentState:
     """Helper to create state with retrieved tables."""
-    state = AgentState(query=query, database="sales_db")
+    state = AgentState(query=query, database="financial_db")
     state.retrieved_tables = tables
     return state
 
@@ -39,19 +38,19 @@ def make_state_with_tables(tables: list, query: str = "berapa total customer?") 
 
 class TestSkipEvaluation:
 
-    def test_skip_if_one_table(self, evaluator, customers_table):
+    def test_skip_if_one_table(self, evaluator, daily_master_table):
         """Should skip evaluation if only 1 table retrieved."""
-        state = make_state_with_tables([customers_table])
+        state = make_state_with_tables([daily_master_table])
 
         with patch.object(evaluator, "_call_llm") as mock_llm:
             result = evaluator.run(state)
             mock_llm.assert_not_called()
 
-        assert result.evaluated_tables == [customers_table]
+        assert result.evaluated_tables == [daily_master_table]
 
-    def test_skip_if_two_tables(self, evaluator, customers_table, orders_table):
+    def test_skip_if_two_tables(self, evaluator, daily_master_table, financial_internal_table):
         """Should skip evaluation if only 2 tables retrieved."""
-        state = make_state_with_tables([customers_table, orders_table])
+        state = make_state_with_tables([daily_master_table, financial_internal_table])
 
         with patch.object(evaluator, "_call_llm") as mock_llm:
             result = evaluator.run(state)
@@ -63,13 +62,13 @@ class TestSkipEvaluation:
         """Should call LLM if 3 or more tables retrieved."""
         state = make_state_with_tables(sample_tables)
         mock_response = """ESSENTIAL:
-- sales_db.customers: Needed for count
+- financial_db.daily_master: Needed for transaction count
 
 OPTIONAL:
 
 EXCLUDED:
-- sales_db.orders: Not needed
-- sales_db.payments: Not needed"""
+- financial_db.financial_internal: Not needed
+- financial_db.product_summary: Not needed"""
 
         with patch.object(evaluator, "_call_llm", return_value=mock_response) as mock_llm:
             evaluator.run(state)
@@ -86,68 +85,68 @@ class TestClassification:
         """Essential tables should be in evaluated_tables."""
         state = make_state_with_tables(sample_tables)
         mock_response = """ESSENTIAL:
-- sales_db.customers: Required for customer count
+- financial_db.daily_master: Required for transaction count
 
 OPTIONAL:
 
 EXCLUDED:
-- sales_db.orders: Not needed
-- sales_db.payments: Not needed"""
+- financial_db.financial_internal: Not needed
+- financial_db.product_summary: Not needed"""
 
         with patch.object(evaluator, "_call_llm", return_value=mock_response):
             result = evaluator.run(state)
 
         table_names = [t.table_name for t in result.evaluated_tables]
-        assert "customers" in table_names
+        assert "daily_master" in table_names
 
     def test_optional_tables_included(self, evaluator, sample_tables):
         """Optional tables should also be in evaluated_tables."""
         state = make_state_with_tables(sample_tables)
         mock_response = """ESSENTIAL:
-- sales_db.customers: Required
+- financial_db.daily_master: Required
 
 OPTIONAL:
-- sales_db.orders: Provides context
+- financial_db.financial_internal: Provides revenue context
 
 EXCLUDED:
-- sales_db.payments: Not needed"""
+- financial_db.product_summary: Not needed"""
 
         with patch.object(evaluator, "_call_llm", return_value=mock_response):
             result = evaluator.run(state)
 
         table_names = [t.table_name for t in result.evaluated_tables]
-        assert "customers" in table_names
-        assert "orders" in table_names
+        assert "daily_master" in table_names
+        assert "financial_internal" in table_names
 
     def test_excluded_tables_not_included(self, evaluator, sample_tables):
         """Excluded tables should NOT be in evaluated_tables."""
         state = make_state_with_tables(sample_tables)
         mock_response = """ESSENTIAL:
-- sales_db.customers: Required
+- financial_db.daily_master: Required
 
 OPTIONAL:
 
 EXCLUDED:
-- sales_db.orders: Not needed
-- sales_db.payments: Not needed"""
+- financial_db.financial_internal: Not needed
+- financial_db.product_summary: Not needed"""
 
         with patch.object(evaluator, "_call_llm", return_value=mock_response):
             result = evaluator.run(state)
 
         table_names = [t.table_name for t in result.evaluated_tables]
-        assert "orders" not in table_names
-        assert "payments" not in table_names
+        assert "financial_internal" not in table_names
+        assert "product_summary" not in table_names
 
     def test_all_tables_essential_for_join_query(self, evaluator, sample_tables):
         """Join query should mark all tables as essential."""
         state = make_state_with_tables(
             sample_tables,
-            query="top 5 customers by spending"
+            query="top 5 partner berdasarkan revenue bulan April 2026"
         )
         mock_response = """ESSENTIAL:
-- sales_db.customers: Customer names needed
-- sales_db.orders: Link between customers and payments
-- sales_db.payments: Revenue data needed
+- financial_db.daily_master: Transaction data needed
+- financial_db.financial_internal: Revenue data needed
+- financial_db.product_summary: Product breakdown needed
 
 OPTIONAL:
 
@@ -186,13 +185,13 @@ class TestAgentState:
         """Evaluator should read from state.retrieved_tables."""
         state = make_state_with_tables(sample_tables)
         mock_response = """ESSENTIAL:
-- sales_db.customers: Required
+- financial_db.daily_master: Required
 
 OPTIONAL:
 
 EXCLUDED:
-- sales_db.orders: Not needed
-- sales_db.payments: Not needed"""
+- financial_db.financial_internal: Not needed
+- financial_db.product_summary: Not needed"""
 
         with patch.object(evaluator, "_call_llm", return_value=mock_response):
             result = evaluator.run(state)
@@ -203,13 +202,13 @@ EXCLUDED:
         """Evaluator should write to state.evaluated_tables."""
         state = make_state_with_tables(sample_tables)
         mock_response = """ESSENTIAL:
-- sales_db.customers: Required
+- financial_db.daily_master: Required
 
 OPTIONAL:
 
 EXCLUDED:
-- sales_db.orders: Not needed
-- sales_db.payments: Not needed"""
+- financial_db.financial_internal: Not needed
+- financial_db.product_summary: Not needed"""
 
         with patch.object(evaluator, "_call_llm", return_value=mock_response):
             result = evaluator.run(state)
@@ -217,9 +216,9 @@ EXCLUDED:
         assert hasattr(result, "evaluated_tables")
         assert isinstance(result.evaluated_tables, list)
 
-    def test_timing_recorded(self, evaluator, customers_table):
+    def test_timing_recorded(self, evaluator, daily_master_table):
         """Execution time should be recorded in state.timing."""
-        state = make_state_with_tables([customers_table])
+        state = make_state_with_tables([daily_master_table])
         result = evaluator.run(state)
 
         assert "retrieval_evaluator" in result.timing

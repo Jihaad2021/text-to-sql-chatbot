@@ -20,8 +20,8 @@ from src.models.retrieved_table import RetrievedTable
 def sample_state():
     """Basic AgentState with a simple aggregation query."""
     return AgentState(
-        query="berapa total customer?",
-        database="sales_db"
+        query="berapa total transaksi bulan April 2026?",
+        database="financial_db"
     )
 
 
@@ -30,7 +30,7 @@ def ambiguous_state():
     """AgentState with an ambiguous query."""
     return AgentState(
         query="show me the data",
-        database="sales_db"
+        database="financial_db"
     )
 
 
@@ -38,8 +38,8 @@ def ambiguous_state():
 def join_state():
     """AgentState with a multi-table join query."""
     return AgentState(
-        query="top 5 customer berdasarkan total spending",
-        database="sales_db"
+        query="top 5 partner berdasarkan revenue bulan April 2026",
+        database="financial_db"
     )
 
 
@@ -48,48 +48,59 @@ def join_state():
 # ========================================
 
 @pytest.fixture
-def customers_table():
-    """Mock customers table."""
+def daily_master_table():
+    """Mock daily_master table."""
     return RetrievedTable(
-        db_name="sales_db",
-        table_name="customers",
-        columns=["customer_id", "customer_name", "customer_email", "customer_city"],
-        description="Customer master data including buyer information and contact details",
+        db_name="financial_db",
+        table_name="daily_master",
+        columns=[
+            "channel_payment", "partner", "periode",
+            "total_trx", "success_trx", "fail_trx",
+            "net_revenue", "platform_fee", "net_gap",
+        ],
+        description="Daily aggregated payment transaction data per channel and partner",
         similarity_score=0.95,
-        relationships=["Referenced by orders.customer_id (1:N)"]
+        relationships=["Referenced by channel_payment.channel_code via channel_payment"]
     )
 
 
 @pytest.fixture
-def orders_table():
-    """Mock orders table."""
+def financial_internal_table():
+    """Mock financial_internal table."""
     return RetrievedTable(
-        db_name="sales_db",
-        table_name="orders",
-        columns=["order_id", "customer_id", "order_status", "order_purchase_timestamp"],
-        description="Sales transactions and order history",
+        db_name="financial_db",
+        table_name="financial_internal",
+        columns=[
+            "partner", "periode",
+            "total_trx", "success_trx", "fail_trx",
+            "total_revenue", "platform_fee", "net_revenue", "net_gap",
+        ],
+        description="Internal financial records per partner with revenue breakdown",
         similarity_score=0.85,
-        relationships=["FK to customers.customer_id", "Referenced by payments.order_id"]
+        relationships=[]
     )
 
 
 @pytest.fixture
-def payments_table():
-    """Mock payments table."""
+def product_summary_table():
+    """Mock product_summary table."""
     return RetrievedTable(
-        db_name="sales_db",
-        table_name="payments",
-        columns=["payment_id", "order_id", "payment_type", "payment_value"],
-        description="Payment transactions and revenue data",
+        db_name="financial_db",
+        table_name="product_summary",
+        columns=[
+            "tsel_wallet", "product_name", "periode",
+            "total_trx", "success_trx", "fail_trx", "total_revenue",
+        ],
+        description="Product-level transaction and revenue summary for Telkomsel wallet products",
         similarity_score=0.80,
-        relationships=["FK to orders.order_id"]
+        relationships=[]
     )
 
 
 @pytest.fixture
-def sample_tables(customers_table, orders_table, payments_table):
+def sample_tables(daily_master_table, financial_internal_table, product_summary_table):
     """List of mock retrieved tables."""
-    return [customers_table, orders_table, payments_table]
+    return [daily_master_table, financial_internal_table, product_summary_table]
 
 
 # ========================================
@@ -102,7 +113,7 @@ def state_with_intent(sample_state):
     sample_state.intent = {
         "category": "aggregation",
         "confidence": 0.95,
-        "reason": "Query asks for count/total",
+        "reason": "Query asks for count/total of transactions",
         "sql_strategy": "Use aggregate functions (COUNT/SUM/AVG) with GROUP BY if needed"
     }
     sample_state.needs_clarification = False
@@ -120,15 +131,21 @@ def state_with_tables(state_with_intent, sample_tables):
 @pytest.fixture
 def state_with_sql(state_with_tables):
     """AgentState with generated SQL."""
-    state_with_tables.sql = "SELECT COUNT(*) as total FROM customers LIMIT 100;"
-    state_with_tables.validated_sql = "SELECT COUNT(*) as total FROM customers LIMIT 100;"
+    state_with_tables.sql = (
+        "SELECT SUM(total_trx) as total FROM daily_master "
+        "WHERE periode = '2026-04' LIMIT 100;"
+    )
+    state_with_tables.validated_sql = (
+        "SELECT SUM(total_trx) as total FROM daily_master "
+        "WHERE periode = '2026-04' LIMIT 100;"
+    )
     return state_with_tables
 
 
 @pytest.fixture
 def state_with_results(state_with_sql):
     """AgentState with query results."""
-    state_with_sql.query_result = [{"total": 100}]
+    state_with_sql.query_result = [{"total": 1500000}]
     state_with_sql.row_count = 1
     return state_with_sql
 
@@ -140,7 +157,7 @@ def state_with_results(state_with_sql):
 @pytest.fixture
 def mock_llm_aggregation():
     """Mock LLM response for aggregation intent."""
-    return "INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Query asks for count"
+    return "INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Query asks for total transactions"
 
 
 @pytest.fixture
@@ -152,10 +169,13 @@ def mock_llm_ambiguous():
 @pytest.fixture
 def mock_llm_sql():
     """Mock LLM response for SQL generation."""
-    return "SELECT COUNT(*) as total FROM customers LIMIT 100;"
+    return (
+        "SELECT SUM(total_trx) as total FROM daily_master "
+        "WHERE periode = '2026-04' LIMIT 100;"
+    )
 
 
 @pytest.fixture
 def mock_llm_insight():
     """Mock LLM response for insight generation."""
-    return "Terdapat 100 customer yang terdaftar dalam sistem."
+    return "Total transaksi pada bulan April 2026 adalah 1.500.000 transaksi."

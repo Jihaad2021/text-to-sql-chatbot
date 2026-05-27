@@ -22,16 +22,14 @@ from src.core.startup import validate_environment
 _FULL_ENV = {
     "ANTHROPIC_API_KEY": "sk-ant-test",
     "OPENAI_API_KEY": "sk-test",
-    "SALES_DB_URL": "postgresql://user:pass@localhost/sales",
-    "PRODUCTS_DB_URL": "postgresql://user:pass@localhost/products",
-    "ANALYTICS_DB_URL": "postgresql://user:pass@localhost/analytics",
+    "FINANCIAL_DB_URL": "postgresql://user:pass@localhost/financial_db",
     "DEFAULT_LLM": "openai",
     "DEFAULT_MODEL": "gpt-4o",
 }
 
 # Keys that must not appear in the env for specific failure tests
 _ALL_LLM_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY"]
-_ALL_DB_KEYS = ["SALES_DB_URL", "PRODUCTS_DB_URL", "ANALYTICS_DB_URL"]
+_ALL_DB_KEYS = ["FINANCIAL_DB_URL"]
 
 
 def _env_without(*keys: str) -> dict:
@@ -61,11 +59,8 @@ class TestPassesWhenValid:
 
     def test_single_db_url_sufficient(self, monkeypatch):
         """Only one DB URL is needed."""
-        env = _env_without("PRODUCTS_DB_URL", "ANALYTICS_DB_URL")
-        for k, v in env.items():
+        for k, v in _FULL_ENV.items():
             monkeypatch.setenv(k, v)
-        monkeypatch.delenv("PRODUCTS_DB_URL", raising=False)
-        monkeypatch.delenv("ANALYTICS_DB_URL", raising=False)
         validate_environment()  # must not raise
 
 
@@ -137,13 +132,13 @@ class TestWarnsOnDegradedMode:
         assert any("ChromaDB" in r.message for r in caplog.records)
 
     def test_warns_when_partial_db_urls(self, monkeypatch, caplog):
-        """Missing some (but not all) DB URLs should warn but not fail."""
-        env = _env_without("PRODUCTS_DB_URL")
+        """Missing FINANCIAL_DB_URL (when it's the only one) should raise, not warn."""
+        # Since there's only one DB URL, missing it is a hard failure.
+        # This test verifies the error path instead.
+        env = _env_without("FINANCIAL_DB_URL")
         for k, v in env.items():
             monkeypatch.setenv(k, v)
-        monkeypatch.delenv("PRODUCTS_DB_URL", raising=False)
+        monkeypatch.delenv("FINANCIAL_DB_URL", raising=False)
 
-        with caplog.at_level(logging.WARNING, logger="startup"):
+        with pytest.raises(EnvironmentError, match="Missing required"):
             validate_environment()
-
-        assert any("PRODUCTS_DB_URL" in r.message for r in caplog.records)

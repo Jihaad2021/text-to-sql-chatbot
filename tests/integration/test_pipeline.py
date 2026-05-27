@@ -1,5 +1,5 @@
 """
-Integration tests for full 7-agent pipeline via TextToSQLPipeline.
+Integration tests for full 8-agent pipeline via TextToSQLPipeline.
 
 Tests cover:
 - Complete pipeline runs end-to-end
@@ -7,23 +7,30 @@ Tests cover:
 - Pipeline stops early on validation failure
 - AgentState flows correctly through all agents
 - All agents mocked to avoid external dependencies
+- SQL error feedback loop (QueryExecutionError retry)
 """
 
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from src.components.insight_generator import InsightGenerator
 from src.components.intent_classifier import IntentClassifier
 from src.components.query_executor import QueryExecutor
+from src.components.query_planner import QueryPlanner
 from src.components.retrieval_evaluator import RetrievalEvaluator
 from src.components.schema_retriever import SchemaRetriever
 from src.components.sql_generator import SQLGenerator
 from src.components.sql_validator import SQLValidator
 from src.core.pipeline import TextToSQLPipeline
 from src.models.agent_state import AgentState
-from src.utils.exceptions import AgentExecutionError, SQLGenerationError, SQLValidationError
+from src.utils.exceptions import (
+    AgentExecutionError,
+    QueryExecutionError,
+    SQLGenerationError,
+    SQLValidationError,
+)
 
 # ========================================
 # Fixtures
@@ -37,7 +44,7 @@ def mock_engine():
     result = MagicMock()
 
     result.keys.return_value = ["total"]
-    result.fetchmany.return_value = [{"total": 100}]
+    result.fetchmany.return_value = [{"total": 1500000}]
     conn.__enter__ = MagicMock(return_value=conn)
     conn.__exit__ = MagicMock(return_value=False)
     conn.execute.return_value = result
@@ -51,22 +58,22 @@ def mock_collection():
     collection = MagicMock()
     collection.count.return_value = 8
     collection.query.return_value = {
-        "ids": [["sales_db.customers", "sales_db.orders"]],
+        "ids": [["financial_db.daily_master", "financial_db.financial_internal"]],
         "distances": [[0.05, 0.15]],
         "metadatas": [[
             {
-                "db_name": "sales_db",
-                "table_name": "customers",
-                "columns": "customer_id,customer_name",
-                "description": "Customer master data",
+                "db_name": "financial_db",
+                "table_name": "daily_master",
+                "columns": "channel_payment,partner,periode,total_trx,success_trx,fail_trx,net_revenue,platform_fee,net_gap",
+                "description": "Daily aggregated payment transaction data per channel and partner",
                 "relationships": "",
             },
             {
-                "db_name": "sales_db",
-                "table_name": "orders",
-                "columns": "order_id,customer_id",
-                "description": "Order transactions",
-                "relationships": "FK to customers.customer_id",
+                "db_name": "financial_db",
+                "table_name": "financial_internal",
+                "columns": "partner,periode,total_trx,success_trx,fail_trx,total_revenue,platform_fee,net_revenue,net_gap",
+                "description": "Internal financial records per partner with revenue breakdown",
+                "relationships": "",
             },
         ]],
     }
@@ -92,25 +99,36 @@ def _make_mock_retriever(mock_collection) -> SchemaRetriever:
     return retriever
 
 
+# Valid single-step plan JSON returned by mocked QueryPlanner._call_llm
+_MOCK_PLAN_SINGLE = (
+    '{"is_multi_step": false, "steps": ['
+    '{"step_number": 1, "description": "Execute query", '
+    '"sub_query": "berapa total transaksi bulan April 2026?", "depends_on": []}'
+    ']}'
+)
+
+
 @pytest.fixture
 def pipeline(mock_engine, mock_collection):
     """Fully mocked TextToSQLPipeline — no real LLM or DB calls."""
     with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-        with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-            with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-                with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-                    with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-                        with patch.object(QueryExecutor, "_create_engines", return_value={"sales_db": mock_engine}):
-                            with patch("builtins.open", side_effect=FileNotFoundError):
-                                return TextToSQLPipeline(
-                                    intent_classifier=IntentClassifier(),
-                                    schema_retriever=_make_mock_retriever(mock_collection),
-                                    retrieval_evaluator=RetrievalEvaluator(),
-                                    sql_generator=SQLGenerator(),
-                                    sql_validator=SQLValidator(enable_ai_validation=False),
-                                    query_executor=QueryExecutor(),
-                                    insight_generator=InsightGenerator(),
-                                )
+        with patch.object(QueryPlanner, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                    with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                            with patch.object(QueryExecutor, "_create_engines", return_value={"financial_db": mock_engine}):
+                                with patch("builtins.open", side_effect=FileNotFoundError):
+                                    return TextToSQLPipeline(
+                                        intent_classifier=IntentClassifier(),
+                                        query_planner=QueryPlanner(),
+                                        schema_retriever=_make_mock_retriever(mock_collection),
+                                        retrieval_evaluator=RetrievalEvaluator(),
+                                        sql_generator=SQLGenerator(),
+                                        sql_validator=SQLValidator(enable_ai_validation=False),
+                                        query_executor=QueryExecutor(),
+                                        insight_generator=InsightGenerator(),
+                                    )
 
 
 # ========================================
@@ -121,17 +139,22 @@ class TestCompletePipeline:
 
     def test_pipeline_completes_successfully(self, pipeline):
         """Full pipeline should complete with all state fields populated."""
-        state = AgentState(query="berapa total customer?", database="sales_db")
+        state = AgentState(
+            query="berapa total transaksi bulan April 2026?",
+            database="financial_db",
+        )
 
         with patch.object(pipeline.intent_classifier, "_call_llm",
-                          return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count"):
-            with patch.object(pipeline.retrieval_evaluator, "_call_llm",
-                              return_value="ESSENTIAL:\n- sales_db.customers: Required\nOPTIONAL:\nEXCLUDED:"):
-                with patch.object(pipeline.sql_generator, "_call_llm",
-                                  return_value="SELECT COUNT(*) as total FROM customers LIMIT 100;"):
-                    with patch.object(pipeline.insight_generator, "_call_llm",
-                                      return_value="Terdapat 100 customer dalam sistem."):
-                        state = pipeline.run(state)
+                          return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count transactions"):
+            with patch.object(pipeline.query_planner, "_call_llm",
+                              return_value=_MOCK_PLAN_SINGLE):
+                with patch.object(pipeline.retrieval_evaluator, "_call_llm",
+                                  return_value="ESSENTIAL:\n- financial_db.daily_master: Required\nOPTIONAL:\nEXCLUDED:"):
+                    with patch.object(pipeline.sql_generator, "_call_llm",
+                                      return_value="SELECT SUM(total_trx) as total FROM daily_master WHERE periode = '2026-04' LIMIT 100;"):
+                        with patch.object(pipeline.insight_generator, "_call_llm",
+                                          return_value="Total transaksi April 2026 adalah 1.500.000."):
+                            state = pipeline.run(state)
 
         assert state.intent is not None
         assert state.retrieved_tables is not None
@@ -143,21 +166,27 @@ class TestCompletePipeline:
 
     def test_state_flows_through_all_agents(self, pipeline):
         """Timing should be recorded for every agent that ran."""
-        state = AgentState(query="berapa total customer?", database="sales_db")
+        state = AgentState(
+            query="berapa total transaksi bulan April 2026?",
+            database="financial_db",
+        )
 
         with patch.object(pipeline.intent_classifier, "_call_llm",
-                          return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count"):
-            with patch.object(pipeline.retrieval_evaluator, "_call_llm",
-                              return_value="ESSENTIAL:\n- sales_db.customers: Required\nOPTIONAL:\nEXCLUDED:"):
-                with patch.object(pipeline.sql_generator, "_call_llm",
-                                  return_value="SELECT COUNT(*) as total FROM customers LIMIT 100;"):
-                    with patch.object(pipeline.insight_generator, "_call_llm",
-                                      return_value="Terdapat 100 customer dalam sistem."):
-                        state = pipeline.run(state)
+                          return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count transactions"):
+            with patch.object(pipeline.query_planner, "_call_llm",
+                              return_value=_MOCK_PLAN_SINGLE):
+                with patch.object(pipeline.retrieval_evaluator, "_call_llm",
+                                  return_value="ESSENTIAL:\n- financial_db.daily_master: Required\nOPTIONAL:\nEXCLUDED:"):
+                    with patch.object(pipeline.sql_generator, "_call_llm",
+                                      return_value="SELECT SUM(total_trx) as total FROM daily_master WHERE periode = '2026-04' LIMIT 100;"):
+                        with patch.object(pipeline.insight_generator, "_call_llm",
+                                          return_value="Total transaksi April 2026 adalah 1.500.000."):
+                            state = pipeline.run(state)
 
         expected_agents = [
-            "intent_classifier", "schema_retriever", "retrieval_evaluator",
-            "sql_generator", "sql_validator", "query_executor", "insight_generator",
+            "intent_classifier", "query_planner", "schema_retriever",
+            "retrieval_evaluator", "sql_generator", "sql_validator",
+            "query_executor", "insight_generator",
         ]
         for agent_name in expected_agents:
             assert agent_name in state.timing, f"Missing timing for {agent_name}"
@@ -171,7 +200,7 @@ class TestEarlyStopAmbiguous:
 
     def test_pipeline_stops_on_ambiguous_query(self, pipeline):
         """Pipeline should stop after intent if query is ambiguous."""
-        state = AgentState(query="show me the data", database="sales_db")
+        state = AgentState(query="show me the data", database="financial_db")
 
         with patch.object(pipeline.intent_classifier, "_call_llm",
                           return_value="INTENT: ambiguous\nCONFIDENCE: 1.0\nREASON: Too vague"):
@@ -184,7 +213,7 @@ class TestEarlyStopAmbiguous:
 
     def test_early_stop_records_intent_timing(self, pipeline):
         """Even on early stop, intent_classifier timing should be recorded."""
-        state = AgentState(query="show me the data", database="sales_db")
+        state = AgentState(query="show me the data", database="financial_db")
 
         with patch.object(pipeline.intent_classifier, "_call_llm",
                           return_value="INTENT: ambiguous\nCONFIDENCE: 1.0\nREASON: Too vague"):
@@ -202,16 +231,21 @@ class TestEarlyStopValidation:
 
     def test_pipeline_stops_on_validation_failure(self, pipeline):
         """Pipeline should raise if SQL validation fails."""
-        state = AgentState(query="berapa total customer?", database="sales_db")
+        state = AgentState(
+            query="berapa total transaksi bulan April 2026?",
+            database="financial_db",
+        )
 
         with patch.object(pipeline.intent_classifier, "_call_llm",
-                          return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count"):
-            with patch.object(pipeline.retrieval_evaluator, "_call_llm",
-                              return_value="ESSENTIAL:\n- sales_db.customers: Required\nOPTIONAL:\nEXCLUDED:"):
-                with patch.object(pipeline.sql_generator, "_call_llm",
-                                  return_value="SELECT * FROM customers; DELETE FROM orders;"):
-                    with pytest.raises((SQLValidationError, SQLGenerationError, AgentExecutionError)):
-                        pipeline.run(state)
+                          return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count transactions"):
+            with patch.object(pipeline.query_planner, "_call_llm",
+                              return_value=_MOCK_PLAN_SINGLE):
+                with patch.object(pipeline.retrieval_evaluator, "_call_llm",
+                                  return_value="ESSENTIAL:\n- financial_db.daily_master: Required\nOPTIONAL:\nEXCLUDED:"):
+                    with patch.object(pipeline.sql_generator, "_call_llm",
+                                      return_value="SELECT * FROM daily_master; DELETE FROM financial_internal;"):
+                        with pytest.raises((SQLValidationError, SQLGenerationError, AgentExecutionError)):
+                            pipeline.run(state)
 
 
 # ========================================
@@ -222,7 +256,10 @@ class TestErrorPropagation:
 
     def test_agent_error_stops_pipeline(self, pipeline):
         """AgentExecutionError from any agent should propagate out of pipeline.run()."""
-        state = AgentState(query="berapa total customer?", database="sales_db")
+        state = AgentState(
+            query="berapa total transaksi bulan April 2026?",
+            database="financial_db",
+        )
 
         with patch.object(pipeline.intent_classifier, "_call_llm",
                           side_effect=Exception("LLM unavailable")):
@@ -231,7 +268,10 @@ class TestErrorPropagation:
 
     def test_errors_recorded_in_state(self, pipeline):
         """Errors should be recorded in state.errors even when pipeline raises."""
-        state = AgentState(query="berapa total customer?", database="sales_db")
+        state = AgentState(
+            query="berapa total transaksi bulan April 2026?",
+            database="financial_db",
+        )
 
         try:
             with patch.object(pipeline.intent_classifier, "_call_llm",
@@ -244,20 +284,110 @@ class TestErrorPropagation:
 
 
 # ========================================
+# Test: SQL Error Feedback Loop
+# ========================================
+
+class TestErrorFeedbackLoop:
+
+    def test_sql_generator_retried_on_execution_error(self, pipeline):
+        """
+        If QueryExecutor raises QueryExecutionError on first attempt,
+        SQLGenerator should be called a second time with sql_error context.
+        """
+        state = AgentState(
+            query="berapa total transaksi bulan April 2026?",
+            database="financial_db",
+        )
+
+        good_sql = "SELECT SUM(total_trx) as total FROM daily_master WHERE periode = '2026-04' LIMIT 100;"
+
+        # Executor fails on first call, succeeds on second
+        executor_call_count = {"n": 0}
+
+        def executor_side_effect(s):
+            executor_call_count["n"] += 1
+            if executor_call_count["n"] == 1:
+                raise QueryExecutionError(
+                    agent_name="query_executor",
+                    message="column \"total_trxx\" does not exist",
+                )
+            # Second call: populate result fields and return state
+            s.query_result = [{"total": 1500000}]
+            s.row_count = 1
+            return s
+
+        with patch.object(pipeline.intent_classifier, "_call_llm",
+                          return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count transactions"):
+            with patch.object(pipeline.query_planner, "_call_llm",
+                              return_value=_MOCK_PLAN_SINGLE):
+                with patch.object(pipeline.retrieval_evaluator, "_call_llm",
+                                  return_value="ESSENTIAL:\n- financial_db.daily_master: Required\nOPTIONAL:\nEXCLUDED:"):
+                    with patch.object(pipeline.sql_generator, "_call_llm",
+                                      return_value=good_sql) as mock_gen:
+                        with patch.object(pipeline.query_executor, "run",
+                                          side_effect=executor_side_effect):
+                            with patch.object(pipeline.insight_generator, "_call_llm",
+                                              return_value="Total transaksi April 2026 adalah 1.500.000."):
+                                state = pipeline.run(state)
+
+        # sql_generator._call_llm should have been invoked twice (initial + retry)
+        assert mock_gen.call_count == 2
+
+    def test_error_context_cleared_on_success(self, pipeline):
+        """After a successful retry, state.sql_error should be None."""
+        state = AgentState(
+            query="berapa total transaksi bulan April 2026?",
+            database="financial_db",
+        )
+
+        good_sql = "SELECT SUM(total_trx) as total FROM daily_master WHERE periode = '2026-04' LIMIT 100;"
+
+        executor_call_count = {"n": 0}
+
+        def executor_side_effect(s):
+            executor_call_count["n"] += 1
+            if executor_call_count["n"] == 1:
+                raise QueryExecutionError(
+                    agent_name="query_executor",
+                    message="column \"net_revenuu\" does not exist",
+                )
+            s.query_result = [{"total": 1500000}]
+            s.row_count = 1
+            return s
+
+        with patch.object(pipeline.intent_classifier, "_call_llm",
+                          return_value="INTENT: aggregation\nCONFIDENCE: 0.95\nREASON: Count transactions"):
+            with patch.object(pipeline.query_planner, "_call_llm",
+                              return_value=_MOCK_PLAN_SINGLE):
+                with patch.object(pipeline.retrieval_evaluator, "_call_llm",
+                                  return_value="ESSENTIAL:\n- financial_db.daily_master: Required\nOPTIONAL:\nEXCLUDED:"):
+                    with patch.object(pipeline.sql_generator, "_call_llm",
+                                      return_value=good_sql):
+                        with patch.object(pipeline.query_executor, "run",
+                                          side_effect=executor_side_effect):
+                            with patch.object(pipeline.insight_generator, "_call_llm",
+                                              return_value="Total transaksi April 2026 adalah 1.500.000."):
+                                state = pipeline.run(state)
+
+        assert state.sql_error is None
+
+
+# ========================================
 # Test: Pipeline Structure
 # ========================================
 
 class TestPipelineStructure:
 
-    def test_agents_property_returns_all_seven(self, pipeline):
-        """pipeline.agents should expose all 7 agents in order."""
-        assert len(pipeline.agents) == 7
+    def test_agents_property_returns_all_eight(self, pipeline):
+        """pipeline.agents should expose all 8 agents in order."""
+        assert len(pipeline.agents) == 8
 
     def test_agents_property_order(self, pipeline):
         """Agents should be in pipeline execution order."""
         names = [a.name for a in pipeline.agents]
         assert names == [
             "intent_classifier",
+            "query_planner",
             "schema_retriever",
             "retrieval_evaluator",
             "sql_generator",

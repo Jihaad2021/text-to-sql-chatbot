@@ -21,24 +21,24 @@ from src.main import QueryRequest
 class TestValidInputs:
 
     def test_valid_known_database(self):
-        req = QueryRequest(question="berapa total customer?", database="sales_db")
-        assert req.database == "sales_db"
+        req = QueryRequest(question="berapa total transaksi bulan April?", database="financial_db")
+        assert req.database == "financial_db"
 
     def test_all_allowed_databases_accepted(self):
-        for db in ("sales_db", "products_db", "analytics_db"):
+        for db in ("financial_db",):
             req = QueryRequest(question="berapa total data?", database=db)
             assert req.database == db
 
-    def test_default_database_is_sales_db(self):
-        req = QueryRequest(question="berapa total customer?")
-        assert req.database == "sales_db"
+    def test_default_database_is_financial_db(self):
+        req = QueryRequest(question="berapa total transaksi?")
+        assert req.database == "financial_db"
 
     def test_question_is_stripped(self):
-        req = QueryRequest(question="  berapa total customer?  ", database="sales_db")
-        assert req.question == "berapa total customer?"
+        req = QueryRequest(question="  berapa total transaksi?  ", database="financial_db")
+        assert req.question == "berapa total transaksi?"
 
     def test_minimum_length_question_accepted(self):
-        req = QueryRequest(question="abc", database="sales_db")
+        req = QueryRequest(question="abc", database="financial_db")
         assert req.question == "abc"
 
 
@@ -50,16 +50,16 @@ class TestInvalidDatabase:
 
     def test_unknown_database_rejected(self):
         with pytest.raises(ValidationError) as exc_info:
-            QueryRequest(question="berapa total customer?", database="unknown_db")
+            QueryRequest(question="berapa total transaksi?", database="unknown_db")
         assert "Unknown database" in str(exc_info.value)
 
     def test_empty_database_rejected(self):
         with pytest.raises(ValidationError):
-            QueryRequest(question="berapa total customer?", database="")
+            QueryRequest(question="berapa total transaksi?", database="")
 
     def test_sql_injection_in_database_rejected(self):
         with pytest.raises(ValidationError):
-            QueryRequest(question="test", database="sales_db; DROP TABLE users;")
+            QueryRequest(question="test", database="financial_db; DROP TABLE users;")
 
 
 # ========================================
@@ -70,17 +70,17 @@ class TestInvalidQuestion:
 
     def test_empty_question_rejected(self):
         with pytest.raises(ValidationError) as exc_info:
-            QueryRequest(question="", database="sales_db")
+            QueryRequest(question="", database="financial_db")
         assert "3 characters" in str(exc_info.value)
 
     def test_whitespace_only_question_rejected(self):
         with pytest.raises(ValidationError):
-            QueryRequest(question="   ", database="sales_db")
+            QueryRequest(question="   ", database="financial_db")
 
     def test_one_char_question_rejected(self):
         with pytest.raises(ValidationError):
-            QueryRequest(question="a", database="sales_db")
+            QueryRequest(question="a", database="financial_db")
 
     def test_two_char_question_rejected(self):
         with pytest.raises(ValidationError):
-            QueryRequest(question="ab", database="sales_db")
+            QueryRequest(question="ab", database="financial_db")

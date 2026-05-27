@@ -20,6 +20,7 @@ import pytest
 from src.components.insight_generator import InsightGenerator
 from src.components.intent_classifier import IntentClassifier
 from src.components.query_executor import QueryExecutor
+from src.components.query_planner import QueryPlanner
 from src.components.retrieval_evaluator import RetrievalEvaluator
 from src.components.schema_retriever import SchemaRetriever
 from src.components.sql_generator import SQLGenerator
@@ -34,6 +35,12 @@ from src.models.agent_state import AgentState
 def real_intent_classifier():
     """Real IntentClassifier with Anthropic API."""
     return IntentClassifier()
+
+
+@pytest.fixture(scope="function")
+def real_query_planner():
+    """Real QueryPlanner with Anthropic API."""
+    return QueryPlanner()
 
 
 @pytest.fixture(scope="function")
@@ -75,22 +82,24 @@ def real_insight_generator():
 @pytest.fixture(scope="function")
 def real_agents(
     real_intent_classifier,
+    real_query_planner,
     real_schema_retriever,
     real_retrieval_evaluator,
     real_sql_generator,
     real_sql_validator,
     real_query_executor,
-    real_insight_generator
+    real_insight_generator,
 ):
     """All real agents bundled together."""
     return {
         "intent": real_intent_classifier,
+        "planner": real_query_planner,
         "retriever": real_schema_retriever,
         "evaluator": real_retrieval_evaluator,
         "generator": real_sql_generator,
         "validator": real_sql_validator,
         "executor": real_query_executor,
-        "insight": real_insight_generator
+        "insight": real_insight_generator,
     }
 
 
@@ -98,7 +107,7 @@ def real_agents(
 # Helper: Run Full Pipeline
 # ========================================
 
-def run_full_pipeline(agents: dict, query: str, database: str = "sales_db") -> AgentState:
+def run_full_pipeline(agents: dict, query: str, database: str = "financial_db") -> AgentState:
     """
     Run complete pipeline with real agents.
 
@@ -112,27 +121,30 @@ def run_full_pipeline(agents: dict, query: str, database: str = "sales_db") -> A
     """
     state = AgentState(query=query, database=database)
 
-    # Step 1: Intent
+    # Step 1: Intent classification
     state = agents["intent"].run(state)
     if state.needs_clarification:
         return state
 
-    # Step 2: Retrieval
+    # Step 2: Query planning
+    state = agents["planner"].run(state)
+
+    # Step 3: Schema retrieval
     state = agents["retriever"].run(state)
 
-    # Step 3: Evaluation
+    # Step 4: Retrieval evaluation
     state = agents["evaluator"].run(state)
 
-    # Step 4: SQL Generation
+    # Step 5: SQL generation
     state = agents["generator"].run(state)
 
-    # Step 5: Validation
+    # Step 6: SQL validation
     state = agents["validator"].run(state)
 
-    # Step 6: Execution
+    # Step 7: Query execution
     state = agents["executor"].run(state)
 
-    # Step 7: Insights
+    # Step 8: Insight generation
     state = agents["insight"].run(state)
 
     return state

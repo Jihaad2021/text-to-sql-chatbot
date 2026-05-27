@@ -33,7 +33,7 @@ def validator_with_ai():
 
 def make_state(sql: str, query: str = "test query") -> AgentState:
     """Helper to create state with SQL."""
-    state = AgentState(query=query, database="sales_db")
+    state = AgentState(query=query, database="financial_db")
     state.sql = sql
     return state
 
@@ -46,22 +46,22 @@ class TestValidSQL:
 
     def test_simple_select_passes(self, validator):
         """Simple SELECT query should pass validation."""
-        state = make_state("SELECT * FROM customers LIMIT 10;")
+        state = make_state("SELECT * FROM daily_master LIMIT 10;")
         result = validator.run(state)
         assert result.validated_sql is not None
 
     def test_aggregation_passes(self, validator):
         """Aggregation query should pass validation."""
-        state = make_state("SELECT COUNT(*) as total FROM customers;")
+        state = make_state("SELECT SUM(total_trx) as total FROM daily_master;")
         result = validator.run(state)
         assert result.validated_sql is not None
 
     def test_join_query_passes(self, validator):
         """JOIN query with whitelisted tables should pass."""
-        sql = """SELECT c.customer_name, COUNT(o.order_id) as total_orders
-FROM customers c
-JOIN orders o ON c.customer_id = o.customer_id
-GROUP BY c.customer_name
+        sql = """SELECT d.partner, SUM(d.total_trx) as trx, SUM(f.net_revenue) as rev
+FROM daily_master d
+JOIN financial_internal f ON d.partner = f.partner AND d.periode = f.periode
+GROUP BY d.partner
 LIMIT 10;"""
         state = make_state(sql)
         result = validator.run(state)
@@ -69,9 +69,9 @@ LIMIT 10;"""
 
     def test_validated_sql_written_to_state(self, validator):
         """Validated SQL should be written to state.validated_sql."""
-        state = make_state("SELECT * FROM customers LIMIT 10;")
+        state = make_state("SELECT * FROM daily_master LIMIT 10;")
         result = validator.run(state)
-        assert result.validated_sql == "SELECT * FROM customers LIMIT 10;"
+        assert result.validated_sql == "SELECT * FROM daily_master LIMIT 10;"
 
 
 # ========================================
@@ -131,7 +131,7 @@ class TestTableWhitelist:
 
     def test_whitelisted_table_passes(self, validator):
         """Known table should pass whitelist check."""
-        state = make_state("SELECT * FROM customers LIMIT 10;")
+        state = make_state("SELECT * FROM daily_master LIMIT 10;")
         result = validator.run(state)
         assert result.validated_sql is not None
 
@@ -143,11 +143,8 @@ class TestTableWhitelist:
 
     def test_all_whitelisted_tables_pass(self, validator):
         """All tables in whitelist should pass."""
-        whitelisted = [
-            "customers", "orders", "payments",
-            "products", "sellers", "order_items"
-        ]
-        for table in whitelisted:
+        from src.core.config import Config
+        for table in Config.ALLOWED_TABLES:
             state = make_state(f"SELECT * FROM {table} LIMIT 10;")
             result = validator.run(state)
             assert result.validated_sql is not None
@@ -162,7 +159,7 @@ class TestAutoFix:
     def test_autofix_applied_when_possible(self, validator_with_ai):
         """Auto-fix should be attempted on invalid SQL."""
         invalid_sql = "SELECT * FROM unknown_table LIMIT 10;"
-        fixed_sql = "SELECT * FROM customers LIMIT 10;"
+        fixed_sql = "SELECT * FROM daily_master LIMIT 10;"
 
         state = make_state(invalid_sql, query="show customers")
 
@@ -190,7 +187,7 @@ class TestAgentState:
 
     def test_raises_if_no_sql_in_state(self, validator):
         """Should raise if state.sql is empty."""
-        state = AgentState(query="test", database="sales_db")
+        state = AgentState(query="test", database="financial_db")
         state.sql = None
 
         with pytest.raises(SQLValidationError):
@@ -198,7 +195,7 @@ class TestAgentState:
 
     def test_timing_recorded(self, validator):
         """Execution time should be recorded in state.timing."""
-        state = make_state("SELECT * FROM customers LIMIT 10;")
+        state = make_state("SELECT * FROM daily_master LIMIT 10;")
         result = validator.run(state)
         assert "sql_validator" in result.timing
         assert result.timing["sql_validator"] > 0

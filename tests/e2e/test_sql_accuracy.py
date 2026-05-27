@@ -1,5 +1,5 @@
 """
-E2E tests for SQL accuracy and system limitations.
+E2E tests for SQL accuracy and system limitations — Telkomsel financial payment domain.
 
 Tests compare generated SQL against expected patterns
 and reveal system limitations with various query types.
@@ -7,7 +7,7 @@ and reveal system limitations with various query types.
 Requirements:
     - Valid .env with ANTHROPIC_API_KEY
     - ChromaDB indexed
-    - PostgreSQL running
+    - PostgreSQL running with financial_db
 
 Run:
     pytest tests/e2e/test_sql_accuracy.py -v -s
@@ -24,71 +24,71 @@ from tests.e2e.conftest import run_full_pipeline
 
 SIMPLE_QUERIES = [
     {
-        "query": "berapa total customer?",
-        "expected_sql_contains": ["COUNT", "customers"],
+        "query": "berapa total transaksi bulan April 2026?",
+        "expected_sql_contains": ["SUM", "total_trx", "daily_master"],
         "expected_intent": "aggregation",
-        "description": "Simple count"
+        "description": "Total transaction count April 2026",
     },
     {
-        "query": "tampilkan semua customer",
-        "expected_sql_contains": ["SELECT", "customers", "LIMIT"],
-        "expected_intent": "simple_select",
-        "description": "Simple select all"
+        "query": "success rate per partner bulan Mei 2026",
+        "expected_sql_contains": ["success_trx", "total_trx", "partner"],
+        "expected_intent": "aggregation",
+        "description": "Success rate grouped by partner",
     },
     {
-        "query": "berapa total nilai pembayaran dari semua transaksi?",
-        "expected_sql_contains": ["SUM", "payment_value"],
+        "query": "berapa total revenue bulan April?",
+        "expected_sql_contains": ["SUM", "net_revenue"],
         "expected_intent": "aggregation",
-        "description": "Total revenue"
-    }
+        "description": "Total net revenue for April",
+    },
 ]
 
 FILTERED_QUERIES = [
     {
-        "query": "tampilkan customer dari Jakarta",
-        "expected_sql_contains": ["WHERE", "customers", "Jakarta"],
+        "query": "transaksi gopay bulan April 2026",
+        "expected_sql_contains": ["WHERE", "partner", "gopay"],
         "expected_intent": "filtered_query",
-        "description": "Filter by city"
+        "description": "Filter transactions by GoPay partner",
     },
     {
-        "query": "tampilkan semua orders yang statusnya delivered",
-        "expected_sql_contains": ["WHERE", "orders", "delivered"],
+        "query": "partner dengan success rate di bawah 80%",
+        "expected_sql_contains": ["WHERE", "success_trx", "total_trx"],
         "expected_intent": "filtered_query",
-        "description": "Filter by status"
-    }
+        "description": "Partners below 80% success rate threshold",
+    },
 ]
 
 JOIN_QUERIES = [
     {
-        "query": "top 5 customer berdasarkan total spending",
-        "expected_sql_contains": ["JOIN", "customers", "ORDER BY", "LIMIT 5"],
+        "query": "top 5 partner berdasarkan revenue bulan April 2026",
+        "expected_sql_contains": ["partner", "ORDER BY", "LIMIT 5"],
         "expected_intent": "multi_table_join",
-        "description": "Top customers by spending"
+        "description": "Top 5 partners ranked by revenue",
     },
     {
-        "query": "jumlah order per customer",
-        "expected_sql_contains": ["JOIN", "COUNT", "GROUP BY"],
+        "query": "transaksi harian per channel bulan April",
+        "expected_sql_contains": ["channel_payment", "periode", "GROUP BY"],
         "expected_intent": "multi_table_join",
-        "description": "Order count per customer"
-    }
+        "description": "Daily transaction breakdown by payment channel",
+    },
 ]
 
 EDGE_CASE_QUERIES = [
     {
         "query": "show me the data",
         "expected_ambiguous": True,
-        "description": "Vague query - should be ambiguous"
+        "description": "Vague query - should be ambiguous",
     },
     {
-        "query": "apa itu database?",
+        "query": "apa itu gopay?",
         "expected_ambiguous": True,
-        "description": "Non-data query - should be ambiguous"
+        "description": "Non-data question - should be ambiguous",
     },
     {
-        "query": "customer yang order bulan depan",
+        "query": "transaksi partner bulan depan",
         "expected_empty_result": True,
-        "description": "Future date - should return empty"
-    }
+        "description": "Future date - should return empty result",
+    },
 ]
 
 
@@ -100,7 +100,7 @@ class TestSimpleQueriesAccuracy:
 
     @pytest.mark.parametrize("test_case", SIMPLE_QUERIES)
     def test_simple_query_accuracy(self, real_agents, test_case):
-        """Simple queries should generate correct SQL."""
+        """Simple queries should generate correct SQL against financial_db."""
         state = run_full_pipeline(real_agents, test_case["query"])
 
         print(f"\n{'='*60}")
@@ -111,15 +111,16 @@ class TestSimpleQueriesAccuracy:
         print(f"Row count  : {state.row_count}")
         print(f"Insights   : {state.insights}")
 
-        # Check intent
         if "expected_intent" in test_case:
-            assert state.intent["category"] == test_case["expected_intent"], \
-                f"Expected intent '{test_case['expected_intent']}' but got '{state.intent['category']}'"
+            assert state.intent["category"] == test_case["expected_intent"], (
+                f"Expected intent '{test_case['expected_intent']}' "
+                f"but got '{state.intent['category']}'"
+            )
 
-        # Check SQL contains expected keywords
         for keyword in test_case["expected_sql_contains"]:
-            assert keyword.upper() in state.validated_sql.upper(), \
+            assert keyword.upper() in state.validated_sql.upper(), (
                 f"Expected '{keyword}' in SQL but got:\n{state.validated_sql}"
+            )
 
 
 # ========================================
@@ -130,7 +131,7 @@ class TestFilteredQueriesAccuracy:
 
     @pytest.mark.parametrize("test_case", FILTERED_QUERIES)
     def test_filtered_query_accuracy(self, real_agents, test_case):
-        """Filtered queries should generate SQL with WHERE clause."""
+        """Filtered queries should generate SQL with WHERE clause referencing financial_db columns."""
         state = run_full_pipeline(real_agents, test_case["query"])
 
         print(f"\n{'='*60}")
@@ -142,8 +143,9 @@ class TestFilteredQueriesAccuracy:
         print(f"Insights   : {state.insights}")
 
         for keyword in test_case["expected_sql_contains"]:
-            assert keyword.upper() in state.validated_sql.upper(), \
+            assert keyword.upper() in state.validated_sql.upper(), (
                 f"Expected '{keyword}' in SQL but got:\n{state.validated_sql}"
+            )
 
 
 # ========================================
@@ -154,8 +156,8 @@ class TestJoinQueriesAccuracy:
 
     @pytest.mark.parametrize("test_case", JOIN_QUERIES)
     def test_join_query_accuracy(self, real_agents, test_case):
-        """Join queries should generate SQL with JOIN clause."""
-        state = run_full_pipeline(real_agents, test_case["query"], database="sales_db")
+        """Join/aggregation queries should generate SQL referencing financial_db tables."""
+        state = run_full_pipeline(real_agents, test_case["query"], database="financial_db")
 
         print(f"\n{'='*60}")
         print(f"Description: {test_case['description']}")
@@ -166,8 +168,9 @@ class TestJoinQueriesAccuracy:
         print(f"Insights   : {state.insights}")
 
         for keyword in test_case["expected_sql_contains"]:
-            assert keyword.upper() in state.validated_sql.upper(), \
+            assert keyword.upper() in state.validated_sql.upper(), (
                 f"Expected '{keyword}' in SQL but got:\n{state.validated_sql}"
+            )
 
 
 # ========================================
@@ -190,12 +193,14 @@ class TestEdgeCasesAndLimitations:
         print(f"Insights           : {state.insights}")
 
         if test_case.get("expected_ambiguous"):
-            assert state.needs_clarification is True, \
+            assert state.needs_clarification is True, (
                 f"Expected ambiguous but got intent: {state.intent}"
+            )
 
         if test_case.get("expected_empty_result"):
-            assert state.row_count == 0, \
+            assert state.row_count == 0, (
                 f"Expected 0 rows but got {state.row_count}"
+            )
 
 
 # ========================================
@@ -206,7 +211,7 @@ class TestLimitationsReport:
 
     def _run_and_report(self, real_agents, query: str, label: str) -> AgentState:
         """Run pipeline and return partial state even if later stages fail."""
-        state = AgentState(query=query, database="sales_db")
+        state = AgentState(query=query, database="financial_db")
         try:
             state = run_full_pipeline(real_agents, query)
         except Exception as exc:
@@ -215,15 +220,17 @@ class TestLimitationsReport:
 
     def test_complex_analytics_limitation(self, real_agents):
         """
-        Test complex analytics query.
-        Reveals limitation: may not handle window functions or CTEs well.
+        Test complex analytics query with period comparison.
+        Reveals limitation: may not handle multi-step comparisons or window functions well.
         """
         state = self._run_and_report(
-            real_agents, "revenue per bulan dalam 3 bulan terakhir", "Complex date analytics"
+            real_agents,
+            "bandingkan revenue April 2026 vs Maret 2026 per partner",
+            "Complex period comparison",
         )
 
         print(f"\n{'='*60}")
-        print("LIMITATION TEST: Complex date analytics")
+        print("LIMITATION TEST: Complex period comparison")
         print(f"Query    : {state.query}")
         print(f"Intent   : {state.intent['category'] if state.intent else 'N/A'}")
         print(f"SQL      :\n{state.validated_sql}")
@@ -231,20 +238,21 @@ class TestLimitationsReport:
         print(f"Insights : {state.insights}")
         print(f"Errors   : {state.errors}")
 
-        # Intent classification should always succeed; later stages may fail
         assert state.intent is not None
 
     def test_indonesian_query_limitation(self, real_agents):
         """
-        Test full Indonesian query.
-        Reveals limitation: Indonesian language understanding.
+        Test full Indonesian financial query.
+        Reveals limitation: Indonesian language understanding for domain-specific terms.
         """
         state = self._run_and_report(
-            real_agents, "tampilkan pelanggan dengan total pembelian terbanyak", "Full Indonesian query"
+            real_agents,
+            "tampilkan mitra dengan jumlah transaksi gagal terbanyak bulan April 2026",
+            "Full Indonesian financial query",
         )
 
         print(f"\n{'='*60}")
-        print("LIMITATION TEST: Full Indonesian query")
+        print("LIMITATION TEST: Full Indonesian financial query")
         print(f"Query    : {state.query}")
         print(f"Intent   : {state.intent['category'] if state.intent else 'N/A'}")
         print(f"SQL      :\n{state.validated_sql}")
@@ -255,15 +263,17 @@ class TestLimitationsReport:
 
     def test_multi_condition_limitation(self, real_agents):
         """
-        Test query with multiple conditions.
-        Reveals limitation: handling complex WHERE conditions.
+        Test query with multiple financial conditions.
+        Reveals limitation: handling compound WHERE conditions across revenue and volume.
         """
         state = self._run_and_report(
-            real_agents, "customer dari Jakarta yang total ordernya lebih dari 5", "Multi-condition query"
+            real_agents,
+            "partner dengan net_revenue di atas 100 juta dan success rate di atas 90% bulan April 2026",
+            "Multi-condition financial query",
         )
 
         print(f"\n{'='*60}")
-        print("LIMITATION TEST: Multi-condition query")
+        print("LIMITATION TEST: Multi-condition financial query")
         print(f"Query    : {state.query}")
         print(f"Intent   : {state.intent['category'] if state.intent else 'N/A'}")
         print(f"SQL      :\n{state.validated_sql}")
@@ -275,9 +285,9 @@ class TestLimitationsReport:
     def test_print_full_timing_report(self, real_agents):
         """Print full timing report to identify bottlenecks."""
         queries = [
-            "berapa total customer?",
-            "top 5 customer by spending",
-            "revenue per bulan"
+            "berapa total transaksi bulan April 2026?",
+            "top 5 partner berdasarkan revenue bulan April 2026",
+            "success rate per channel payment bulan April 2026",
         ]
 
         print(f"\n{'='*60}")
@@ -294,4 +304,4 @@ class TestLimitationsReport:
                 print(f"  {agent:<30} {ms:>8.0f}ms ({pct:.0f}%)")
             print(f"  {'TOTAL':<30} {total:>8.0f}ms")
 
-        assert True  # Always pass, this is for reporting only
+        assert True  # Always pass; this is a reporting-only test

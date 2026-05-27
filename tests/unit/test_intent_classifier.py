@@ -103,7 +103,7 @@ class TestAmbiguousIntents:
 
     def test_low_confidence_forces_ambiguous(self, classifier, sample_state):
         """Low confidence should force ambiguous regardless of category."""
-        mock_response = "INTENT: aggregation\nCONFIDENCE: 0.5\nREASON: Uncertain"
+        mock_response = "INTENT: aggregation\nCONFIDENCE: 0.3\nREASON: Uncertain"
 
         with patch.object(classifier, "_call_llm", return_value=mock_response):
             state = classifier.run(sample_state)
