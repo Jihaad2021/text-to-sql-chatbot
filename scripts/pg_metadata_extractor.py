@@ -40,7 +40,7 @@ from src.core.config import Config
 
 load_dotenv()
 
-OUTPUT_FILE = os.getenv("METADATA_OUTPUT_FILE", "metadata.json")
+OUTPUT_FILE = os.getenv("METADATA_JSON_FILE", "data/metadata.json")
 
 
 def parse_db_url(db_url: str) -> dict:

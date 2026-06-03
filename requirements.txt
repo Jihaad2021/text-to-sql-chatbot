@@ -12,7 +12,6 @@ groq>=1.0.0                 # Groq (Llama, Mixtral)
 # ─── API & Web ────────────────────────────────────────────────
 fastapi>=0.100.0            # REST API framework
 uvicorn>=0.20.0             # ASGI server
-streamlit>=1.31.0           # Web UI
 slowapi>=0.1.9              # Rate limiting for FastAPI
 
 # ─── Database ─────────────────────────────────────────────────

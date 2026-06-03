@@ -118,6 +118,48 @@
           "foreign_keys": []
         },
         {
+          "table": "daily_master",
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
+            },
+            {
+              "name": "partner",
+              "type": "text"
+            },
+            {
+              "name": "total_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "success_trx",
+              "type": "double precision"
+            },
+            {
+              "name": "failed_trx",
+              "type": "double precision"
+            },
+            {
+              "name": "total_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "success_rate_pct",
+              "type": "double precision"
+            },
+            {
+              "name": "unique_users",
+              "type": "bigint"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
           "table": "daily_unique_users",
           "columns": [
             {
@@ -181,48 +223,6 @@
             {
               "name": "total_admin_fee",
               "type": "double precision"
-            }
-          ],
-          "foreign_keys": []
-        },
-        {
-          "table": "daily_master",
-          "columns": [
-            {
-              "name": "id",
-              "type": "integer"
-            },
-            {
-              "name": "date",
-              "type": "date"
-            },
-            {
-              "name": "partner",
-              "type": "text"
-            },
-            {
-              "name": "total_trx",
-              "type": "bigint"
-            },
-            {
-              "name": "success_trx",
-              "type": "double precision"
-            },
-            {
-              "name": "failed_trx",
-              "type": "double precision"
-            },
-            {
-              "name": "total_revenue",
-              "type": "double precision"
-            },
-            {
-              "name": "success_rate_pct",
-              "type": "double precision"
-            },
-            {
-              "name": "unique_users",
-              "type": "bigint"
             }
           ],
           "foreign_keys": []
@@ -333,6 +333,48 @@
             {
               "name": "settlement_gap",
               "type": "double precision"
+            },
+            {
+              "name": "purchase_mode",
+              "type": "text"
+            }
+          ],
+          "foreign_keys": []
+        },
+        {
+          "table": "channel_payment",
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "date",
+              "type": "date"
+            },
+            {
+              "name": "partner",
+              "type": "text"
+            },
+            {
+              "name": "channel",
+              "type": "text"
+            },
+            {
+              "name": "purchase_mode",
+              "type": "text"
+            },
+            {
+              "name": "total_trx",
+              "type": "bigint"
+            },
+            {
+              "name": "total_revenue",
+              "type": "double precision"
+            },
+            {
+              "name": "success_rate_pct",
+              "type": "double precision"
             }
           ],
           "foreign_keys": []
@@ -407,44 +449,14 @@
             {
               "name": "ig_revenue",
               "type": "double precision"
-            }
-          ],
-          "foreign_keys": []
-        },
-        {
-          "table": "channel_payment",
-          "columns": [
-            {
-              "name": "id",
-              "type": "integer"
             },
             {
-              "name": "date",
-              "type": "date"
+              "name": "b0_revenue",
+              "type": "double precision"
             },
             {
-              "name": "partner",
-              "type": "text"
-            },
-            {
-              "name": "channel",
-              "type": "text"
-            },
-            {
-              "name": "purchase_mode",
-              "type": "text"
-            },
-            {
-              "name": "total_trx",
+              "name": "b0_trx",
               "type": "bigint"
-            },
-            {
-              "name": "total_revenue",
-              "type": "double precision"
-            },
-            {
-              "name": "success_rate_pct",
-              "type": "double precision"
             }
           ],
           "foreign_keys": []

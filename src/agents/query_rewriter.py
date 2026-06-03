@@ -17,6 +17,7 @@ Writes to state:
 """
 
 import json
+from datetime import date
 
 from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
@@ -24,15 +25,63 @@ from src.models.agent_state import AgentState
 
 _TABLES = ", ".join(sorted(Config.ALLOWED_TABLES))
 
-_PROMPT_TEMPLATE = """\
+_MONTH_MAP = {
+    "januari": "2026-01", "jan": "2026-01",
+    "februari": "2026-02", "feb": "2026-02",
+    "maret": "2026-03", "mar": "2026-03",
+    "april": "2026-04", "apr": "2026-04",
+    "mei": "2026-05", "may": "2026-05",
+    "juni": "2026-06", "jun": "2026-06",
+    "juli": "2026-07", "jul": "2026-07",
+    "agustus": "2026-08", "aug": "2026-08",
+    "september": "2026-09", "sep": "2026-09",
+    "oktober": "2026-10", "oct": "2026-10",
+    "november": "2026-11", "nov": "2026-11",
+    "desember": "2026-12", "dec": "2026-12",
+}
+
+
+def _inject_year(query: str) -> str:
+    """Add '2026' after bare month names that have no year attached."""
+    import re
+    pattern = re.compile(
+        r"\b(" + "|".join(_MONTH_MAP) + r")\b(?!\s+20\d{2})",
+        re.IGNORECASE,
+    )
+    return pattern.sub(lambda m: f"{m.group(0)} 2026", query)
+
+
+def _build_history_block(history: list[dict]) -> str:
+    if not history:
+        return ""
+    recent = history[-3:]
+    lines = ["\nKONTEKS PERCAKAPAN SEBELUMNYA:"]
+    for turn in recent:
+        q = turn.get("query", "")
+        a = turn.get("insights", "")
+        if q:
+            lines.append(f"User: {q}")
+        if a:
+            lines.append(f"Chatbot: {a[:200]}{'...' if len(a) > 200 else ''}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _build_prompt(tables: str, query: str, today: str, history: list[dict]) -> str:
+    history_block = _build_history_block(history)
+    return f"""\
 Kamu adalah preprocessor pertanyaan untuk chatbot analytics data keuangan Telkomsel.
 
 Database: financial_db
 Tabel tersedia: {tables}
 Entitas kunci: product_name, partner (gopay/ovo/dana/shopeepay/linkaja/qris/indomaret/tsel_wallet/finnet), channel (a0/b3/f0/f4/f5/i1/ig), date
-
+Tanggal hari ini: {today}. Semua data ada di tahun 2026.
+{history_block}
 Tugas: tulis ulang pertanyaan berikut agar lebih presisi untuk SQL generation.
 Terapkan HANYA aturan yang relevan:
+
+0. REFERENSI KONTEKSTUAL — Jika pertanyaan menggunakan kata "ini", "itu", "tadi", "tersebut", "yang sama", atau merujuk implisit ke pertanyaan/hasil sebelumnya, gunakan KONTEKS PERCAKAPAN untuk mengganti referensi tersebut dengan entitas eksplisit.
+   Contoh: (sebelumnya tanya "top 10 produk bulan mei") lalu "filter ini per channel" → "filter 10 produk dengan penjualan tertinggi bulan mei 2026 per channel"
 
 1. NAMA ENTITAS FUZZY — Jika nama produk, partner, atau entitas mungkin tidak persis sama di database, tambahkan catatan gunakan ILIKE.
    Contoh: "produk Surprise Deal Nonton" → "produk yang mengandung 'Surprise Deal Nonton' (gunakan ILIKE '%Surprise Deal Nonton%')"
@@ -71,10 +120,18 @@ class QueryRewriter(LLMBaseAgent):
 
     def execute(self, state: AgentState) -> AgentState:
         state.original_query = state.query
+        # Deterministically inject year before LLM sees the query
+        state.query = _inject_year(state.query)
 
         try:
-            prompt   = _PROMPT_TEMPLATE.format(tables=_TABLES, query=state.query)
-            raw      = self._call_llm(prompt, max_tokens=600, temperature=0)
+            today  = date.today().strftime("%Y-%m-%d")
+            prompt = _build_prompt(
+                tables=_TABLES,
+                query=state.query,
+                today=today,
+                history=state.conversation_history,
+            )
+            raw    = self._call_llm(prompt, max_tokens=600, temperature=0)
             result   = _parse_json(raw)
 
             if result.get("was_rewritten") and result.get("rewritten", "").strip():

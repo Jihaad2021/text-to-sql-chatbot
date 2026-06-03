@@ -121,4 +121,4 @@ NIGHT_HOURS_END    = 6                  # Jam malam: 0–6
 
 # ── DATA RANGE ────────────────────────────────────────────────────────────────
 DATA_START_DATE = "2026-03-01"
-DATA_END_DATE   = "2026-05-06"
+DATA_END_DATE   = "2026-06-02"

@@ -29,6 +29,8 @@ Example:
     }
 """
 
+from datetime import date
+
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 
@@ -105,7 +107,12 @@ class IntentClassifier(LLMBaseAgent):
 
         history_block = self._build_history_block(state.conversation_history)
 
+        today = date.today().strftime("%Y-%m-%d")
+
         return f"""You are a SQL query intent classifier for a financial payment analytics system (Telkomsel digital payments).
+
+TODAY'S DATE: {today}
+Resolve relative time references using this date: "bulan ini" = current month, "minggu ini" = current week, "hari ini" = today.
 
 Classify the user query into ONE of these categories:
 
@@ -122,7 +129,7 @@ Rules:
 - Mark as "ambiguous" ONLY if query is genuinely vague (e.g. "tampilkan data" with no context)
 - Queries asking for totals, sums, averages, rankings → "aggregation" (high confidence)
 - Queries asking for trends, per-period breakdowns → "complex_analytics"
-- Queries with time filters (bulan, tanggal) → "filtered_query" or "aggregation"
+- Queries with time filters (bulan, tanggal, "bulan ini", "hari ini") → "filtered_query" or "aggregation"
 - Consider both Indonesian and English queries
 - Do NOT mark as "ambiguous" if the query has a clear analytical intent, even with complex wording
 - Use conversation context to resolve follow-up queries (e.g. "sekarang breakdown per channel")

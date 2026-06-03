@@ -232,14 +232,10 @@ python scripts/build_graph.py
 ### 5. Run
 
 ```bash
-# Terminal 1: API
 uvicorn src.main:app --port 8000
-
-# Terminal 2: UI
-streamlit run src/ui/app.py
 ```
 
-- Web UI: http://localhost:8501
+- Web UI: http://localhost:8000/ui
 - API docs: http://localhost:8000/docs
 - Health check: http://localhost:8000/health
 
@@ -278,7 +274,7 @@ SQL_VALIDATOR_MODEL=gpt-4o-mini
 CACHE_TTL_SECONDS=600          # 0 to disable
 
 # API
-ALLOWED_ORIGINS=http://localhost:8501
+ALLOWED_ORIGINS=http://localhost:8000
 RATE_LIMIT_PER_MINUTE=30
 LOG_FORMAT=text                # text | json
 
@@ -389,7 +385,11 @@ text-to-sql-chatbot/
 │   │   └── logger.py                  # Structured logging (text/JSON)
 │   │
 │   └── ui/
-│       └── app.py                     # Streamlit web interface
+│       └── static/                    # Web UI (HTML/JS/Tailwind CSS, served at /ui)
+│           ├── index.html
+│           ├── app.js
+│           ├── renderer.js
+│           └── style.css
 │
 ├── tests/
 │   ├── conftest.py                    # Shared fixtures (financial_db domain)
@@ -413,8 +413,7 @@ text-to-sql-chatbot/
 │
 ├── .github/workflows/ci.yml           # CI: test + lint on every push
 ├── Dockerfile                         # Multi-stage API image
-├── Dockerfile.ui                      # Multi-stage Streamlit UI image
-├── docker-compose.yml                 # API + UI with health checks
+├── docker-compose.yml                 # API with health checks
 ├── CLAUDE.md                          # Coding standards for AI-assisted dev
 ├── .env.example                       # Environment template
 └── requirements.txt                   # Python dependencies
@@ -434,7 +433,7 @@ text-to-sql-chatbot/
 | Retrieval Fusion | RRF (Reciprocal Rank Fusion, k=60) |
 | Database | PostgreSQL 14+ |
 | API | FastAPI |
-| UI | Streamlit |
+| UI | Custom HTML/JS (Tailwind CSS, served by FastAPI) |
 | ORM | SQLAlchemy 2.0 |
 | SQL Parsing | sqlparse |
 | Rate Limiting | slowapi |
@@ -501,7 +500,6 @@ Every push to `main` runs unit + integration tests and linting automatically via
 
 ```bash
 uvicorn src.main:app --host 0.0.0.0 --port 8000
-streamlit run src/ui/app.py --server.port 8501
 ```
 
 ---

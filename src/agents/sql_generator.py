@@ -28,6 +28,7 @@ Example:
 
 import json
 import re
+from datetime import date
 
 import yaml
 
@@ -35,6 +36,7 @@ from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.exceptions import SQLGenerationError
+from src.utils.financial_domain import DATA_END_DATE, DATA_START_DATE
 
 # Maximum rows per previous step shown in context to avoid prompt overflow
 _PREV_STEP_ROW_PREVIEW = 5
@@ -125,9 +127,24 @@ QUERY TYPE: {state.intent.get('category', '')}
         history_block = self._build_history_block(state.conversation_history)
         error_block = self._build_error_block(state.sql_error, state.sql)
 
+        today = date.today().strftime("%Y-%m-%d")
+        current_month_start = date.today().replace(day=1).strftime("%Y-%m-%d")
+
         return f"""You are a senior PostgreSQL data engineer working with a Telkomsel financial payment database.
 
 Your task is to convert natural language questions into safe and correct PostgreSQL SQL queries.
+
+DATE RULES (MANDATORY — violations will cause wrong results):
+- TODAY IS: {today}
+- ALL DATA IS FROM YEAR 2026. NEVER use 2023, 2024, or 2025 in date filters.
+- "bulan ini" → {current_month_start} to {today}
+- "bulan januari/jan" → 2026-01-01 to 2026-01-31
+- "bulan februari/feb" → 2026-02-01 to 2026-02-28
+- "bulan maret/mar" → 2026-03-01 to 2026-03-31
+- "bulan april/apr" → 2026-04-01 to 2026-04-30
+- "bulan mei/may" → 2026-05-01 to 2026-05-31
+- "bulan juni/jun" → 2026-06-01 to 2026-06-30
+- When a month name is given WITHOUT a year, ALWAYS use 2026.
 
 DOMAIN NOTES:
 - Linkaja has multiple name variants in the DB — always include ALL of them:
