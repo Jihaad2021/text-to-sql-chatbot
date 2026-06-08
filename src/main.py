@@ -137,6 +137,7 @@ class QueryResponse(BaseModel):
     execution_time_ms: float
     is_multi_step: bool = False
     step_results: Optional[List[Dict[str, Any]]] = None
+    chart_config: Optional[Dict[str, Any]] = None
     conversation_history: List[Dict[str, Any]] = []
     metadata: Dict[str, Any]
 
@@ -268,16 +269,30 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
             "is_multi_step": state.is_multi_step,
         }]
 
-        serialized_steps = [
-            {
-                "step_number": sr.step_number,
-                "description": sr.description,
-                "sql": sr.sql,
-                "row_count": sr.row_count,
-                "summary": sr.summary,
-            }
-            for sr in state.step_results
-        ] if state.step_results else None
+        if state.investigation_steps:
+            serialized_steps = [
+                {
+                    "step_number": s.iteration,
+                    "description": s.sub_query,
+                    "sql": s.sql,
+                    "row_count": s.row_count,
+                    "summary": s.summary,
+                }
+                for s in state.investigation_steps
+            ]
+        elif state.step_results:
+            serialized_steps = [
+                {
+                    "step_number": sr.step_number,
+                    "description": sr.description,
+                    "sql": sr.sql,
+                    "row_count": sr.row_count,
+                    "summary": sr.summary,
+                }
+                for sr in state.step_results
+            ]
+        else:
+            serialized_steps = None
 
         return QueryResponse(
             question=state.original_query or body.question,
@@ -288,6 +303,7 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
             execution_time_ms=total_ms,
             is_multi_step=state.is_multi_step,
             step_results=serialized_steps,
+            chart_config=state.chart_config,
             conversation_history=updated_history,
             metadata={
                 "request_id": request_id,

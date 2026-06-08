@@ -84,6 +84,8 @@ pre {
 /* ── History item active ─────────────────────────────────── */
 .history-item.is-active {
   background: #eff6ff;
+}
+.history-item.is-active button:first-child {
   color: #1d4ed8;
   font-weight: 500;
 }

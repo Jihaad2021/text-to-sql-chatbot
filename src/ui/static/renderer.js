@@ -14,6 +14,9 @@ export {
   removeElement,
 }
 
+// Stores chart_config keyed by gid so initChart can be called lazily on tab open
+const _chartConfigs = new Map()
+
 // ─────────────────────────────────────────────────────────────
 // Message types
 // ─────────────────────────────────────────────────────────────
@@ -121,6 +124,8 @@ function appendAssistantMessage(container, result) {
 
   container.appendChild(el)
 
+  if (result.chart_config) _chartConfigs.set(gid, result.chart_config)
+
   if (!isMulti) initTabs(el, gid)
   else          initAccordion(el, gid)
 
@@ -138,9 +143,10 @@ function appendAssistantMessage(container, result) {
 
 function buildTabs(result, gid, hasData, hasSql) {
   const defs = []
-  if (hasData) defs.push({ key: 'data',   label: `Data (${fmtNum(result.row_count ?? 0)})` })
-  if (hasSql)  defs.push({ key: 'sql',    label: 'SQL' })
-  defs.push(               { key: 'detail', label: 'Detail' })
+  if (result.chart_config) defs.push({ key: 'chart',  label: 'Grafik' })
+  if (hasData)             defs.push({ key: 'data',   label: `Data (${fmtNum(result.row_count ?? 0)})` })
+  if (hasSql)              defs.push({ key: 'sql',    label: 'SQL' })
+  defs.push(                          { key: 'detail', label: 'Detail' })
 
   // All tabs start collapsed — user clicks to open/toggle
   const btns = defs.map(d => `
@@ -153,7 +159,7 @@ function buildTabs(result, gid, hasData, hasSql) {
 
   const panels = defs.map(d => `
     <div class="hidden" data-panel="${d.key}" data-gid="${gid}">
-      ${tabContent(d.key, result)}
+      ${tabContent(d.key, result, gid)}
     </div>
   `).join('')
 
@@ -163,8 +169,9 @@ function buildTabs(result, gid, hasData, hasSql) {
   `
 }
 
-function tabContent(key, result) {
+function tabContent(key, result, gid) {
   switch (key) {
+    case 'chart':  return buildChartPanel(result.chart_config, gid)
     case 'data':   return buildTable(result.data)
     case 'sql':    return buildSqlBlock(result.sql)
     case 'detail': return buildDetail(result)
@@ -196,9 +203,85 @@ function initTabs(container, gid) {
         panel.querySelectorAll('code.language-sql').forEach(b => {
           if (!b.dataset.highlighted) hljs.highlightElement(b)
         })
+        // Init chart lazily when panel first becomes visible
+        if (key === 'chart') initChart(container, gid, _chartConfigs.get(gid))
       }
     })
   })
+}
+
+// ─────────────────────────────────────────────────────────────
+// Chart
+// ─────────────────────────────────────────────────────────────
+
+function buildChartPanel(config, gid) {
+  if (!config) return ''
+  return `
+    <div class="px-5 py-4">
+      <div class="relative" style="max-height:300px">
+        <canvas data-chart-gid="${gid}"></canvas>
+      </div>
+    </div>
+  `
+}
+
+function initChart(container, gid, config) {
+  const canvas = container.querySelector(`[data-chart-gid="${gid}"]`)
+  if (!canvas || canvas._chartInstance || !config) return
+
+  if (typeof Chart === 'undefined') {
+    canvas.parentElement.innerHTML =
+      '<p class="text-xs text-slate-400 py-4 text-center">Chart.js belum termuat. Refresh halaman.</p>'
+    return
+  }
+
+  const isDoughnut = config.type === 'doughnut' || config.type === 'pie'
+
+  try {
+    canvas._chartInstance = new Chart(canvas, {
+      type: config.type,
+      data: {
+        labels:   config.labels,
+        datasets: config.datasets,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: isDoughnut || config.datasets.length > 1 },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const v = ctx.parsed.y ?? ctx.parsed
+                if (typeof v === 'number') {
+                  return ` ${ctx.dataset.label}: ${v.toLocaleString('id-ID')}`
+                }
+                return ` ${ctx.dataset.label}: ${v}`
+              },
+            },
+          },
+        },
+        scales: isDoughnut ? {} : {
+          x: { grid: { display: false } },
+          y: {
+            grid: { color: '#f1f5f9' },
+            ticks: {
+              callback: v => {
+                if (Math.abs(v) >= 1_000_000_000) return (v / 1_000_000_000).toFixed(1) + 'M'
+                if (Math.abs(v) >= 1_000_000)     return (v / 1_000_000).toFixed(1) + 'jt'
+                if (Math.abs(v) >= 1_000)         return (v / 1_000).toFixed(0) + 'k'
+                return v.toLocaleString('id-ID')
+              },
+            },
+          },
+        },
+      },
+    })
+  } catch (err) {
+    console.error('Chart render error:', err)
+    canvas.parentElement.innerHTML =
+      `<p class="text-xs text-red-400 py-4 text-center">Gagal render chart: ${err.message}</p>`
+  }
 }
 
 // ─────────────────────────────────────────────────────────────

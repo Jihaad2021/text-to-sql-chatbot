@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pipeline Overview — Text-to-SQL Chatbot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --llm:    #dbeafe; --llm-t:    #1d4ed8; --llm-b:    #93c5fd;
+      --trad:   #dcfce7; --trad-t:   #15803d; --trad-b:   #86efac;
+      --hybrid: #fef9c3; --hybrid-t: #a16207; --hybrid-b: #fde047;
+      --new:    #f3e8ff; --new-t:    #7c3aed; --new-b:    #c4b5fd;
+      --bg: #f0f4f8;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --subtle: #475569;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 40px 20px 60px;
+    }
+
+    /* ─── Header ─── */
+    .page-header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .page-header h1 { font-size: 1.7rem; font-weight: 800; }
+    .page-header p  { font-size: 0.875rem; color: var(--muted); margin-top: 6px; }
+
+    /* ─── Stats bar ─── */
+    .stats {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 36px;
+    }
+    .stat {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 20px;
+      text-align: center;
+      min-width: 100px;
+    }
+    .stat-n { font-size: 1.6rem; font-weight: 800; color: var(--text); }
+    .stat-l { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+    /* ─── Main layout ─── */
+    .layout {
+      max-width: 1060px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    /* ─── Flow column ─── */
+    .flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+
+    /* ─── Connector ─── */
+    .conn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3px 0;
+    }
+    .conn-line  { width: 2px; height: 18px; background: #cbd5e1; }
+    .conn-arrow { width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #cbd5e1; }
+    .conn-tag   { font-size: 0.68rem; color: #94a3b8; font-weight: 600; margin: 2px 0; }
+
+    /* ─── Agent card ─── */
+    .agent {
+      width: 100%;
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .agent:hover { box-shadow: 0 4px 18px rgba(0,0,0,0.07); }
+
+    .agent-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 13px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .agent-num {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--text); color: #fff;
+      font-size: 0.72rem; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .agent-name {
+      font-family: 'SF Mono','Fira Code',monospace;
+      font-size: 0.92rem; font-weight: 700;
+    }
+    .agent-role { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
+
+    .badge {
+      font-size: 0.67rem; font-weight: 700;
+      padding: 2px 7px; border-radius: 999px;
+    }
+    .b-llm    { background: var(--llm);    color: var(--llm-t); }
+    .b-trad   { background: var(--trad);   color: var(--trad-t); }
+    .b-hybrid { background: var(--hybrid); color: var(--hybrid-t); }
+    .b-new    { background: var(--new);    color: var(--new-t); }
+    .b-model  { background: #f1f5f9; color: #334155; font-family: monospace; }
+
+    .agent-body { padding: 12px 16px; }
+
+    /* desc paragraph */
+    .desc {
+      font-size: 0.8rem; color: var(--subtle); line-height: 1.55;
+      margin-bottom: 10px;
+    }
+    .desc:last-child { margin-bottom: 0; }
+
+    /* kv rows */
+    .kv-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 12px;
+      font-size: 0.77rem;
+      margin-bottom: 10px;
+    }
+    .kv-k { color: var(--muted); white-space: nowrap; }
+    .kv-v { color: var(--text); font-weight: 500; }
+    .kv-v code { font-family: monospace; font-size: 0.75rem; background: #f1f5f9; padding: 1px 4px; border-radius: 4px; }
+
+    /* pill list */
+    .pills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+    .pill {
+      font-size: 0.7rem; padding: 2px 8px; border-radius: 999px;
+      background: #f1f5f9; color: #334155; font-weight: 500;
+    }
+    .pill-green  { background: #dcfce7; color: #15803d; }
+    .pill-yellow { background: #fef9c3; color: #92400e; }
+    .pill-red    { background: #fee2e2; color: #b91c1c; }
+    .pill-blue   { background: #dbeafe; color: #1d4ed8; }
+    .pill-purple { background: #f3e8ff; color: #7c3aed; }
+
+    /* section label inside card */
+    .sec-label {
+      font-size: 0.67rem; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    /* table inside card */
+    .mini-table { width: 100%; border-collapse: collapse; font-size: 0.77rem; margin-bottom: 10px; }
+    .mini-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 3px 6px; border-bottom: 1px solid var(--border); }
+    .mini-table td { padding: 4px 6px; border-bottom: 1px solid #f1f5f9; color: var(--subtle); vertical-align: top; }
+    .mini-table tr:last-child td { border-bottom: none; }
+
+    /* layers list */
+    .layers { list-style: none; display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+    .layer {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 0.78rem; color: var(--subtle);
+    }
+    .layer-num {
+      width: 18px; height: 18px; border-radius: 4px;
+      background: #0f172a; color: #fff;
+      font-size: 0.65rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .layer-num.opt { background: #94a3b8; }
+
+    /* ─── Parallel block ─── */
+    .par-wrap { width: 100%; }
+    .par-label { text-align:center; font-size:0.68rem; font-weight:700; color:#94a3b8; letter-spacing:.05em; text-transform:uppercase; margin-bottom:6px; }
+    .par-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* ─── Branch block ─── */
+    .branch-wrap { width: 100%; }
+    .branch-label { text-align:center; font-size:0.68rem; font-weight:700; color:#94a3b8; letter-spacing:.05em; text-transform:uppercase; margin-bottom:6px; }
+    .branch-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .branch-card {
+      border: 1.5px dashed var(--border); border-radius: 10px;
+      padding: 12px 14px; background: #f8fafc;
+    }
+    .branch-title {
+      font-size: 0.78rem; font-weight: 700; color: var(--subtle);
+      margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+    }
+    .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .dot-p { background: #7c3aed; }
+    .dot-b { background: #2563eb; }
+    .dot-s { background: #64748b; }
+    .branch-card ul { padding-left: 14px; font-size: 0.75rem; color: var(--muted); line-height: 1.65; }
+
+    /* ─── Sub-pipeline box ─── */
+    .sub-box {
+      width: 100%;
+      border: 1.5px solid #bfdbfe;
+      border-radius: 14px;
+      padding: 14px;
+      background: #f0f7ff;
+    }
+    .sub-title {
+      text-align: center; font-size: 0.68rem; font-weight: 700;
+      color: #2563eb; letter-spacing: .05em; text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .sub-box .agent { border-color: #bfdbfe; background: #fff; }
+
+    .retry-note {
+      text-align: center; margin-top: 10px;
+      font-size: 0.72rem; color: #f97316; font-weight: 600;
+      background: #fff7ed; border: 1px solid #fed7aa;
+      border-radius: 999px; padding: 4px 12px; display: inline-block;
+    }
+    .retry-center { display: flex; justify-content: center; margin-top: 8px; }
+
+    /* ─── Sidebar ─── */
+    .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+    .side-card {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .side-card h3 {
+      font-size: 0.78rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .05em;
+      margin-bottom: 10px;
+    }
+
+    /* legend */
+    .leg { display: flex; flex-direction: column; gap: 6px; }
+    .leg-row { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: var(--subtle); }
+
+    /* provider list */
+    .prov-row {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.77rem; padding: 4px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .prov-row:last-child { border-bottom: none; }
+    .prov-name { font-weight: 600; color: var(--text); }
+    .prov-model { font-family: monospace; font-size: 0.72rem; color: var(--muted); }
+
+    /* config rows */
+    .cfg-row {
+      display: flex; justify-content: space-between;
+      font-size: 0.77rem; padding: 4px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .cfg-row:last-child { border-bottom: none; }
+    .cfg-k { color: var(--muted); }
+    .cfg-v { font-weight: 700; font-family: monospace; color: var(--text); }
+
+    /* io list */
+    .io-block { margin-bottom: 8px; }
+    .io-block:last-child { margin-bottom: 0; }
+    .io-dir {
+      font-size: 0.67rem; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 3px;
+    }
+    .io-items { display: flex; flex-wrap: wrap; gap: 4px; }
+    .io-item {
+      font-size: 0.7rem; font-family: monospace;
+      padding: 1px 6px; border-radius: 4px;
+    }
+    .io-in  { background: #dbeafe; color: #1d4ed8; }
+    .io-out { background: #dcfce7; color: #15803d; }
+
+    /* highlight cards */
+    .agent.invest { border-color: var(--new-b); background: #faf5ff; }
+    .agent.final  { border-color: #a7f3d0; background: #f0fdf4; }
+  </style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Text-to-SQL Chatbot — Pipeline Detail</h1>
+  <p>Alur lengkap 10 agent dari query user hingga insight Bahasa Indonesia · Telkomsel Financial Analytics</p>
+</div>
+
+<!-- Stats -->
+<div class="stats">
+  <div class="stat"><div class="stat-n">10</div><div class="stat-l">Total Agent</div></div>
+  <div class="stat"><div class="stat-n">7</div><div class="stat-l">LLM Agent</div></div>
+  <div class="stat"><div class="stat-n">2</div><div class="stat-l">Traditional</div></div>
+  <div class="stat"><div class="stat-n">1</div><div class="stat-l">Hybrid</div></div>
+  <div class="stat"><div class="stat-n">10</div><div class="stat-l">Tabel DB</div></div>
+  <div class="stat"><div class="stat-n">7</div><div class="stat-l">Kategori Intent</div></div>
+</div>
+
+<div class="layout">
+
+  <!-- ══════════════════════════ FLOW COLUMN ══════════════════════════ -->
+  <div class="flow">
+
+    <!-- ── Agent 1 ── -->
+    <div class="agent">
+      <div class="agent-head">
+        <div class="agent-num">1</div>
+        <span class="agent-name">QueryRewriter</span>
+        <span class="badge b-llm">LLM</span>
+        <span class="badge b-model">gpt-4o-mini</span>
+        <span class="agent-role">Selalu pertama · sendirian</span>
+      </div>
+      <div class="agent-body">
+        <p class="desc">Membersihkan dan menormalisasi query user sebelum masuk pipeline utama. Ringan dan cepat menggunakan model yang lebih kecil.</p>
+        <div class="sec-label">Yang dilakukan</div>
+        <div class="pills">
+          <span class="pill">Koreksi typo</span>
+          <span class="pill">Inject tahun 2026 jika tidak disebutkan</span>
+          <span class="pill">Normalisasi bahasa campuran ID–EN</span>
+          <span class="pill">Perjelas referensi waktu ambigu</span>
+        </div>
+        <div class="kv-grid">
+          <span class="kv-k">Input</span>  <span class="kv-v"><code>state.query</code> (raw dari user)</span>
+          <span class="kv-k">Output</span> <span class="kv-v"><code>state.query</code> (cleaned), <code>state.original_query</code></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="conn"><div class="conn-line"></div><div class="conn-arrow"></div></div>
+
+    <!-- ── Agent 2 + 3 parallel ── -->
+    <div class="par-wrap">
+      <p class="par-label">⚡ Paralel — jalan bersamaan via ThreadPoolExecutor</p>
+      <div class="par-row">
+
+        <div class="agent">
+          <div class="agent-head">
+            <div class="agent-num">2</div>
+            <span class="agent-name">IntentClassifier</span>
+            <span class="badge b-llm">LLM</span>
+            <span class="badge b-model">gpt-4o</span>
+          </div>
+          <div class="agent-body">
+            <p class="desc">Menentukan jenis query dan apakah perlu klarifikasi. Jika confidence &lt; 0.7 atau kategori = ambiguous → pipeline berhenti dan meminta penjelasan dari user.</p>
+
+            <div class="sec-label">7 Kategori Intent</div>
+            <table class="mini-table">
+              <thead><tr><th>Kategori</th><th>Deskripsi &amp; Trigger</th></tr></thead>
+              <tbody>
+                <tr><td><code>simple_select</code></td><td>SELECT dasar tanpa filter/agregasi</td></tr>
+                <tr><td><code>filtered_query</code></td><td>SELECT dengan WHERE clause</td></tr>
+                <tr><td><code>aggregation</code></td><td>COUNT, SUM, AVG, MIN, MAX + GROUP BY</td></tr>
+                <tr><td><code>multi_table_join</code></td><td>Query lintas beberapa tabel dengan JOIN</td></tr>
+                <tr><td><code>complex_analytics</code></td><td>Subquery, CTE, window function, tren</td></tr>
+                <tr><td><code>root_cause_analysis</code></td><td>"kenapa", "apa penyebab", "investigasi", "mengapa naik/turun" → loop investigasi adaptif</td></tr>
+                <tr><td><code>ambiguous</code></td><td>Query tidak jelas → pipeline berhenti, minta klarifikasi</td></tr>
+              </tbody>
+            </table>
+
+            <div class="kv-grid">
+              <span class="kv-k">Threshold</span> <span class="kv-v">confidence ≥ 0.7 untuk lanjut</span>
+              <span class="kv-k">Output</span>     <span class="kv-v"><code>state.intent</code> {category, confidence, reason, sql_strategy}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="agent">
+          <div class="agent-head">
+            <div class="agent-num">3</div>
+            <span class="agent-name">QueryPlanner</span>
+            <span class="badge b-llm">LLM</span>
+            <span class="badge b-model">gpt-4o</span>
+          </div>
+          <div class="agent-body">
+            <p class="desc">Memutuskan apakah query perlu dipecah menjadi beberapa langkah SQL atau cukup satu. Bekerja paralel dengan IntentClassifier karena keduanya hanya butuh <code>state.query</code>.</p>
+
+            <div class="sec-label">Kapan multi-step?</div>
+            <div class="pills" style="margin-bottom:8px;">
+              <span class="pill">Komparasi antar periode (April vs Maret)</span>
+              <span class="pill">Pertanyaan "kenapa" butuh konteks dulu</span>
+              <span class="pill">Rank lalu drill-down</span>
+              <span class="pill">Dua metrik independen lebih baik dipisah</span>
+            </div>
+
+            <div class="sec-label">Aturan ketat</div>
+            <div class="pills" style="margin-bottom:8px;">
+              <span class="pill-red pill">Maks 3 langkah</span>
+              <span class="pill-red pill">Komparasi = tepat 2 langkah</span>
+              <span class="pill-red pill">Langkah analitik/perbandingan dilarang</span>
+            </div>
+
+            <div class="kv-grid">
+              <span class="kv-k">Riwayat</span>    <span class="kv-v">3 turn terakhir percakapan</span>
+              <span class="kv-k">Fallback</span>   <span class="kv-v">Jika parse gagal → single-step otomatis</span>
+              <span class="kv-k">Validasi</span>   <span class="kv-v">Deteksi sub_query berisi SQL atau kata analitik</span>
+              <span class="kv-k">Output</span>     <span class="kv-v"><code>state.is_multi_step</code>, <code>state.execution_plan[]</code></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="conn">
+      <div class="conn-line"></div>
+      <div class="conn-tag">hasil digabung</div>
+      <div class="conn-line"></div>
+      <div class="conn-arrow"></div>
+    </div>
+
+    <!-- ── Branch ── -->
+    <div class="branch-wrap">
+      <p class="branch-label">🔀 Percabangan — hanya satu jalur yang aktif</p>
+      <div class="branch-row">
+        <div class="branch-card">
+          <div class="branch-title"><span class="dot dot-p"></span>Jalur A — Investigasi</div>
+          <ul>
+            <li>intent = <code>root_cause_analysis</code></li>
+            <li>Trigger: "kenapa", "apa penyebab", "investigasi", "mengapa naik"</li>
+            <li>→ masuk <strong>Agent 4</strong> (loop adaptif)</li>
+          </ul>
+        </div>
+        <div class="branch-card">
+          <div class="branch-title"><span class="dot dot-b"></span>Jalur B — Multi-step</div>
+          <ul>
+            <li><code>is_multi_step = True</code></li>
+            <li>QueryPlanner sudah tentukan 2–3 langkah</li>
+            <li>SQL sub-pipeline dijalankan <strong>N kali</strong></li>
+          </ul>
+        </div>
+        <div class="branch-card">
+          <div class="branch-title"><span class="dot dot-s"></span>Jalur C — Single step</div>
+          <ul>
+            <li>Query sederhana / agregasi / filtered</li>
+            <li>SQL sub-pipeline dijalankan <strong>1 kali</strong></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="conn"><div class="conn-line"></div><div class="conn-arrow"></div></div>
+
+    <!-- ── Agent 4 ── -->
+    <div class="agent invest">
+      <div class="agent-head">
+        <div class="agent-num">4</div>
+        <span class="agent-name">AnalyticalInvestigator</span>
+        <span class="badge b-llm">LLM</span>
+        <span class="badge b-new">Baru</span>
+        <span class="badge b-model">gpt-4o</span>
+        <span class="agent-role">Jalur A saja</span>
+      </div>
+      <div class="agent-body">
+        <p class="desc">Agent yang berjalan dalam <strong>loop adaptif</strong>. Setiap iterasi melihat semua temuan sebelumnya dan memilih dimensi investigasi berikutnya yang paling informatif. Berhenti sendiri saat root cause sudah bisa disimpulkan.</p>
+
+        <div class="kv-grid">
+          <span class="kv-k">Maks iterasi</span>    <span class="kv-v">6 iterasi</span>
+          <span class="kv-k">Preview per step</span> <span class="kv-v">5 baris data dari iterasi sebelumnya</span>
+          <span class="kv-k">Keputusan</span>        <span class="kv-v"><code>{"action": "query", "sub_query": "..."}  </code> atau <code>{"action": "done"}</code></span>
+          <span class="kv-k">Fallback</span>         <span class="kv-v">Jika JSON gagal parse → <code>done</code> otomatis</span>
+        </div>
+
+        <div class="sec-label">5 Dimensi investigasi (dipilih bebas)</div>
+        <div class="pills">
+          <span class="pill-purple pill">Waktu / Tanggal</span>
+          <span class="pill-purple pill">Produk</span>
+          <span class="pill-purple pill">Channel Pembayaran</span>
+          <span class="pill-purple pill">Partner (GoPay, OVO, DANA, dll)</span>
+          <span class="pill-purple pill">Anomali Transaksi</span>
+        </div>
+
+        <div class="sec-label" style="margin-top:8px;">Sinyal Organik vs Promo</div>
+        <div class="kv-grid">
+          <span class="kv-k">Organik</span> <span class="kv-v">Semua partner naik proporsional</span>
+          <span class="kv-k">Promo</span>   <span class="kv-v">Hanya 2–3 partner spike, yang lain flat → pasti ada promo spesifik partner</span>
+        </div>
+
+        <div class="io-block" style="margin-top:8px;">
+          <div class="io-dir">Input dari state</div>
+          <div class="io-items">
+            <span class="io-item io-in">query</span>
+            <span class="io-item io-in">investigation_steps[]</span>
+          </div>
+        </div>
+        <div class="io-block">
+          <div class="io-dir">Output ke state</div>
+          <div class="io-items">
+            <span class="io-item io-out">investigation_decision</span>
+            <span class="io-item io-out">investigation_steps[] (via pipeline loop)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="conn"><div class="conn-line"></div><div class="conn-arrow"></div></div>
+
+    <!-- ── SQL Sub-pipeline ── -->
+    <div class="sub-box">
+      <p class="sub-title">SQL Sub-pipeline — dijalankan per langkah (Jalur B/C) atau per iterasi (Jalur A)</p>
+
+      <div style="display:flex;flex-direction:column;align-items:center;gap:0;">
+
+        <!-- Agent 5 -->
+        <div class="agent" style="width:100%">
+          <div class="agent-head">
+            <div class="agent-num">5</div>
+            <span class="agent-name">SchemaRetriever</span>
+            <span class="badge b-trad">Traditional</span>
+            <span class="agent-role">Tanpa LLM</span>
+          </div>
+          <div class="agent-body">
+            <p class="desc">Menemukan tabel-tabel relevan menggunakan tiga retriever yang berjalan paralel, hasilnya digabung dengan Reciprocal Rank Fusion.</p>
+
+            <div class="sec-label">3 Retriever</div>
+            <table class="mini-table">
+              <thead><tr><th>Retriever</th><th>Cara kerja</th><th>Index</th></tr></thead>
+              <tbody>
+                <tr><td><strong>ChromaDB</strong></td><td>Semantic / vector search menggunakan embedding OpenAI</td><td><code>chroma_db/</code></td></tr>
+                <tr><td><strong>BM25</strong></td><td>Keyword match berbasis TF-IDF</td><td><code>data/bm25_index.pkl</code></td></tr>
+                <tr><td><strong>Graph</strong></td><td>Traversal relasi FK antar tabel via NetworkX</td><td><code>data/schema_graph.json</code></td></tr>
+              </tbody>
+            </table>
+
+            <div class="kv-grid">
+              <span class="kv-k">Fusi</span>       <span class="kv-v">Reciprocal Rank Fusion (RRF k=60)</span>
+              <span class="kv-k">Top-K</span>       <span class="kv-v">5 tabel kandidat (konfigurasi: <code>TOP_K_RETRIEVAL</code>)</span>
+              <span class="kv-k">Total index</span> <span class="kv-v">10 tabel dari financial_db</span>
+              <span class="kv-k">Graph</span>        <span class="kv-v">116 nodes relasi FK</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="conn"><div class="conn-line"></div><div class="conn-arrow"></div></div>
+
+        <!-- Agent 6 -->
+        <div class="agent" style="width:100%">
+          <div class="agent-head">
+            <div class="agent-num">6</div>
+            <span class="agent-name">RetrievalEvaluator</span>
+            <span class="badge b-llm">LLM</span>
+            <span class="badge b-model">gpt-4o</span>
+          </div>
+          <div class="agent-body">
+            <p class="desc">Menyaring 5 kandidat tabel dari SchemaRetriever menjadi daftar yang bersih untuk SQLGenerator. Menghilangkan noise agar SQL yang dihasilkan tidak kelebihan tabel.</p>
+
+            <div class="sec-label">3 Kategori Output</div>
+            <div class="pills" style="margin-bottom:8px;">
+              <span class="pill-green pill">ESSENTIAL — wajib di-query / di-JOIN</span>
+              <span class="pill-yellow pill">OPTIONAL — boleh dipakai jika relevan</span>
+              <span class="pill-red pill">EXCLUDED — tidak relevan, dibuang</span>
+            </div>
+
+            <div class="io-block">
+              <div class="io-dir">Input</div>
+              <div class="io-items">
+                <span class="io-item io-in">state.retrieved_tables[]</span>
+                <span class="io-item io-in">state.query</span>
+                <span class="io-item io-in">state.intent</span>
+              </div>
+            </div>
+            <div class="io-block" style="margin-top:4px;">
+              <div class="io-dir">Output</div>
+              <div class="io-items">
+                <span class="io-item io-out">state.evaluated_tables[]</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="conn"><div class="conn-line"></div><div class="conn-arrow"></div></div>
+
+        <!-- Agent 7 -->
+        <div class="agent" style="width:100%">
+          <div class="agent-head">
+            <div class="agent-num">7</div>
+            <span class="agent-name">SQLGenerator</span>
+            <span class="badge b-llm">LLM</span>
+            <span class="badge b-model">gpt-4o</span>
+          </div>
+          <div class="agent-body">
+            <p class="desc">Menghasilkan SQL PostgreSQL dari natural language. Memiliki banyak konteks untuk menghasilkan SQL yang tepat: schema, contoh, riwayat, dan error sebelumnya.</p>
+
+            <div class="sec-label">5 Sumber Konteks dalam Prompt</div>
+            <table class="mini-table">
+              <thead><tr><th>Konteks</th><th>Detail</th></tr></thead>
+              <tbody>
+                <tr><td>Schema tabel</td><td>Kolom, tipe data, relasi FK dari tabel ESSENTIAL + OPTIONAL</td></tr>
+                <tr><td>Few-shot examples</td><td>7 dari 10 contoh query→SQL dari <code>config/few_shot_examples.yaml</code></td></tr>
+                <tr><td>Intent + strategy</td><td>Hint dari IntentClassifier (misal: "Use CTEs for complex analytics")</td></tr>
+                <tr><td>Riwayat percakapan</td><td>Konteks dari pertanyaan sebelumnya dalam sesi</td></tr>
+                <tr><td>Error context</td><td>SQL gagal + pesan error dari QueryExecutor (saat retry)</td></tr>
+              </tbody>
+            </table>
+
+            <div class="sec-label">Aturan Wajib dalam Prompt</div>
+            <div class="pills">
+              <span class="pill">Selalu LIMIT</span>
+              <span class="pill">ROUND() harus cast ::numeric</span>
+              <span class="pill">Hanya tabel dari whitelist</span>
+              <span class="pill">Data tahun 2026</span>
+              <span class="pill">Tidak ada SELECT *</span>
+              <span class="pill">Alias jika multi-JOIN</span>
+            </div>
+
+            <div class="kv-grid" style="margin-top:8px;">
+              <span class="kv-k">Multi-step</span> <span class="kv-v">Hasil 5 baris dari langkah sebelumnya ikut di-inject sebagai konteks</span>
+              <span class="kv-k">Output</span>      <span class="kv-v"><code>state.sql</code></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="conn"><div class="conn-line"></div><div class="conn-arrow"></div></div>
+
+        <!-- Agent 8 -->
+        <div class="agent" style="width:100%">
+          <div class="agent-head">
+            <div class="agent-num">8</div>
+            <span class="agent-name">SQLValidator</span>
+            <span class="badge b-hybrid">Hybrid</span>
+            <span class="badge b-model">gpt-4o-mini (opsional)</span>
+          </div>
+          <div class="agent-body">
+            <p class="desc">Memvalidasi SQL yang dihasilkan sebelum dieksekusi ke database. Tiga lapis deterministik + satu lapis LLM opsional.</p>
+
+            <ul class="layers">
+              <li class="layer">
+                <div class="layer-num">1</div>
+                <div><strong>Syntax</strong> — parsing via <code>sqlparse</code>. Mendeteksi SQL tidak valid secara sintaks.</div>
+              </li>
+              <li class="layer">
+                <div class="layer-num">2</div>
+                <div>
+                  <strong>Security</strong> — blocklist 12 keyword berbahaya:
+                  <div class="pills" style="margin-top:4px;">
+                    <span class="pill-red pill">DROP</span><span class="pill-red pill">DELETE</span>
+                    <span class="pill-red pill">TRUNCATE</span><span class="pill-red pill">ALTER</span>
+                    <span class="pill-red pill">CREATE</span><span class="pill-red pill">INSERT</span>
+                    <span class="pill-red pill">UPDATE</span><span class="pill-red pill">GRANT</span>
+                    <span class="pill-red pill">REVOKE</span><span class="pill-red pill">EXECUTE</span>
+                    <span class="pill-red pill">PROCEDURE</span><span class="pill-red pill">FUNCTION</span>
+                  </div>
+                </div>
+              </li>
+              <li class="layer">
+                <div class="layer-num">3</div>
+                <div>
+                  <strong>Whitelist tabel</strong> — hanya 10 tabel yang diizinkan:
+                  <div class="pills" style="margin-top:4px;">
+                    <span class="pill-blue pill">daily_master</span>
+                    <span class="pill-blue pill">financial_internal</span>
+                    <span class="pill-blue pill">product_summary</span>
+                    <span class="pill-blue pill">channel_payment</span>
+                    <span class="pill-blue pill">product_price_list</span>
+                    <span class="pill-blue pill">anomalies</span>
+                    <span class="pill-blue pill">daily_unique_users</span>
+                    <span class="pill-blue pill">daily_user_partner</span>
+                    <span class="pill-blue pill">hourly_pattern_daily</span>
+                    <span class="pill-blue pill">daily_product_channel</span>
+                  </div>
+                </div>
+              </li>
+              <li class="layer">
+                <div class="layer-num opt">4</div>
+                <div><strong>LLM Logic check</strong> (opsional, <code>ENABLE_AI_VALIDATION=true</code>) — verifikasi apakah SQL masuk akal secara bisnis. Menggunakan model lebih kecil (gpt-4o-mini).</div>
+              </li>
+            </ul>
+
+            <div class="kv-grid">
+              <span class="kv-k">Output</span> <span class="kv-v"><code>state.validated_sql</code></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="conn"><div class="conn-line"></div><div class="conn-arrow"></div></div>
+
+        <!-- Agent 9 -->
+        <div class="agent" style="width:100%">
+          <div class="agent-head">
+            <div class="agent-num">9</div>
+            <span class="agent-name">QueryExecutor</span>
+            <span class="badge b-trad">Traditional</span>
+            <span class="agent-role">Tanpa LLM</span>
+          </div>
+          <div class="agent-body">
+            <p class="desc">Menjalankan validated SQL ke PostgreSQL menggunakan SQLAlchemy connection pool. Jika gagal, melempar <code>QueryExecutionError</code> yang ditangkap pipeline untuk retry ke SQLGenerator.</p>
+
+            <div class="kv-grid">
+              <span class="kv-k">Timeout</span>      <span class="kv-v">30 detik per query</span>
+              <span class="kv-k">Maks baris</span>   <span class="kv-v">10.000 baris</span>
+              <span class="kv-k">Pool size</span>    <span class="kv-v">5 koneksi aktif</span>
+              <span class="kv-k">Max overflow</span> <span class="kv-v">10 koneksi tambahan</span>
+              <span class="kv-k">Recycle</span>      <span class="kv-v">1800 detik (30 menit)</span>
+              <span class="kv-k">Database</span>     <span class="kv-v">PostgreSQL 14+ · financial_db</span>
+              <span class="kv-k">Output</span>       <span class="kv-v"><code>state.query_result[]</code>, <code>state.row_count</code></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="retry-center">
+          <span class="retry-note">🔁 Jika QueryExecutor gagal → pesan error dikembalikan ke SQLGenerator · maks 2× retry</span>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="conn">
+      <div class="conn-line"></div>
+      <div class="conn-tag">semua hasil langkah terkumpul</div>
+      <div class="conn-line"></div>
+      <div class="conn-arrow"></div>
+    </div>
+
+    <!-- ── Agent 10 ── -->
+    <div class="agent final">
+      <div class="agent-head">
+        <div class="agent-num">10</div>
+        <span class="agent-name">InsightGenerator</span>
+        <span class="badge b-llm">LLM</span>
+        <span class="badge b-model">gpt-4o</span>
+        <span class="agent-role">Selalu terakhir · sendirian</span>
+      </div>
+      <div class="agent-body">
+        <p class="desc">Menghasilkan narasi akhir dalam Bahasa Indonesia dari semua data yang berhasil dikumpulkan. Memilih satu dari tiga template prompt berdasarkan jalur yang diambil.</p>
+
+        <div class="sec-label">3 Template Prompt</div>
+        <table class="mini-table">
+          <thead><tr><th>Template</th><th>Dipakai untuk</th><th>Output</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Single-step</strong></td>
+              <td>Jalur C — query sederhana</td>
+              <td>2–4 kalimat ringkas langsung jawab pertanyaan</td>
+            </tr>
+            <tr>
+              <td><strong>Multi-step</strong></td>
+              <td>Jalur B — komparasi, rank+drill</td>
+              <td>5–6 kalimat + hitung selisih, rasio, % kenaikan dari data mentah</td>
+            </tr>
+            <tr>
+              <td><strong>Investigation</strong></td>
+              <td>Jalur A — root cause analysis</td>
+              <td>6–8 kalimat + identifikasi root cause + bedakan organik vs promo</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="sec-label">Aturan Format Angka</div>
+        <table class="mini-table">
+          <thead><tr><th>Tipe</th><th>Kolom</th><th>Format</th></tr></thead>
+          <tbody>
+            <tr><td>Transaksi (count)</td><td>total_trx, success_trx, unique_users</td><td>"52,6 juta transaksi" — TIDAK pakai Rp</td></tr>
+            <tr><td>Revenue (uang)</td><td>total_revenue, net_revenue, platform_fee</td><td>"Rp 52,9 miliar"</td></tr>
+            <tr><td>Persentase</td><td>success_rate_pct, avg_success_rate</td><td>"92,5%"</td></tr>
+          </tbody>
+        </table>
+
+        <div class="kv-grid">
+          <span class="kv-k">Riwayat</span>  <span class="kv-v">2 turn terakhir percakapan untuk konteks</span>
+          <span class="kv-k">Fallback</span> <span class="kv-v">Jika LLM gagal → teks ringkas otomatis tanpa LLM</span>
+          <span class="kv-k">Output</span>   <span class="kv-v"><code>state.insights</code> (string narasi final)</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end .flow -->
+
+  <!-- ══════════════════════════ SIDEBAR ══════════════════════════ -->
+  <div class="sidebar">
+
+    <!-- Legend -->
+    <div class="side-card">
+      <h3>Legend Tipe Agent</h3>
+      <div class="leg">
+        <div class="leg-row"><span class="badge b-llm">LLM</span> Memanggil API model bahasa</div>
+        <div class="leg-row"><span class="badge b-trad">Traditional</span> Deterministik, tanpa LLM</div>
+        <div class="leg-row"><span class="badge b-hybrid">Hybrid</span> Rules + LLM opsional</div>
+        <div class="leg-row"><span class="badge b-new">Baru</span> Ditambahkan terbaru</div>
+      </div>
+    </div>
+
+    <!-- LLM Providers -->
+    <div class="side-card">
+      <h3>LLM Providers</h3>
+      <div class="prov-row">
+        <span class="prov-name">OpenAI</span>
+        <span class="prov-model">gpt-4o (default)</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-name">Anthropic</span>
+        <span class="prov-model">claude-sonnet-4</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-name">Groq</span>
+        <span class="prov-model">llama3-8b-8192</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-name">Gemini</span>
+        <span class="prov-model">gemini-1.5-flash</span>
+      </div>
+      <p style="font-size:0.72rem;color:var(--muted);margin-top:8px;">Provider bisa dikonfigurasi per-agent via env var. Contoh: <code>INTENT_CLASSIFIER_LLM=groq</code></p>
+    </div>
+
+    <!-- System Config -->
+    <div class="side-card">
+      <h3>Konfigurasi Sistem</h3>
+      <div class="cfg-row"><span class="cfg-k">Cache TTL</span><span class="cfg-v">600 s</span></div>
+      <div class="cfg-row"><span class="cfg-k">Rate limit</span><span class="cfg-v">30 req/min</span></div>
+      <div class="cfg-row"><span class="cfg-k">SQL retry</span><span class="cfg-v">maks 2×</span></div>
+      <div class="cfg-row"><span class="cfg-k">Investigasi</span><span class="cfg-v">maks 6 iter</span></div>
+      <div class="cfg-row"><span class="cfg-k">Query timeout</span><span class="cfg-v">30 s</span></div>
+      <div class="cfg-row"><span class="cfg-k">Maks baris</span><span class="cfg-v">10.000</span></div>
+      <div class="cfg-row"><span class="cfg-k">DB pool size</span><span class="cfg-v">5 + 10</span></div>
+      <div class="cfg-row"><span class="cfg-k">Pool recycle</span><span class="cfg-v">1800 s</span></div>
+      <div class="cfg-row"><span class="cfg-k">Top-K retrieval</span><span class="cfg-v">5 tabel</span></div>
+      <div class="cfg-row"><span class="cfg-k">RRF k</span><span class="cfg-v">60</span></div>
+      <div class="cfg-row"><span class="cfg-k">Few-shot</span><span class="cfg-v">10 (7 dipakai)</span></div>
+    </div>
+
+    <!-- 10 Tabel DB -->
+    <div class="side-card">
+      <h3>10 Tabel financial_db</h3>
+      <div class="cfg-row"><span class="cfg-k">daily_master</span><span style="font-size:0.7rem;color:var(--muted)">agregat harian</span></div>
+      <div class="cfg-row"><span class="cfg-k">financial_internal</span><span style="font-size:0.7rem;color:var(--muted)">revenue internal</span></div>
+      <div class="cfg-row"><span class="cfg-k">product_summary</span><span style="font-size:0.7rem;color:var(--muted)">per produk</span></div>
+      <div class="cfg-row"><span class="cfg-k">channel_payment</span><span style="font-size:0.7rem;color:var(--muted)">per channel</span></div>
+      <div class="cfg-row"><span class="cfg-k">product_price_list</span><span style="font-size:0.7rem;color:var(--muted)">harga &amp; fee</span></div>
+      <div class="cfg-row"><span class="cfg-k">anomalies</span><span style="font-size:0.7rem;color:var(--muted)">anomali terdeteksi</span></div>
+      <div class="cfg-row"><span class="cfg-k">daily_unique_users</span><span style="font-size:0.7rem;color:var(--muted)">DAU harian</span></div>
+      <div class="cfg-row"><span class="cfg-k">daily_user_partner</span><span style="font-size:0.7rem;color:var(--muted)">user per partner</span></div>
+      <div class="cfg-row"><span class="cfg-k">hourly_pattern_daily</span><span style="font-size:0.7rem;color:var(--muted)">pola per jam</span></div>
+      <div class="cfg-row"><span class="cfg-k">daily_product_channel</span><span style="font-size:0.7rem;color:var(--muted)">produk × channel</span></div>
+    </div>
+
+    <!-- State fields -->
+    <div class="side-card">
+      <h3>State (AgentState)</h3>
+      <p style="font-size:0.72rem;color:var(--muted);margin-bottom:8px;">Satu objek yang sama diteruskan ke semua agent. Tidak ada state baru di tengah pipeline.</p>
+      <div class="io-block">
+        <div class="io-dir">Field utama</div>
+        <div class="io-items" style="gap:4px;margin-top:4px;">
+          <span class="io-item io-in">query</span>
+          <span class="io-item io-in">original_query</span>
+          <span class="io-item io-in">database</span>
+          <span class="io-item io-in">intent</span>
+          <span class="io-item io-in">conversation_history</span>
+          <span class="io-item io-out">retrieved_tables</span>
+          <span class="io-item io-out">evaluated_tables</span>
+          <span class="io-item io-out">sql</span>
+          <span class="io-item io-out">validated_sql</span>
+          <span class="io-item io-out">query_result</span>
+          <span class="io-item io-out">row_count</span>
+          <span class="io-item io-out">step_results</span>
+          <span class="io-item io-out">investigation_steps</span>
+          <span class="io-item io-out">insights</span>
+          <span class="io-item io-out">errors[]</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end .sidebar -->
+
+</div><!-- end .layout -->
+
+</body>
+</html>

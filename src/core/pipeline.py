@@ -21,6 +21,7 @@ import copy
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from src.agents.analytical_investigator import AnalyticalInvestigator
 from src.agents.insight_generator import InsightGenerator
 from src.agents.intent_classifier import IntentClassifier
 from src.agents.query_executor import QueryExecutor
@@ -33,11 +34,14 @@ from src.agents.sql_validator import SQLValidator
 from src.core.base_agent import BaseAgent
 from src.core.config import Config
 from src.core.query_cache import QueryCache, build_snapshot, restore_snapshot
-from src.models.agent_state import AgentState, ExecutionStep, StepResult
+from src.models.agent_state import AgentState, ExecutionStep, InvestigationStep, StepResult
 from src.utils.exceptions import QueryExecutionError
 
 # Maximum retries for SQL generation when PostgreSQL returns an execution error
 _SQL_RETRY_LIMIT = 2
+
+# Maximum iterations for the adaptive investigation loop
+_INVESTIGATION_MAX_ITER = 6
 
 
 class TextToSQLPipeline:
@@ -75,15 +79,16 @@ class TextToSQLPipeline:
         query_executor: QueryExecutor,
         insight_generator: InsightGenerator,
     ) -> None:
-        self.query_rewriter      = query_rewriter
-        self.intent_classifier   = intent_classifier
-        self.query_planner       = query_planner
-        self.schema_retriever    = schema_retriever
-        self.retrieval_evaluator = retrieval_evaluator
-        self.sql_generator       = sql_generator
-        self.sql_validator       = sql_validator
-        self.query_executor      = query_executor
-        self.insight_generator   = insight_generator
+        self.query_rewriter         = query_rewriter
+        self.intent_classifier      = intent_classifier
+        self.query_planner          = query_planner
+        self.schema_retriever       = schema_retriever
+        self.retrieval_evaluator    = retrieval_evaluator
+        self.sql_generator          = sql_generator
+        self.sql_validator          = sql_validator
+        self.query_executor         = query_executor
+        self.insight_generator      = insight_generator
+        self.analytical_investigator = AnalyticalInvestigator()
 
         self._cache = QueryCache(ttl_seconds=Config.CACHE_TTL_SECONDS)
 
@@ -94,6 +99,7 @@ class TextToSQLPipeline:
             self.query_rewriter,
             self.intent_classifier,
             self.query_planner,
+            self.analytical_investigator,
             self.schema_retriever,
             self.retrieval_evaluator,
             self.sql_generator,
@@ -141,7 +147,9 @@ class TextToSQLPipeline:
             return state
 
         # ── 3–7: SQL sub-pipeline + InsightGenerator ─────────────
-        if state.is_multi_step:
+        if state.intent and state.intent.get("category") == "root_cause_analysis":
+            state = self._run_investigation(state)
+        elif state.is_multi_step:
             state = self._run_multi_step(state)
         else:
             state.query = state.execution_plan[0].sub_query
@@ -295,6 +303,60 @@ class TextToSQLPipeline:
             state.step_results.append(step_result)
 
         state.query = original_query
+        return state
+
+    def _run_investigation(self, state: AgentState) -> AgentState:
+        """Adaptive investigation loop — each iteration queries a new dimension."""
+        original_query = state.query
+
+        for iteration in range(1, _INVESTIGATION_MAX_ITER + 1):
+            self.analytical_investigator.log(f"Starting iteration {iteration}")
+            state = self.analytical_investigator.run(state)
+            decision = state.investigation_decision or {}
+            self.analytical_investigator.log(f"Decision at iteration {iteration}: {decision}")
+
+            if decision.get("action") == "done":
+                self.analytical_investigator.log(f"Investigation complete at iteration {iteration}")
+                break
+
+            sub_query = decision.get("sub_query") or ""
+            if not sub_query:
+                self.analytical_investigator.log(f"Empty sub_query at iteration {iteration}, stopping")
+                break
+
+            state.query = sub_query
+            state.sql = None
+            state.validated_sql = None
+            state.query_result = None
+            state.row_count = 0
+            state.retrieved_tables = []
+            state.evaluated_tables = []
+
+            try:
+                state = self._run_sql_pipeline(state)
+                step = InvestigationStep(
+                    iteration=iteration,
+                    sub_query=sub_query,
+                    sql=state.validated_sql or "",
+                    data=state.query_result or [],
+                    row_count=state.row_count,
+                    summary=f"Iteration {iteration}: {sub_query[:80]} → {state.row_count} rows",
+                )
+            except Exception as exc:
+                step = InvestigationStep(
+                    iteration=iteration,
+                    sub_query=sub_query,
+                    sql="",
+                    data=[],
+                    row_count=0,
+                    summary=f"Iteration {iteration} failed: {exc}",
+                )
+                state.add_error(f"Investigation iteration {iteration} error: {exc}")
+
+            state.investigation_steps.append(step)
+
+        state.query = original_query
+        state.is_multi_step = True  # so InsightGenerator knows there are multiple results
         return state
 
     # ─────────────────────────────────────────────

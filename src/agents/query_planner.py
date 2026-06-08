@@ -36,8 +36,16 @@ _SQL_DETECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that signal a sub_query is analytical, not a DB fetch
+_ANALYTICAL_RE = re.compile(
+    r'\b(bandingkan|compare|hitung (kenaikan|selisih|rasio|persentase)|'
+    r'gabungkan|analisis hasil|cek apakah|check if|termasuk (top|ranking)|'
+    r'berdasarkan (hasil|data) (langkah|step))\b',
+    re.IGNORECASE,
+)
+
 # Maximum steps allowed in a single plan
-MAX_STEPS = 4
+MAX_STEPS = 3
 
 # Maximum recent conversation turns to include in the prompt
 MAX_HISTORY_TURNS = 3
@@ -107,6 +115,30 @@ KEEP AS SINGLE STEP when:
 - Simple aggregation over one time period
 - Single metric query (e.g. "berapa total transaksi April?")
 - Filtered lookup with no comparison
+
+COMPARISON QUERIES — STRICT RULE:
+When the user asks to compare two groups (specific dates vs other dates, April vs March,
+GoPay vs OVO, etc.), generate EXACTLY 2 steps:
+  Step 1: fetch raw data for group A
+  Step 2: fetch raw data for group B
+NEVER add a 3rd step to compare, rank, or analyse the two results.
+InsightGenerator receives both step results and will automatically compute differences,
+ratios, percentage increases, and rankings.
+
+WHAT COUNTS AS A VALID STEP — each step must be a standalone DB query that fetches raw data:
+
+  CORRECT examples:
+  - "Total revenue dan transaksi tanggal 29 dan 30 Mei 2026"
+  - "Rata-rata revenue dan transaksi harian bulan Mei 2026 kecuali tanggal 29 dan 30"
+  - "Top 5 payment channel berdasarkan volume transaksi April 2026"
+  - "Detail transaksi harian GoPay bulan Maret 2026"
+
+  WRONG examples — NEVER generate steps like these:
+  - "Bandingkan hasil langkah 1 dengan langkah 2" → analysis, not a DB query
+  - "Cek apakah tanggal 29-30 termasuk 2 hari tertinggi" → derivable from existing data
+  - "Hitung kenaikan / selisih / rasio dari data sebelumnya" → math, not a DB query
+  - "Gabungkan dan analisis hasil langkah-langkah sebelumnya" → InsightGenerator's job
+  - Any step whose answer could be computed from rows already returned by a prior step
 
 RULES:
 - Maximum {MAX_STEPS} steps.
@@ -192,6 +224,11 @@ JSON:"""
                 raise AgentExecutionError(
                     agent_name=self.name,
                     message=f"sub_query contains SQL code in step {step.get('step_number', '?')}: {sub_query[:60]}",
+                )
+            if _ANALYTICAL_RE.search(sub_query):
+                self.log(
+                    f"Step {step.get('step_number', '?')} looks analytical, not a DB fetch: '{sub_query[:80]}'",
+                    level="warning",
                 )
 
     def _single_step_fallback(self, query: str) -> dict:

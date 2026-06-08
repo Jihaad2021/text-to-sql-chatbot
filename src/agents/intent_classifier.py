@@ -41,6 +41,7 @@ INTENT_CATEGORIES = {
     "aggregation": "Requires COUNT, SUM, AVG, MIN, MAX",
     "multi_table_join": "Requires JOIN across multiple tables",
     "complex_analytics": "Advanced analytics with subqueries, trends, grouping",
+    "root_cause_analysis": "Investigative query asking why something happened, root cause of a spike/drop, or multi-dimensional analysis",
     "ambiguous": "Unclear query that needs clarification",
 }
 
@@ -51,6 +52,7 @@ INTENT_SQL_STRATEGY = {
     "aggregation": "Use aggregate functions (COUNT/SUM/AVG) with GROUP BY if needed",
     "multi_table_join": "Use JOIN across relevant tables",
     "complex_analytics": "Use subqueries, CTEs, or window functions if needed",
+    "root_cause_analysis": "Adaptive investigation across multiple dimensions (time, product, channel, partner)",
     "ambiguous": "Cannot generate SQL - needs clarification",
 }
 
@@ -130,6 +132,7 @@ Rules:
 - Queries asking for totals, sums, averages, rankings → "aggregation" (high confidence)
 - Queries asking for trends, per-period breakdowns → "complex_analytics"
 - Queries with time filters (bulan, tanggal, "bulan ini", "hari ini") → "filtered_query" or "aggregation"
+- Queries containing "kenapa", "mengapa", "apa penyebab", "investigasi", "analisis mendalam", "kenapa naik", "kenapa turun", "apa yang menyebabkan" → "root_cause_analysis"
 - Consider both Indonesian and English queries
 - Do NOT mark as "ambiguous" if the query has a clear analytical intent, even with complex wording
 - Use conversation context to resolve follow-up queries (e.g. "sekarang breakdown per channel")

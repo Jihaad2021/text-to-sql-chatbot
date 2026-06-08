@@ -24,6 +24,7 @@ _CACHED_FIELDS = (
     "database",
     "is_multi_step",
     "step_results",
+    "chart_config",
 )
 
 
