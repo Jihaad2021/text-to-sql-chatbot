@@ -287,6 +287,229 @@
     /* highlight cards */
     .agent.invest { border-color: var(--new-b); background: #faf5ff; }
     .agent.final  { border-color: #a7f3d0; background: #f0fdf4; }
+
+    /* ─── Why / Background section ─── */
+    .why-header, .ex-header {
+      max-width: 1060px;
+      margin: 0 auto 18px;
+    }
+    .why-header h2, .ex-header h2 {
+      font-size: 1.12rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .why-header p, .ex-header p {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .prob-grid {
+      max-width: 1060px;
+      margin: 0 auto 44px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    .prob-card {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+
+    .prob-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .prob-num {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: #fee2e2; color: #b91c1c;
+      font-size: 0.72rem; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .prob-card-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.35;
+    }
+
+    .prob-scenario {
+      background: #fef2f2;
+      border-left: 3px solid #fca5a5;
+      border-radius: 0 6px 6px 0;
+      padding: 8px 10px;
+      font-size: 0.75rem;
+      color: #7f1d1d;
+      font-style: italic;
+      margin-bottom: 10px;
+      line-height: 1.55;
+    }
+
+    .prob-divider {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 10px 0;
+      font-size: 0.68rem;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .prob-divider::before, .prob-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .prob-solution {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      padding: 9px 12px;
+    }
+    .prob-sol-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: #16a34a;
+      margin-bottom: 4px;
+    }
+    .prob-sol-text {
+      font-size: 0.77rem;
+      color: #15803d;
+      line-height: 1.55;
+    }
+
+    /* ─── Example prompts ─── */
+    .ex-grid {
+      max-width: 1060px;
+      margin: 0 auto 44px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .ex-card {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .ex-card-head {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .ex-user-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .ex-user-bubble {
+      display: inline-block;
+      background: #2563eb;
+      color: white;
+      border-radius: 12px 12px 12px 3px;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      max-width: 640px;
+    }
+
+    .ex-card-body {
+      padding: 14px 18px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .ex-left, .ex-right { display: flex; flex-direction: column; gap: 8px; }
+
+    .ex-detail-row { display: flex; gap: 8px; font-size: 0.77rem; align-items: baseline; }
+    .ex-dk { color: var(--muted); min-width: 70px; flex-shrink: 0; }
+    .ex-dv { color: var(--text); font-weight: 500; }
+
+    .ex-sql-block {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.71rem;
+      background: #0f172a;
+      color: #93c5fd;
+      border-radius: 8px;
+      padding: 12px 14px;
+      line-height: 1.75;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .sk { color: #7dd3fc; }   /* keyword */
+    .sf { color: #c4b5fd; }   /* function */
+    .ss { color: #86efac; }   /* string */
+    .sn { color: #fde047; }   /* number */
+    .sc { color: #475569; }   /* comment */
+
+    .ex-insight-box {
+      background: #f0fdf4;
+      border: 1.5px solid #bbf7d0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      flex: 1;
+    }
+    .ex-insight-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: #16a34a;
+      margin-bottom: 6px;
+    }
+    .ex-insight-text {
+      font-size: 0.81rem;
+      color: #14532d;
+      line-height: 1.65;
+    }
+
+    .ex-steps-box {
+      background: #faf5ff;
+      border: 1.5px solid #e9d5ff;
+      border-radius: 8px;
+      padding: 11px 14px;
+    }
+    .ex-steps-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: #7c3aed;
+      margin-bottom: 7px;
+    }
+    .ex-step-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      font-size: 0.76rem;
+      color: #581c87;
+      margin-bottom: 5px;
+      line-height: 1.45;
+    }
+    .ex-step-row:last-child { margin-bottom: 0; }
+    .ex-step-n {
+      font-size: 0.62rem; font-weight: 700;
+      background: #7c3aed; color: white;
+      border-radius: 3px; padding: 1px 5px;
+      flex-shrink: 0; margin-top: 1px;
+    }
   </style>
 </head>
 <body>
@@ -294,6 +517,210 @@
 <div class="page-header">
   <h1>Text-to-SQL Chatbot — Pipeline Detail</h1>
   <p>Alur lengkap 10 agent dari query user hingga insight Bahasa Indonesia · Telkomsel Financial Analytics</p>
+</div>
+
+<!-- ══════════════════ LATAR BELAKANG ══════════════════ -->
+<div class="why-header">
+  <h2>Mengapa Sistem Ini Dibangun?</h2>
+  <p>Setiap keputusan arsitektur berawal dari masalah nyata — bukan ikut tren, tapi ada problem yang harus diselesaikan.</p>
+</div>
+
+<div class="prob-grid">
+
+  <div class="prob-card">
+    <div class="prob-top">
+      <div class="prob-num">1</div>
+      <div class="prob-card-title">Tim Bisnis Tergantung Engineer Setiap Kali Butuh Data</div>
+    </div>
+    <div class="prob-scenario">
+      "Bisa tolong buatkan query total transaksi GoPay minggu ini vs minggu lalu per produk?" — tiket masuk jam 11 malam, deadline besok pagi. Tim analis tidak bisa SQL, engineer jadi bottleneck.
+    </div>
+    <div class="prob-divider">solusi yang dipilih</div>
+    <div class="prob-solution">
+      <div class="prob-sol-label">→ Natural Language Interface</div>
+      <div class="prob-sol-text">User cukup ketik pertanyaan dalam Bahasa Indonesia. Pipeline otomatis generate SQL, eksekusi ke database, dan kembalikan narasi jawaban — tanpa engineer, tanpa delay.</div>
+    </div>
+  </div>
+
+  <div class="prob-card">
+    <div class="prob-top">
+      <div class="prob-num">2</div>
+      <div class="prob-card-title">Query Ambigu, Typo, dan Referensi Waktu Tidak Jelas</div>
+    </div>
+    <div class="prob-scenario">
+      "brapa total trnsksi kemren?" — LLM downstream tidak tahu "kemren" = kemarin, tidak tahu tahunnya berapa, dan "transaksi" bisa merujuk ke 3 tabel berbeda. SQL yang dihasilkan pasti salah.
+    </div>
+    <div class="prob-divider">solusi yang dipilih</div>
+    <div class="prob-solution">
+      <div class="prob-sol-label">→ Agent 1: QueryRewriter (sebelum pipeline utama)</div>
+      <div class="prob-sol-text">Dibuat satu agent khusus di awal: koreksi typo, normalisasi waktu relatif ke tanggal eksplisit, inject tahun 2026, dan standardisasi campuran Bahasa Indonesia–Inggris. Semua agent setelahnya menerima query yang bersih.</div>
+    </div>
+  </div>
+
+  <div class="prob-card">
+    <div class="prob-top">
+      <div class="prob-num">3</div>
+      <div class="prob-card-title">LLM Sering Pilih Tabel yang Salah</div>
+    </div>
+    <div class="prob-scenario">
+      Ada 10 tabel dengan ratusan kolom. Query soal "revenue per channel" bisa relevan ke <code>daily_master</code>, <code>channel_payment</code>, <code>financial_internal</code>, atau <code>daily_product_channel</code>. Satu LLM tunggal terlalu sering salah pilih → SQL JOIN yang berantakan.
+    </div>
+    <div class="prob-divider">solusi yang dipilih</div>
+    <div class="prob-solution">
+      <div class="prob-sol-label">→ Agent 5–6: Hybrid Retrieval (3 metode) + Evaluator Filter</div>
+      <div class="prob-sol-text">Tidak ada satu retriever yang sempurna: semantic bagus untuk makna, keyword bagus untuk nama kolom eksak, FK-graph bagus untuk relasi antar tabel. Ketiga dijalankan paralel → digabung Reciprocal Rank Fusion → LLM evaluator filter noise sebelum masuk ke SQL generator.</div>
+    </div>
+  </div>
+
+  <div class="prob-card">
+    <div class="prob-top">
+      <div class="prob-num">4</div>
+      <div class="prob-card-title">"Kenapa?" Tidak Bisa Dijawab dengan Satu SQL</div>
+    </div>
+    <div class="prob-scenario">
+      "Kenapa revenue turun minggu lalu?" — tidak ada satu SQL yang bisa menjawab ini. Harus investigasi berlapis: cek tren per hari, lalu per produk, lalu per partner, lalu cek anomali. Tidak tahu harus mulai dari mana sebelum lihat data pertama.
+    </div>
+    <div class="prob-divider">solusi yang dipilih</div>
+    <div class="prob-solution">
+      <div class="prob-sol-label">→ Agent 4: AnalyticalInvestigator dengan loop adaptif</div>
+      <div class="prob-sol-text">Loop maks 6 iterasi: setiap putaran, LLM melihat semua temuan sebelumnya dan memutuskan dimensi investigasi berikutnya yang paling informatif. Tidak hard-coded — agent sendiri yang pilih urutan. Berhenti otomatis saat root cause sudah bisa disimpulkan.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════ CONTOH PROMPT ══════════════════ -->
+<div class="ex-header">
+  <h2>Contoh Prompt &amp; Respons</h2>
+  <p>Tiga skenario nyata yang menunjukkan jalur berbeda dalam pipeline — dari query sederhana hingga investigasi root cause.</p>
+</div>
+
+<div class="ex-grid">
+
+  <!-- ── Contoh 1: Jalur C — Simple ── -->
+  <div class="ex-card">
+    <div class="ex-card-head">
+      <div class="ex-user-label">User mengetik</div>
+      <div class="ex-user-bubble">Berapa total transaksi sukses GoPay hari ini?</div>
+    </div>
+    <div class="ex-card-body">
+      <div class="ex-left">
+        <div class="ex-detail-row">
+          <span class="ex-dk">Intent</span>
+          <span class="ex-dv"><code>aggregation</code> &nbsp;·&nbsp; confidence 0.95</span>
+        </div>
+        <div class="ex-detail-row">
+          <span class="ex-dk">Jalur</span>
+          <span class="ex-dv"><span class="badge b-trad">Jalur C</span> &nbsp;single-step, 1 SQL</span>
+        </div>
+        <div class="ex-detail-row">
+          <span class="ex-dk">Tabel</span>
+          <span class="ex-dv">daily_master <span class="pill pill-green" style="display:inline;">ESSENTIAL</span></span>
+        </div>
+        <div class="ex-detail-row">
+          <span class="ex-dk">Retry</span>
+          <span class="ex-dv">0× — langsung lolos validator</span>
+        </div>
+        <div class="ex-sql-block"><span class="sk">SELECT</span> <span class="sf">COUNT</span>(*) <span class="sk">AS</span> total_trx
+<span class="sk">FROM</span>   daily_master
+<span class="sk">WHERE</span>  date    = <span class="sf">CURRENT_DATE</span>
+  <span class="sk">AND</span>    partner = <span class="ss">'GoPay'</span>
+  <span class="sk">AND</span>    status  = <span class="ss">'success'</span>
+<span class="sk">LIMIT</span>  <span class="sn">1</span></div>
+      </div>
+      <div class="ex-right">
+        <div class="ex-insight-box">
+          <div class="ex-insight-title">Respons InsightGenerator</div>
+          <div class="ex-insight-text">
+            Total transaksi sukses GoPay hari ini adalah <strong>1.247.832 transaksi</strong>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Contoh 2: Jalur B — Komparasi multi-step ── -->
+  <div class="ex-card">
+    <div class="ex-card-head">
+      <div class="ex-user-label">User mengetik</div>
+      <div class="ex-user-bubble">Bandingkan revenue April vs Maret 2026 — mana yang lebih tinggi dan berapa selisihnya?</div>
+    </div>
+    <div class="ex-card-body">
+      <div class="ex-left">
+        <div class="ex-detail-row">
+          <span class="ex-dk">Intent</span>
+          <span class="ex-dv"><code>complex_analytics</code> &nbsp;·&nbsp; confidence 0.91</span>
+        </div>
+        <div class="ex-detail-row">
+          <span class="ex-dk">Jalur</span>
+          <span class="ex-dv"><span class="badge b-hybrid">Jalur B</span> &nbsp;multi-step, 2 SQL</span>
+        </div>
+        <div class="ex-detail-row">
+          <span class="ex-dk">Alasan</span>
+          <span class="ex-dv">QueryPlanner deteksi komparasi 2 periode → wajib 2 langkah</span>
+        </div>
+        <div class="ex-sql-block"><span class="sc">-- Langkah 1: Revenue April 2026</span>
+<span class="sk">SELECT</span> <span class="sf">SUM</span>(net_revenue) <span class="sk">AS</span> rev_april
+<span class="sk">FROM</span>   financial_internal
+<span class="sk">WHERE</span>  <span class="sf">DATE_TRUNC</span>(<span class="ss">'month'</span>, date) = <span class="ss">'2026-04-01'</span>
+<span class="sk">LIMIT</span>  <span class="sn">1</span>
+
+<span class="sc">-- Langkah 2: Revenue Maret 2026</span>
+<span class="sk">SELECT</span> <span class="sf">SUM</span>(net_revenue) <span class="sk">AS</span> rev_maret
+<span class="sk">FROM</span>   financial_internal
+<span class="sk">WHERE</span>  <span class="sf">DATE_TRUNC</span>(<span class="ss">'month'</span>, date) = <span class="ss">'2026-03-01'</span>
+<span class="sk">LIMIT</span>  <span class="sn">1</span></div>
+      </div>
+      <div class="ex-right">
+        <div class="ex-insight-box">
+          <div class="ex-insight-title">Respons InsightGenerator</div>
+          <div class="ex-insight-text">
+            Revenue bulan April 2026 adalah <strong>Rp 52,9 miliar</strong>, lebih tinggi <strong>8,4%</strong> dibandingkan Maret 2026 yang sebesar <strong>Rp 48,8 miliar</strong>. Selisih keduanya adalah <strong>Rp 4,1 miliar</strong>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Contoh 3: Jalur A — Root cause investigasi ── -->
+  <div class="ex-card" style="border-color: var(--new-b);">
+    <div class="ex-card-head" style="background: #faf5ff; border-bottom-color: #e9d5ff;">
+      <div class="ex-user-label">User mengetik</div>
+      <div class="ex-user-bubble" style="background: #7c3aed;">Kenapa revenue turun drastis minggu lalu? Investigasi detail.</div>
+    </div>
+    <div class="ex-card-body">
+      <div class="ex-left">
+        <div class="ex-detail-row">
+          <span class="ex-dk">Intent</span>
+          <span class="ex-dv"><code>root_cause_analysis</code> &nbsp;·&nbsp; confidence 0.93</span>
+        </div>
+        <div class="ex-detail-row">
+          <span class="ex-dk">Jalur</span>
+          <span class="ex-dv"><span class="badge b-new">Jalur A</span> &nbsp;investigasi adaptif</span>
+        </div>
+        <div class="ex-detail-row">
+          <span class="ex-dk">Iterasi</span>
+          <span class="ex-dv">4 dari maks 6 — berhenti saat root cause ditemukan</span>
+        </div>
+        <div class="ex-steps-box">
+          <div class="ex-steps-title">Loop Investigasi — AnalyticalInvestigator memilih sendiri urutan ini</div>
+          <div class="ex-step-row"><span class="ex-step-n">1</span>Cek tren harian → drop 22% terkonsentrasi di Rabu–Kamis, 4–5 Jun</div>
+          <div class="ex-step-row"><span class="ex-step-n">2</span>Cek per produk → hanya Pulsa turun 40%, produk lain normal</div>
+          <div class="ex-step-row"><span class="ex-step-n">3</span>Cek Pulsa per partner → hanya GoPay drop drastis, Telkomsel &amp; Indosat stabil</div>
+          <div class="ex-step-row"><span class="ex-step-n">4</span>Cek tabel anomalies → flag anomali terdeteksi pada GoPay Pulsa 4–5 Jun → <strong>done</strong></div>
+        </div>
+      </div>
+      <div class="ex-right">
+        <div class="ex-insight-box" style="background:#faf5ff; border-color:#e9d5ff;">
+          <div class="ex-insight-title" style="color:#7c3aed;">Respons InsightGenerator — Template Investigasi</div>
+          <div class="ex-insight-text" style="color:#3b0764;">
+            Penurunan revenue minggu lalu sebesar <strong>22%</strong> terkonsentrasi pada produk <strong>Pulsa via GoPay</strong> di tanggal <strong>4–5 Juni 2026</strong>. Transaksi GoPay Pulsa hampir hilang selama 2 hari sementara seluruh partner lain tetap stabil — pola ini menunjukkan <strong>ini bukan penurunan organik</strong>, melainkan gangguan konektivitas atau maintenance pada API GoPay Pulsa di periode tersebut.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Stats -->
@@ -797,7 +1224,7 @@
       </div>
       <div class="prov-row">
         <span class="prov-name">Anthropic</span>
-        <span class="prov-model">claude-sonnet-4</span>
+        <span class="prov-model">claude-sonnet-4-20250514</span>
       </div>
       <div class="prov-row">
         <span class="prov-name">Groq</span>
