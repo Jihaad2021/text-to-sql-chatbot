@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evaluasi Model — google/gemini-2.5-flash</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f4f6f9; color: #1a1a2e; padding: 24px; }
+  h1 { font-size: 1.6rem; font-weight: 700; }
+  h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; color: #374151; }
+  .header { background: linear-gradient(135deg, #1a1a2e, #16213e); color: white; border-radius: 12px; padding: 24px 28px; margin-bottom: 24px; }
+  .header p { margin-top: 6px; opacity: 0.75; font-size: 0.9rem; }
+  .model-badge { display: inline-block; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25); border-radius: 20px; padding: 4px 14px; font-size: 0.8rem; margin-top: 10px; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .stat { background: white; border-radius: 10px; padding: 18px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .stat .val { font-size: 2rem; font-weight: 700; }
+  .stat .lbl { font-size: 0.78rem; color: #6b7280; margin-top: 4px; }
+  .stat.green .val { color: #16a34a; }
+  .stat.yellow .val { color: #d97706; }
+  .stat.red .val { color: #dc2626; }
+  .stat.blue .val { color: #2563eb; }
+
+  .card { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 18px; overflow: hidden; }
+  .card-header { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #f0f0f0; }
+  .q-num { font-size: 0.75rem; font-weight: 700; color: white; background: #64748b; border-radius: 6px; padding: 3px 9px; white-space: nowrap; }
+  .q-text { font-weight: 600; font-size: 0.97rem; flex: 1; }
+  .badge { font-size: 0.72rem; font-weight: 600; border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
+  .badge-easy   { background: #dcfce7; color: #15803d; }
+  .badge-medium { background: #fef9c3; color: #a16207; }
+  .badge-hard   { background: #fee2e2; color: #b91c1c; }
+  .score-badge  { font-size: 0.85rem; font-weight: 700; border-radius: 8px; padding: 4px 12px; white-space: nowrap; }
+  .score-5 { background: #dcfce7; color: #15803d; }
+  .score-4 { background: #d1fae5; color: #065f46; }
+  .score-3 { background: #fef9c3; color: #92400e; }
+  .score-2 { background: #fee2e2; color: #991b1b; }
+  .score-1, .score-0 { background: #fecaca; color: #7f1d1d; }
+
+  .card-body { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .card-body { grid-template-columns: 1fr; } }
+
+  .section label { display: block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #9ca3af; margin-bottom: 6px; }
+  .section p { font-size: 0.88rem; line-height: 1.55; color: #374151; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 7px; padding: 10px 12px; font-size: 0.78rem; overflow-x: auto; white-space: pre-wrap; color: #1e293b; line-height: 1.5; }
+  .verdict { margin: 0 20px 16px; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; }
+  .verdict.benar    { background: #dcfce7; border-left: 4px solid #16a34a; color: #14532d; }
+  .verdict.sebagian { background: #fef9c3; border-left: 4px solid #d97706; color: #78350f; }
+  .verdict.salah    { background: #fee2e2; border-left: 4px solid #dc2626; color: #7f1d1d; }
+  .verdict.timeout  { background: #f3f4f6; border-left: 4px solid #6b7280; color: #374151; }
+  .verdict strong { font-weight: 700; }
+
+  .meta-row { display: flex; gap: 16px; padding: 10px 20px; border-top: 1px solid #f0f0f0; background: #fafafa; font-size: 0.78rem; color: #6b7280; }
+  .meta-row span { display: flex; align-items: center; gap: 4px; }
+
+  footer { text-align: center; font-size: 0.78rem; color: #9ca3af; margin-top: 32px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Evaluasi Text-to-SQL Chatbot</h1>
+  <p>10 pertanyaan dari mudah → sangat sulit, dibandingkan dengan ground truth dari PostgreSQL</p>
+  <div class="model-badge">google/gemini-2.5-flash via OpenRouter</div>
+  <div class="model-badge" style="margin-left:8px;">19 Juni 2026</div>
+</div>
+
+<!-- SUMMARY -->
+<div class="summary-grid">
+  <div class="stat blue"><div class="val">37<span style="font-size:1.1rem">/50</span></div><div class="lbl">Total Skor</div></div>
+  <div class="stat blue"><div class="val">74%</div><div class="lbl">Akurasi</div></div>
+  <div class="stat green"><div class="val">4</div><div class="lbl">Benar Penuh (5/5)</div></div>
+  <div class="stat yellow"><div class="val">4</div><div class="lbl">Sebagian Benar (3–4)</div></div>
+  <div class="stat red"><div class="val">2</div><div class="lbl">Salah / Timeout</div></div>
+  <div class="stat blue"><div class="val">~8,9s</div><div class="lbl">Avg Latency</div></div>
+</div>
+
+<!-- Q1 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q1</span>
+    <span class="q-text">Berapa total transaksi bulan Mei 2026?</span>
+    <span class="badge badge-easy">Mudah</span>
+    <span class="score-badge score-5">5/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth (PostgreSQL)</label>
+      <p><strong>28.753.492</strong> transaksi</p>
+    </div>
+    <div class="section">
+      <label>Insight Chatbot</label>
+      <p>Total transaksi di bulan Mei 2026 mencapai <strong>28,8 juta transaksi</strong>.</p>
+    </div>
+    <div class="section" style="grid-column: 1/-1">
+      <label>SQL yang Digenerate</label>
+      <pre>SELECT SUM(total_trx) AS total_transaksi
+FROM daily_master
+WHERE date >= '2026-05-01' AND date <= '2026-05-31'</pre>
+    </div>
+  </div>
+  <div class="verdict benar"><strong>✅ Benar Penuh</strong> — SQL tepat, angka 28,8 juta sesuai dengan 28.753.492.</div>
+  <div class="meta-row"><span>⏱ 8.120ms</span><span>📋 1 baris</span></div>
+</div>
+
+<!-- Q2 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q2</span>
+    <span class="q-text">Siapa partner dengan transaksi terbanyak bulan April 2026?</span>
+    <span class="badge badge-easy">Mudah</span>
+    <span class="score-badge score-5">5/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth (PostgreSQL)</label>
+      <p>Partner: <strong>qris</strong> — 12.552.218 transaksi</p>
+    </div>
+    <div class="section">
+      <label>Insight Chatbot</label>
+      <p>Partner dengan transaksi terbanyak adalah <strong>qris</strong> dengan <strong>12,6 juta transaksi</strong>.</p>
+    </div>
+    <div class="section" style="grid-column: 1/-1">
+      <label>SQL yang Digenerate</label>
+      <pre>SELECT partner, SUM(total_trx) AS total_transaksi
+FROM daily_master
+WHERE date >= '2026-04-01' AND date <= '2026-04-30'
+GROUP BY partner
+ORDER BY total_transaksi DESC
+LIMIT 1;</pre>
+    </div>
+  </div>
+  <div class="verdict benar"><strong>✅ Benar Penuh</strong> — Partner dan angka sesuai ground truth.</div>
+  <div class="meta-row"><span>⏱ 9.941ms</span><span>📋 1 baris</span></div>
+</div>
+
+<!-- Q3 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q3</span>
+    <span class="q-text">Berapa total revenue GoPay bulan Maret 2026?</span>
+    <span class="badge badge-easy">Mudah</span>
+    <span class="score-badge score-4">4/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth (financial_internal, gopay%)</label>
+      <p><strong>Rp 71.984.878.400</strong> ≈ Rp 71,98 miliar</p>
+    </div>
+    <div class="section">
+      <label>Insight Chatbot</label>
+      <p>Total revenue dari partner GoPay (termasuk GoPay Basic dan GoPay WEC) di bulan Maret 2026 adalah <strong>Rp 71,98 miliar</strong>.</p>
+    </div>
+    <div class="section" style="grid-column: 1/-1">
+      <label>SQL yang Digenerate</label>
+      <pre>SELECT SUM(total_revenue) AS total_revenue
+FROM daily_master
+WHERE partner IN ('gopay', 'gopay_basic', 'gopay_wec')
+  AND date >= '2026-03-01' AND date <= '2026-03-31';</pre>
+    </div>
+  </div>
+  <div class="verdict sebagian"><strong>⚠️ Sebagian Benar</strong> — Angka Rp 71,98 miliar cocok dengan ground truth. Namun chatbot menggunakan tabel <code>daily_master</code> (kolom total_revenue) bukan <code>financial_internal</code> (kolom total_net_revenue) yang lebih tepat untuk revenue. Hasilnya kebetulan sama.</div>
+  <div class="meta-row"><span>⏱ 8.596ms</span><span>📋 1 baris</span></div>
+</div>
+
+<!-- Q4 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q4</span>
+    <span class="q-text">Tampilkan 5 partner dengan success rate tertinggi bulan Mei 2026</span>
+    <span class="badge badge-medium">Sedang</span>
+    <span class="score-badge score-5">5/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth</label>
+      <p>shopeepay_paybill, dana_paybill, ovo_paybill, gopay_paybill, finnet_paybill — semua <strong>100%</strong></p>
+    </div>
+    <div class="section">
+      <label>Insight Chatbot</label>
+      <p>5 partner dengan success rate tertinggi semuanya mencapai <strong>100%</strong>: finnet_paybill, dana_paybill, gopay_paybill, shopeepay_paybill, ovo_paybill.</p>
+    </div>
+    <div class="section" style="grid-column: 1/-1">
+      <label>SQL yang Digenerate</label>
+      <pre>SELECT partner,
+  ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct,
+  SUM(total_trx) AS total_transaksi
+FROM daily_master
+WHERE date >= '2026-05-01' AND date <= '2026-05-31'
+GROUP BY partner
+ORDER BY success_rate_pct DESC
+LIMIT 5;</pre>
+    </div>
+  </div>
+  <div class="verdict benar"><strong>✅ Benar Penuh</strong> — 5 partner sama, semua 100%. SQL menggunakan formula kalkulasi yang lebih akurat dari kolom mentah.</div>
+  <div class="meta-row"><span>⏱ 8.359ms</span><span>📋 5 baris</span></div>
+</div>
+
+<!-- Q5 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q5</span>
+    <span class="q-text">Berapa total transaksi per bulan dari Maret sampai Juni 2026?</span>
+    <span class="badge badge-medium">Sedang</span>
+    <span class="score-badge score-5">5/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth</label>
+      <p>Mar: 15.746.672 | Apr: 26.799.046 | Mei: 28.753.492 | Jun: 6.122.803</p>
+    </div>
+    <div class="section">
+      <label>Insight Chatbot</label>
+      <p>Mar: 15,7jt | Apr: 26,8jt | Mei: 28,8jt | Jun: 6,1jt — semua <strong>akurat</strong>.</p>
+    </div>
+    <div class="section" style="grid-column: 1/-1">
+      <label>SQL yang Digenerate</label>
+      <pre>SELECT TO_CHAR(date, 'YYYY-MM') AS month, SUM(total_trx) AS total_transaksi
+FROM daily_master
+WHERE date >= '2026-03-01' AND date <= '2026-06-30'
+GROUP BY TO_CHAR(date, 'YYYY-MM')
+ORDER BY month;</pre>
+    </div>
+  </div>
+  <div class="verdict benar"><strong>✅ Benar Penuh</strong> — Keempat bulan tepat, tren meningkat Mar→Mei dan turun di Jun (data belum lengkap) diidentifikasi dengan benar.</div>
+  <div class="meta-row"><span>⏱ 8.232ms</span><span>📋 4 baris</span></div>
+</div>
+
+<!-- Q6 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q6</span>
+    <span class="q-text">Bandingkan total transaksi Dana vs GoPay vs OVO bulan April 2026</span>
+    <span class="badge badge-medium">Sedang</span>
+    <span class="score-badge score-3">3/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth (partner utama saja)</label>
+      <p>dana: 6.955.482 | gopay: 1.960.945 | ovo: 487.517</p>
+    </div>
+    <div class="section">
+      <label>Insight Chatbot</label>
+      <p>dana: 6,96jt ✅ | gopay: 1,99jt ⚠️ | ovo: 494.814 ⚠️</p>
+      <p style="margin-top:6px;font-size:0.8rem;color:#6b7280">(chatbot menambahkan sub-variant: gopay_basic + gopay_wec + ovo_wec)</p>
+    </div>
+    <div class="section" style="grid-column: 1/-1">
+      <label>SQL yang Digenerate (hanya step terakhir yang ditampilkan)</label>
+      <pre>SELECT SUM(total_trx) AS total_transaksi
+FROM daily_master
+WHERE partner IN ('ovo', 'ovo_wec')
+  AND date >= '2026-04-01' AND date <= '2026-04-30';</pre>
+    </div>
+  </div>
+  <div class="verdict sebagian"><strong>⚠️ Sebagian Benar</strong> — SQL hanya menampilkan step OVO (multi-step query). Angka Dana akurat, namun GoPay dan OVO berbeda karena chatbot memasukkan sub-variant (gopay_basic, gopay_wec, ovo_wec) tanpa menjelaskan asumsi ini secara eksplisit.</div>
+  <div class="meta-row"><span>⏱ 8.756ms</span><span>📋 1 baris (step terakhir)</span></div>
+</div>
+
+<!-- Q7 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q7</span>
+    <span class="q-text">Channel mana yang menghasilkan revenue terbesar bulan Mei 2026?</span>
+    <span class="badge badge-medium">Menengah</span>
+    <span class="score-badge score-4">4/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth (diurutkan revenue)</label>
+      <p>i1: Rp 1,16 triliun (27,8jt trx) | f0: Rp 13,6 miliar | ig: Rp 10,3 miliar</p>
+    </div>
+    <div class="section">
+      <label>Insight Chatbot</label>
+      <p>Channel <strong>i1</strong> revenue tertinggi: Rp 1,1 triliun, 27,8jt trx. f0: Rp 13,6 miliar. f4: transaksi terendah (4 trx, Rp 107.000).</p>
+    </div>
+    <div class="section" style="grid-column: 1/-1">
+      <label>SQL yang Digenerate</label>
+      <pre>SELECT channel, SUM(total_trx) AS total_transaksi, SUM(total_revenue) AS total_revenue
+FROM channel_payment
+WHERE date >= '2026-05-01' AND date <= '2026-05-31'
+GROUP BY channel
+ORDER BY total_transaksi DESC   -- ⚠️ harusnya ORDER BY total_revenue DESC
+LIMIT 100</pre>
+    </div>
+  </div>
+  <div class="verdict sebagian"><strong>⚠️ Hampir Benar</strong> — Jawaban channel i1 benar, data lengkap. Namun SQL mengurutkan berdasarkan <code>total_transaksi</code> bukan <code>total_revenue</code>. Hasilnya kebetulan sama karena i1 mendominasi keduanya, tapi logika SQL tidak tepat sesuai pertanyaan.</div>
+  <div class="meta-row"><span>⏱ 8.725ms</span><span>📋 8 baris</span></div>
+</div>
+
+<!-- Q8 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q8</span>
+    <span class="q-text">Tren harian total transaksi Mei 2026 dan 3 hari dengan transaksi tertinggi</span>
+    <span class="badge badge-medium">Menengah</span>
+    <span class="score-badge score-2">2/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth — Top 3 Hari</label>
+      <p>30 Mei: 1.288.838 | 29 Mei: 1.281.681 | 25 Mei: 1.035.435</p>
+    </div>
+    <div class="section">
+      <label>Insight Chatbot (SALAH)</label>
+      <p>Top 3 menurut chatbot: <strong>1 Mei (992k), 2 Mei (958k), 4 Mei (945k)</strong> ❌</p>
+      <p style="margin-top:6px;font-size:0.8rem;color:#dc2626">Ini adalah 3 hari pertama secara kronologis, bukan tertinggi.</p>
+    </div>
+    <div class="section" style="grid-column: 1/-1">
+      <label>SQL yang Digenerate (ada bug)</label>
+      <pre>SELECT date, SUM(total_trx) AS total_transaksi
+FROM daily_master
+WHERE date >= '2026-05-01' AND date <= '2026-05-31'
+GROUP BY date
+ORDER BY date   -- ❌ harusnya ORDER BY total_transaksi DESC untuk top 3
+LIMIT 100;</pre>
+    </div>
+  </div>
+  <div class="verdict salah"><strong>❌ Salah pada Bagian Kritis</strong> — SQL mengurutkan berdasarkan tanggal (ASC), bukan total transaksi (DESC). Insight menampilkan tren harian dengan benar, tetapi Top 3 yang disebutkan adalah 3 hari pertama di bulan Mei, bukan 3 hari dengan transaksi tertinggi. Top 3 yang benar adalah 30, 29, dan 25 Mei.</div>
+  <div class="meta-row"><span>⏱ 9.555ms</span><span>📋 31 baris</span></div>
+</div>
+
+<!-- Q9 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q9</span>
+    <span class="q-text">Bandingkan performa semua partner April vs Mei 2026 — siapa paling meningkat?</span>
+    <span class="badge badge-hard">Sulit</span>
+    <span class="score-badge score-4">4/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth</label>
+      <p>Paling meningkat (trx): <strong>QRIS</strong> — Apr: 12,55jt → Mei: 13,87jt (+10,5%)<br>Paling meningkat (rev): <strong>QRIS</strong> — +Rp 62,4 miliar (+12,5%)</p>
+    </div>
+    <div class="section">
+      <label>Insight Chatbot</label>
+      <p>QRIS paling meningkat: trx +10,52% ✅, revenue +12,46% ✅, success rate +0,06% ✅. Juga mengidentifikasi LinkAja sebagai paling menurun ✅.</p>
+    </div>
+    <div class="section" style="grid-column: 1/-1">
+      <label>SQL yang Digenerate (hanya step terakhir)</label>
+      <pre>SELECT partner, SUM(total_trx), SUM(total_revenue),
+  ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct
+FROM daily_master
+WHERE date >= '2026-05-01' AND date <= '2026-05-31'   -- hanya Mei
+GROUP BY partner ORDER BY total_transaksi DESC LIMIT 100</pre>
+    </div>
+  </div>
+  <div class="verdict sebagian"><strong>✅ Hampir Sempurna</strong> — Semua angka perbandingan benar, QRIS teridentifikasi tepat. SQL yang tampil hanya step Mei (multi-step query), tapi insight menggabungkan data April dengan akurat dari step sebelumnya.</div>
+  <div class="meta-row"><span>⏱ 10.009ms</span><span>📋 25 baris</span></div>
+</div>
+
+<!-- Q10 -->
+<div class="card">
+  <div class="card-header">
+    <span class="q-num">Q10</span>
+    <span class="q-text">Kenapa revenue April 2026 lebih tinggi/rendah dari Maret? Investigasi per partner</span>
+    <span class="badge badge-hard">Sangat Sulit</span>
+    <span class="score-badge score-0">0/5</span>
+  </div>
+  <div class="card-body">
+    <div class="section">
+      <label>Ground Truth — Revenue Turun di April</label>
+      <p>Dana: -Rp 31,4 miliar | Finnet: -Rp 31,0 miliar | GoPay: -Rp 10,8 miliar | ShopeePay: -Rp 7,8 miliar. Hanya linkaja_wco yang naik (+Rp 210rb). Catatan: banyak partner belum ada data di Maret.</p>
+    </div>
+    <div class="section">
+      <label>Hasil Chatbot</label>
+      <p style="color:#dc2626;font-weight:600">⏰ TIMEOUT — tidak ada respons dalam 90 detik</p>
+      <p style="margin-top:6px;font-size:0.82rem;color:#6b7280">Query investigasi root cause menjalankan loop iteratif (AnalyticalInvestigator) yang membutuhkan waktu lebih lama dari batas timeout.</p>
+    </div>
+  </div>
+  <div class="verdict timeout"><strong>⏰ Timeout</strong> — Root cause analysis memerlukan beberapa iterasi AnalyticalInvestigator + multiple SQL calls. Sistem berjalan tapi melebihi 90 detik. Pertimbangkan menaikkan timeout atau membatasi iterasi investigasi.</div>
+  <div class="meta-row"><span>⏱ Timeout (>90s)</span><span>📋 —</span></div>
+</div>
+
+<!-- KESIMPULAN -->
+<div class="card" style="margin-top:28px;">
+  <div class="card-header" style="background:#f8fafc;">
+    <span class="q-text" style="font-size:1.05rem;">📊 Kesimpulan Evaluasi — google/gemini-2.5-flash</span>
+  </div>
+  <div style="padding:20px;">
+    <h2>Kekuatan</h2>
+    <ul style="margin-left:18px;margin-bottom:16px;font-size:0.9rem;line-height:2;">
+      <li>Sangat baik untuk pertanyaan agregasi sederhana hingga menengah (Q1–Q5)</li>
+      <li>Mampu memahami konteks partner dengan benar (QRIS, Dana, GoPay)</li>
+      <li>Multi-step query (Q9) menghasilkan insight yang akurat meski SQL yang tampil tidak lengkap</li>
+      <li>Bahasa Indonesia natural dan mudah dipahami</li>
+      <li>Latency konsisten ~8–10 detik</li>
+    </ul>
+
+    <h2>Kelemahan</h2>
+    <ul style="margin-left:18px;margin-bottom:16px;font-size:0.9rem;line-height:2;">
+      <li><strong>Q8 — Bug kritis:</strong> ORDER BY date bukan ORDER BY total DESC, Top 3 salah total</li>
+      <li><strong>Q7 — Bug minor:</strong> ORDER BY total_trx bukan total_revenue, kebetulan benar</li>
+      <li><strong>Q10 — Timeout:</strong> Root cause analysis terlalu lambat untuk digunakan secara praktis</li>
+      <li>Tidak selalu transparan ketika menambahkan sub-variant partner (gopay_wec, ovo_wec)</li>
+    </ul>
+
+    <h2>Perbandingan Nanti dengan GPT-4o-mini</h2>
+    <p style="font-size:0.9rem;line-height:1.7;color:#374151;">Fokus pengujian pada Q7 (order by revenue vs trx), Q8 (top 3 hari), dan Q10 (apakah bisa selesai dalam waktu wajar). Ketiga ini adalah area paling lemah Gemini 2.5 Flash.</p>
+  </div>
+</div>
+
+<footer>
+  Dibuat otomatis oleh Claude Code &nbsp;·&nbsp; Model diuji: google/gemini-2.5-flash via OpenRouter &nbsp;·&nbsp; 19 Juni 2026
+</footer>
+
+</body>
+</html>
