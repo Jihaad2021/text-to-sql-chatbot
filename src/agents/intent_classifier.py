@@ -29,10 +29,18 @@ Example:
     }
 """
 
+import re
 from datetime import date
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
+
+# Deterministic override: queries starting with these words are always root_cause_analysis
+# regardless of what the LLM classifies them as.
+_ROOT_CAUSE_PATTERN = re.compile(
+    r'\b(kenapa|mengapa|apa\s+penyebab|apa\s+yang\s+menyebabkan|penyebab\s+(?:naik|turun|penurunan|kenaikan))\b',
+    re.IGNORECASE,
+)
 
 # Valid intent categories
 INTENT_CATEGORIES = {
@@ -42,6 +50,8 @@ INTENT_CATEGORIES = {
     "multi_table_join": "Requires JOIN across multiple tables",
     "complex_analytics": "Advanced analytics with subqueries, trends, grouping",
     "root_cause_analysis": "Investigative query asking why something happened, root cause of a spike/drop, or multi-dimensional analysis",
+    "ranking_analysis": "Queries asking for leaderboards, top/bottom N rankings, who is best/worst, anomaly detection across all entities",
+    "recommendation": "Queries asking for suggestions, recommendations, or 'what should we do / what needs attention'",
     "ambiguous": "Unclear query that needs clarification",
 }
 
@@ -53,6 +63,8 @@ INTENT_SQL_STRATEGY = {
     "multi_table_join": "Use JOIN across relevant tables",
     "complex_analytics": "Use subqueries, CTEs, or window functions if needed",
     "root_cause_analysis": "Adaptive investigation across multiple dimensions (time, product, channel, partner)",
+    "ranking_analysis": "Use RANK() / ROW_NUMBER() window functions or ORDER BY + LIMIT; compare all entities to find top/bottom performers and outliers",
+    "recommendation": "Use analytics tools to gather evidence across multiple dimensions (summary, anomaly, trend) before suggesting actions",
     "ambiguous": "Cannot generate SQL - needs clarification",
 }
 
@@ -83,6 +95,22 @@ class IntentClassifier(LLMBaseAgent):
         prompt = self._build_prompt(state)
         response = self._call_llm(prompt, max_tokens=500, temperature=0)
         intent = self._parse_response(response)
+
+        # Hard override: "kenapa / mengapa / apa penyebab" questions are always
+        # root_cause_analysis regardless of what the LLM classified them as.
+        # Check original_query because QueryRewriter may have removed "kenapa" from state.query.
+        check_query = state.original_query or state.query
+        if _ROOT_CAUSE_PATTERN.search(check_query):
+            if intent["category"] not in ("root_cause_analysis", "ambiguous"):
+                self.log(
+                    f"Override: '{intent['category']}' → 'root_cause_analysis' (why-question detected)",
+                    level="warning",
+                )
+                intent = {
+                    **intent,
+                    "category": "root_cause_analysis",
+                    "sql_strategy": INTENT_SQL_STRATEGY["root_cause_analysis"],
+                }
 
         state.intent = intent
         state.needs_clarification = (
@@ -132,7 +160,10 @@ Rules:
 - Queries asking for totals, sums, averages, rankings → "aggregation" (high confidence)
 - Queries asking for trends, per-period breakdowns → "complex_analytics"
 - Queries with time filters (bulan, tanggal, "bulan ini", "hari ini") → "filtered_query" or "aggregation"
-- Queries containing "kenapa", "mengapa", "apa penyebab", "investigasi", "analisis mendalam", "kenapa naik", "kenapa turun", "apa yang menyebabkan" → "root_cause_analysis"
+- CRITICAL RULE: ANY query that STARTS WITH or CONTAINS "kenapa" or "mengapa" (WHY questions) MUST be "root_cause_analysis" — this overrides ALL other classifications. Even if the query also involves comparison or aggregation, "kenapa/mengapa" makes it root_cause_analysis.
+- Also root_cause_analysis: "apa penyebab", "investigasi", "analisis mendalam", "apa yang menyebabkan", "apa yang membuat", "penyebab penurunan", "penyebab kenaikan", "kenapa naik/turun/lebih rendah/lebih tinggi"
+- Queries containing "ranking", "peringkat", "siapa terbaik", "siapa terburuk", "top N", "bottom N", "paling tinggi dari semua", "paling rendah dari semua", "partner mana yang anomali", "siapa yang mengalami lonjakan" → "ranking_analysis"
+- Queries containing "rekomendasi", "saran", "apa yang harus dilakukan", "perlu perhatian", "yang perlu diperbaiki", "fokus ke mana", "prioritas" → "recommendation"
 - Consider both Indonesian and English queries
 - Do NOT mark as "ambiguous" if the query has a clear analytical intent, even with complex wording
 - Use conversation context to resolve follow-up queries (e.g. "sekarang breakdown per channel")

@@ -25,6 +25,7 @@ _CACHED_FIELDS = (
     "is_multi_step",
     "step_results",
     "chart_config",
+    "tool_calls",
 )
 
 

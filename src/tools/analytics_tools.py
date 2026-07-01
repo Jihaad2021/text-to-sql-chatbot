@@ -1,0 +1,335 @@
+"""
+Analytics Tools — deterministic SQL functions for financial analytics.
+
+Each tool executes pre-defined, tested SQL and returns structured data.
+Called by AnalyticsAgent via tool calling; never generate SQL ad-hoc.
+
+Return contract for all tools:
+    {
+        "data":        list[dict],   # query result rows
+        "row_count":   int,
+        "sql":         str,          # SQL that was executed
+        "description": str,          # one-line summary of what was returned
+    }
+"""
+
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+
+
+def get_summary(
+    db_engine: Engine,
+    period_start: str,
+    period_end: str,
+    dimension: str = "all",
+) -> dict:
+    """Total transaksi, revenue, dan success rate untuk suatu periode."""
+    if dimension == "all":
+        sql = f"""
+SELECT
+    SUM(total_trx)     AS total_trx,
+    SUM(total_revenue) AS total_revenue,
+    ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct
+FROM daily_master
+WHERE date >= '{period_start}' AND date <= '{period_end}'
+"""
+    elif dimension == "partner":
+        sql = f"""
+SELECT
+    partner                                                                              AS entity,
+    SUM(total_trx)                                                                       AS total_trx,
+    SUM(total_revenue)                                                                   AS total_revenue,
+    ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)             AS success_rate_pct
+FROM daily_master
+WHERE date >= '{period_start}' AND date <= '{period_end}'
+GROUP BY partner
+ORDER BY total_trx DESC
+LIMIT 50
+"""
+    elif dimension == "channel":
+        sql = f"""
+SELECT
+    channel                                                                              AS entity,
+    SUM(total_trx)                                                                       AS total_trx,
+    SUM(total_revenue)                                                                   AS total_revenue,
+    ROUND(AVG(success_rate_pct)::numeric, 2)                                             AS success_rate_pct
+FROM channel_payment
+WHERE date >= '{period_start}' AND date <= '{period_end}'
+GROUP BY channel
+ORDER BY total_trx DESC
+LIMIT 50
+"""
+    else:  # product
+        sql = f"""
+SELECT
+    product_name                                                                         AS entity,
+    SUM(total_trx)                                                                       AS total_trx,
+    SUM(total_revenue)                                                                   AS total_revenue,
+    ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)             AS success_rate_pct
+FROM product_summary
+WHERE date >= '{period_start}' AND date <= '{period_end}'
+GROUP BY product_name
+ORDER BY total_trx DESC
+LIMIT 50
+"""
+
+    return _run(db_engine, sql.strip(), f"Summary {dimension} {period_start}→{period_end}")
+
+
+def compare_periods(
+    db_engine: Engine,
+    period_a_start: str,
+    period_a_end: str,
+    period_b_start: str,
+    period_b_end: str,
+    dimension: str = "partner",
+) -> dict:
+    """Bandingkan dua periode dan hitung % perubahan per entitas."""
+    if dimension == "channel":
+        table, group_col = "channel_payment", "channel"
+        rev_col = "total_revenue"
+        trx_col = "total_trx"
+    elif dimension == "product":
+        table, group_col = "product_summary", "product_name"
+        rev_col = "total_revenue"
+        trx_col = "total_trx"
+    else:
+        table, group_col = "daily_master", "partner"
+        rev_col = "total_revenue"
+        trx_col = "total_trx"
+
+    sql = f"""
+WITH period_a AS (
+    SELECT {group_col} AS entity,
+           SUM({trx_col}) AS trx_a, SUM({rev_col}) AS rev_a
+    FROM {table}
+    WHERE date >= '{period_a_start}' AND date <= '{period_a_end}'
+    GROUP BY {group_col}
+),
+period_b AS (
+    SELECT {group_col} AS entity,
+           SUM({trx_col}) AS trx_b, SUM({rev_col}) AS rev_b
+    FROM {table}
+    WHERE date >= '{period_b_start}' AND date <= '{period_b_end}'
+    GROUP BY {group_col}
+)
+SELECT
+    COALESCE(a.entity, b.entity)                                                             AS entity,
+    COALESCE(a.trx_a, 0)                                                                     AS trx_a,
+    COALESCE(b.trx_b, 0)                                                                     AS trx_b,
+    ROUND((COALESCE(a.trx_a,0) - COALESCE(b.trx_b,0))::numeric
+          / NULLIF(b.trx_b::numeric, 0) * 100, 2)                                            AS trx_pct_change,
+    COALESCE(a.rev_a, 0)                                                                     AS rev_a,
+    COALESCE(b.rev_b, 0)                                                                     AS rev_b,
+    ROUND((COALESCE(a.rev_a,0) - COALESCE(b.rev_b,0))::numeric
+          / NULLIF(b.rev_b::numeric, 0) * 100, 2)                                            AS rev_pct_change
+FROM period_a a
+FULL OUTER JOIN period_b b USING (entity)
+ORDER BY ABS(ROUND((COALESCE(a.trx_a,0) - COALESCE(b.trx_b,0))::numeric
+             / NULLIF(b.trx_b::numeric, 0) * 100, 2)) DESC NULLS LAST
+LIMIT 30
+""".strip()
+
+    desc = f"Compare {dimension}: {period_a_start}→{period_a_end} vs {period_b_start}→{period_b_end}"
+    return _run(db_engine, sql, desc)
+
+
+def detect_anomaly(
+    db_engine: Engine,
+    target_date: str,
+    dimension: str = "partner",
+    threshold_pct: float = 30.0,
+) -> dict:
+    """Deteksi entitas dengan perubahan >threshold_pct% vs rata-rata 7 hari sebelumnya."""
+    if dimension == "channel":
+        table, group_col = "channel_payment", "channel"
+    elif dimension == "product":
+        table, group_col = "product_summary", "product_name"
+    else:
+        table, group_col = "daily_master", "partner"
+
+    sql = f"""
+WITH target AS (
+    SELECT {group_col} AS entity,
+           SUM(total_trx)     AS trx_target,
+           SUM(total_revenue) AS rev_target
+    FROM {table}
+    WHERE date::date = '{target_date}'::date
+    GROUP BY {group_col}
+),
+baseline AS (
+    SELECT {group_col} AS entity,
+           ROUND(AVG(daily_trx)::numeric, 2)  AS trx_baseline_avg,
+           ROUND(AVG(daily_rev)::numeric, 2)  AS rev_baseline_avg
+    FROM (
+        SELECT {group_col},
+               date,
+               SUM(total_trx)     AS daily_trx,
+               SUM(total_revenue) AS daily_rev
+        FROM {table}
+        WHERE date::date > ('{target_date}'::date - INTERVAL '7 days')
+          AND date::date < '{target_date}'::date
+        GROUP BY {group_col}, date
+    ) d
+    GROUP BY {group_col}
+)
+SELECT
+    t.entity,
+    t.trx_target,
+    b.trx_baseline_avg,
+    ROUND((t.trx_target - b.trx_baseline_avg)::numeric / NULLIF(b.trx_baseline_avg, 0) * 100, 2) AS trx_pct_change,
+    t.rev_target,
+    b.rev_baseline_avg,
+    ROUND((t.rev_target::numeric - b.rev_baseline_avg) / NULLIF(b.rev_baseline_avg, 0) * 100, 2) AS rev_pct_change,
+    ABS(ROUND((t.trx_target - b.trx_baseline_avg)::numeric / NULLIF(b.trx_baseline_avg, 0) * 100, 2)) > {threshold_pct} AS is_anomaly
+FROM target t
+JOIN baseline b USING (entity)
+ORDER BY ABS(ROUND((t.trx_target - b.trx_baseline_avg)::numeric / NULLIF(b.trx_baseline_avg, 0) * 100, 2)) DESC
+LIMIT 30
+""".strip()
+
+    desc = f"Anomaly detection {dimension} on {target_date} vs 7-day baseline (threshold {threshold_pct}%)"
+    return _run(db_engine, sql, desc)
+
+
+def get_trend(
+    db_engine: Engine,
+    start_date: str,
+    end_date: str,
+    dimension: str = "all",
+    granularity: str = "daily",
+) -> dict:
+    """Tren transaksi dan revenue per periode (daily/weekly/monthly)."""
+    if granularity == "monthly":
+        date_trunc = "TO_CHAR(date, 'YYYY-MM')"
+    elif granularity == "weekly":
+        date_trunc = "TO_CHAR(DATE_TRUNC('week', date), 'YYYY-MM-DD')"
+    else:
+        date_trunc = "date::date::text"
+
+    if dimension == "all":
+        sql = f"""
+SELECT
+    {date_trunc}   AS period,
+    SUM(total_trx)     AS total_trx,
+    SUM(total_revenue) AS total_revenue,
+    ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct
+FROM daily_master
+WHERE date >= '{start_date}' AND date <= '{end_date}'
+GROUP BY {date_trunc}
+ORDER BY period
+LIMIT 200
+""".strip()
+    elif dimension == "channel":
+        sql = f"""
+WITH top5 AS (
+    SELECT channel FROM channel_payment
+    WHERE date >= '{start_date}' AND date <= '{end_date}'
+    GROUP BY channel ORDER BY SUM(total_trx) DESC LIMIT 5
+)
+SELECT
+    {date_trunc}   AS period,
+    cp.channel         AS entity,
+    SUM(cp.total_trx)     AS total_trx,
+    SUM(cp.total_revenue) AS total_revenue
+FROM channel_payment cp
+JOIN top5 USING (channel)
+WHERE cp.date >= '{start_date}' AND cp.date <= '{end_date}'
+GROUP BY {date_trunc}, cp.channel
+ORDER BY period, total_trx DESC
+LIMIT 200
+""".strip()
+    else:  # partner
+        sql = f"""
+WITH top5 AS (
+    SELECT partner FROM daily_master
+    WHERE date >= '{start_date}' AND date <= '{end_date}'
+    GROUP BY partner ORDER BY SUM(total_trx) DESC LIMIT 5
+)
+SELECT
+    {date_trunc}   AS period,
+    dm.partner         AS entity,
+    SUM(dm.total_trx)     AS total_trx,
+    SUM(dm.total_revenue) AS total_revenue
+FROM daily_master dm
+JOIN top5 USING (partner)
+WHERE dm.date >= '{start_date}' AND dm.date <= '{end_date}'
+GROUP BY {date_trunc}, dm.partner
+ORDER BY period, total_trx DESC
+LIMIT 200
+""".strip()
+
+    desc = f"Trend {granularity} {dimension} {start_date}→{end_date}"
+    return _run(db_engine, sql, desc)
+
+
+def get_distribution(
+    db_engine: Engine,
+    period_start: str,
+    period_end: str,
+    dimension: str = "partner",
+) -> dict:
+    """Distribusi kontribusi (%) setiap entitas terhadap total."""
+    if dimension == "channel":
+        table, group_col = "channel_payment", "channel"
+    elif dimension == "product":
+        table, group_col = "product_summary", "product_name"
+    else:
+        table, group_col = "daily_master", "partner"
+
+    sql = f"""
+WITH totals AS (
+    SELECT SUM(total_trx) AS grand_trx, SUM(total_revenue) AS grand_rev
+    FROM {table}
+    WHERE date >= '{period_start}' AND date <= '{period_end}'
+)
+SELECT
+    {group_col}                                                                  AS entity,
+    SUM(total_trx)                                                               AS total_trx,
+    ROUND(SUM(total_trx)::numeric / NULLIF(t.grand_trx::numeric, 0) * 100, 2)   AS trx_share_pct,
+    SUM(total_revenue)                                                           AS total_revenue,
+    ROUND(SUM(total_revenue)::numeric / NULLIF(t.grand_rev::numeric, 0) * 100, 2) AS rev_share_pct
+FROM {table}, totals t
+WHERE date >= '{period_start}' AND date <= '{period_end}'
+GROUP BY {group_col}, t.grand_trx, t.grand_rev
+ORDER BY total_trx DESC
+LIMIT 30
+""".strip()
+
+    desc = f"Distribution by {dimension} {period_start}→{period_end}"
+    return _run(db_engine, sql, desc)
+
+
+def get_hourly_pattern(
+    db_engine: Engine,
+    target_date: str,
+) -> dict:
+    """Pola transaksi per jam untuk satu tanggal tertentu."""
+    sql = f"""
+SELECT
+    hour,
+    total_trx,
+    ROUND(success_rate_pct::numeric, 2) AS success_rate_pct
+FROM hourly_pattern_daily
+WHERE date::date = '{target_date}'::date
+ORDER BY hour
+""".strip()
+
+    return _run(db_engine, sql, f"Hourly pattern on {target_date}")
+
+
+# ── internal helper ──────────────────────────────────────────────────────────
+
+def _run(db_engine: Engine, sql: str, description: str) -> dict:
+    """Execute SQL and return standard result dict."""
+    with db_engine.connect() as conn:
+        result = conn.execute(text(sql))
+        columns = list(result.keys())
+        rows = [dict(zip(columns, row)) for row in result.fetchall()]
+
+    return {
+        "data":        rows,
+        "row_count":   len(rows),
+        "sql":         sql,
+        "description": description,
+    }

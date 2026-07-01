@@ -45,25 +45,29 @@ DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-20250514",
     "openai": "gpt-4o",
     "groq": "llama3-8b-8192",
-    "gemini": "gemini-1.5-flash"
+    "gemini": "gemini-1.5-flash",
+    "openrouter": "google/gemini-2.5-flash",
 }
 
 # Env key mapping per agent name
 AGENT_ENV_KEYS = {
-    "query_rewriter":     ("QUERY_REWRITER_LLM",     "QUERY_REWRITER_MODEL"),
-    "intent_classifier":  ("INTENT_CLASSIFIER_LLM",  "INTENT_CLASSIFIER_MODEL"),
-    "retrieval_evaluator":("RETRIEVAL_EVALUATOR_LLM","RETRIEVAL_EVALUATOR_MODEL"),
-    "sql_generator":      ("SQL_GENERATOR_LLM",      "SQL_GENERATOR_MODEL"),
-    "sql_validator":      ("SQL_VALIDATOR_LLM",       "SQL_VALIDATOR_MODEL"),
-    "insight_generator":  ("INSIGHT_GENERATOR_LLM",  "INSIGHT_GENERATOR_MODEL"),
+    "query_rewriter":         ("QUERY_REWRITER_LLM",         "QUERY_REWRITER_MODEL"),
+    "intent_classifier":      ("INTENT_CLASSIFIER_LLM",      "INTENT_CLASSIFIER_MODEL"),
+    "query_planner":          ("QUERY_PLANNER_LLM",          "QUERY_PLANNER_MODEL"),
+    "retrieval_evaluator":    ("RETRIEVAL_EVALUATOR_LLM",    "RETRIEVAL_EVALUATOR_MODEL"),
+    "sql_generator":          ("SQL_GENERATOR_LLM",          "SQL_GENERATOR_MODEL"),
+    "sql_validator":          ("SQL_VALIDATOR_LLM",          "SQL_VALIDATOR_MODEL"),
+    "analytical_investigator":("ANALYTICAL_INVESTIGATOR_LLM","ANALYTICAL_INVESTIGATOR_MODEL"),
+    "insight_generator":      ("INSIGHT_GENERATOR_LLM",      "INSIGHT_GENERATOR_MODEL"),
 }
 
 # API key env names per provider
 API_KEY_ENV = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "groq": "GROQ_API_KEY",
-    "gemini": "GEMINI_API_KEY"
+    "anthropic":  "ANTHROPIC_API_KEY",
+    "openai":     "OPENAI_API_KEY",
+    "groq":       "GROQ_API_KEY",
+    "gemini":     "GEMINI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
 }
 
 
@@ -190,6 +194,13 @@ class LLMBaseAgent(BaseAgent):
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
             )
 
+        elif provider == "openrouter":
+            from openai import OpenAI
+            return OpenAI(
+                api_key=api_key,
+                base_url="https://openrouter.ai/api/v1",
+            )
+
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
@@ -218,12 +229,10 @@ class LLMBaseAgent(BaseAgent):
         try:
             if self.provider == "anthropic":
                 return self._call_anthropic(prompt, max_tokens, temperature)
-            elif self.provider == "openai":
+            elif self.provider in ("openai", "openrouter", "gemini"):
                 return self._call_openai(prompt, max_tokens, temperature)
             elif self.provider == "groq":
                 return self._call_groq(prompt, max_tokens, temperature)
-            elif self.provider == "gemini":
-                return self._call_gemini(prompt, max_tokens, temperature)
             else:
                 raise LLMCallError(
                     agent_name=self.name,

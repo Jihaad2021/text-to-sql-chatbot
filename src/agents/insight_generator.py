@@ -75,30 +75,37 @@ class InsightGenerator(LLMBaseAgent):
         return state
 
     def _build_prompt(self, state: AgentState) -> str:
-        """Branch to investigation, multi-step, or single-step prompt based on state."""
-        if (
-            state.intent
-            and state.intent.get("category") == "root_cause_analysis"
-            and state.investigation_steps
-        ):
-            return self._build_investigation_prompt(state)
+        """Branch to multi-step or single-step prompt based on state."""
         if state.is_multi_step and state.step_results:
             return self._build_multi_step_prompt(state)
         return self._build_single_step_prompt(state)
 
+    # Max rows shown to LLM. 100 covers full partner×month matrices (25 partners × 4 months = 100)
+    # without blowing the context budget.
+    _MAX_PROMPT_ROWS = 100
+
     def _build_single_step_prompt(self, state: AgentState) -> str:
         """Build insight prompt for a single-step query."""
         if state.query_result and state.row_count > 0:
-            results_text = json.dumps(state.query_result[:10], indent=2, default=str)
-            if state.row_count > 10:
-                results_text += f"\n... and {state.row_count - 10} more rows"
+            results_text = json.dumps(
+                state.query_result[:self._MAX_PROMPT_ROWS], indent=2, default=str
+            )
+            if state.row_count > self._MAX_PROMPT_ROWS:
+                hidden = state.row_count - self._MAX_PROMPT_ROWS
+                results_text += (
+                    f"\n\n⚠️ DATA TERPOTONG: {hidden} baris tidak ditampilkan "
+                    f"(total {state.row_count} baris). "
+                    f"JANGAN menyebut angka spesifik (min, max, ranking) dari baris yang tidak terlihat. "
+                    f"Gunakan deskripsi tren umum saja untuk bagian yang terpotong."
+                )
         else:
             results_text = "No results returned"
 
         history_block = self._build_history_block(state.conversation_history)
+        context_block = f"\n{state.context_snapshot}\n" if state.context_snapshot else ""
 
         return f"""You are a data analyst for Telkomsel's digital payment platform. Generate insights in conversational Indonesian.
-{history_block}
+{context_block}{history_block}
 USER QUESTION: "{state.query}"
 
 SQL EXECUTED:
@@ -128,8 +135,39 @@ PERCENTAGES (kolom: success_rate_pct, avg_success_rate):
 RULES:
 1. Directly answer the user's question first
 2. Look at the column name in the SQL to determine if it's transactions, revenue, or percentage
-3. Highlight key findings using "tertinggi", "terendah", "rata-rata"
-4. Keep it concise: 2-4 sentences max
+3. Keep it concise: 2-4 sentences for simple queries; up to 6 for ranked/time-series data
+
+DATA INTEGRITY — ANTI-HALLUCINATION (wajib diikuti):
+- HANYA gunakan angka yang BENAR-BENAR muncul di bagian RESULTS di atas
+- DILARANG mengarang, memperkirakan, atau menginterpolasi angka spesifik
+- Jika data terpotong ("... more rows not shown"), JANGAN menyebut nilai min/max yang tidak bisa diverifikasi
+- Jika ragu apakah angka ada di data, tulis deskripsi umum saja ("sekitar X") atau tidak menyebut angka itu sama sekali
+
+BUSINESS THRESHOLDS (gunakan untuk kontekstualisasi):
+- Success Rate: ≥97% = normal (tidak perlu disebutkan) | 95–96.99% = perlu perhatian | <95% = kritis
+  → HANYA flag SR yang benar-benar di bawah 97%. Nilai 99.x% adalah NORMAL, jangan sebut sebagai "di bawah threshold".
+- Perubahan transaksi vs baseline: <15% = normal | 15–35% = signifikan | >35% = ekstrim
+- Perubahan revenue vs baseline: <10% = normal | 10–25% = signifikan | >25% = ekstrim
+
+RANKED DATA (data diurutkan ASC/DESC):
+- Selalu sebutkan nilai TERTINGGI dan TERENDAH beserta nama/tanggal entitas tersebut
+- Jika ada outlier yang sangat jauh dari rata-rata (>50% di atas/bawah), sorot secara eksplisit
+
+TIME SERIES (data per hari/minggu/bulan berurutan):
+- Scan seluruh data untuk menemukan puncak (max) dan lembah (min) yang sebenarnya
+- Jika ada lonjakan/penurunan tiba-tiba yang signifikan (>30% dari nilai tetangganya), sebutkan tanggal dan nilainya
+- Berikan gambaran tren keseluruhan (naik, turun, stabil, fluktuatif)
+
+FORMAT OUTPUT:
+- Output HARUS berupa narasi bahasa Indonesia saja
+- JANGAN menyertakan blok kode SQL, backticks (```), atau teks teknis apapun dalam output
+- JANGAN menyebut nama kolom database (gunakan label yang mudah dipahami: "transaksi harian" bukan "total_trx")
+
+PERIODE PARSIAL — wajib disebutkan jika ada:
+- Jika data mencakup bulan yang belum selesai (misalnya Juni 2026 baru ~20 hari), SELALU cantumkan:
+  "data Juni mencakup X hari pertama" sehingga pembaca tidak salah membandingkan dengan bulan penuh.
+- Saat membandingkan bulan parsial vs bulan penuh, gunakan rata-rata harian untuk normalisasi,
+  bukan total absolut langsung.
 
 If no results (0 rows):
 - Explain what data is available
@@ -141,9 +179,10 @@ Your insights in Indonesian:"""
         """Build insight prompt that synthesises all step results."""
         history_block = self._build_history_block(state.conversation_history)
         steps_block = self._build_steps_block(state.step_results)
+        context_block = f"\n{state.context_snapshot}\n" if state.context_snapshot else ""
 
         return f"""You are a data analyst for Telkomsel's digital payment platform.
-{history_block}
+{context_block}{history_block}
 USER ORIGINAL QUESTION: "{state.query}"
 
 ANALYSIS STEPS EXECUTED:
@@ -174,6 +213,23 @@ COMPARISON INSTRUCTIONS — when multiple steps represent two groups being compa
 4. State clearly which group is higher/lower
 5. Do NOT skip the math — calculate it yourself from the raw numbers in the step results
 
+BUSINESS THRESHOLDS (gunakan untuk kontekstualisasi):
+- Success Rate: ≥97% = normal (tidak perlu disebutkan) | 95–96.99% = perlu perhatian | <95% = kritis
+  → HANYA flag SR yang benar-benar di bawah 97%. Nilai 99.x% adalah NORMAL, jangan sebut sebagai "di bawah threshold".
+- Perubahan transaksi vs baseline: <15% = normal | 15–35% = signifikan | >35% = ekstrim
+- Perubahan revenue vs baseline: <10% = normal | 10–25% = signifikan | >25% = ekstrim
+
+DATA INTEGRITY — ANTI-HALLUCINATION (wajib diikuti):
+- HANYA gunakan angka yang BENAR-BENAR muncul di step results di atas
+- DILARANG mengarang atau menginterpolasi angka spesifik
+- Selalu sebutkan nilai TERTINGGI dan TERENDAH jika data diurutkan
+- Jika ada outlier >50% dari rata-rata, sorot secara eksplisit
+
+FORMAT OUTPUT:
+- Output HARUS berupa narasi bahasa Indonesia saja
+- JANGAN menyertakan blok kode SQL, backticks (```), atau teks teknis apapun dalam output
+- JANGAN menyebut nama kolom database (gunakan label yang mudah dipahami)
+
 SYNTHESIS RULES:
 1. Lead with the direct answer to the original question
 2. Show the key numbers from each step with correct formatting
@@ -195,62 +251,6 @@ Your insights in Indonesian:"""
                 preview = json.dumps(step.data[:10], indent=2, default=str)
                 lines.append(f"STEP {step.step_number}: {step.description}")
                 lines.append(f"SQL: {step.sql}")
-                lines.append(f"Results ({step.row_count} rows):")
-                lines.append(preview)
-                lines.append("")
-        return "\n".join(lines)
-
-    def _build_investigation_prompt(self, state: AgentState) -> str:
-        """Build insight prompt that synthesises all investigation iterations."""
-        history_block = self._build_history_block(state.conversation_history)
-        investigation_block = self._build_investigation_block(state.investigation_steps)
-
-        return f"""You are a data analyst for Telkomsel's digital payment platform.
-{history_block}
-USER ORIGINAL QUESTION: "{state.query}"
-
-INVESTIGATION COMPLETED — steps executed across multiple dimensions:
-
-{investigation_block}
-
-CRITICAL — Number formatting rules:
-
-TRANSACTION COUNTS (kolom: total_trx, success_trx, fail_trx, daily_unique_users, unique_users):
-  - INTEGER COUNTS — NEVER format as Rupiah
-  - Under 1,000: "452 transaksi"
-  - Under 1 million: "52.000 transaksi"
-  - 1M–999M: "52,6 juta transaksi"
-  - 1B+: "1,2 miliar transaksi"
-
-REVENUE / MONEY (kolom: total_revenue, net_revenue, platform_fee, net_gap, total_net_revenue, total_platform_fee):
-  - Rupiah amounts — format with Rp prefix
-  - Under 1 million: "Rp 500.000"
-  - 1M–999M: "Rp 252,3 juta"
-  - 1B+: "Rp 1,2 miliar"
-
-PERCENTAGES: format as "92,5%"
-
-SYNTHESIS INSTRUCTIONS:
-1. Synthesize a conclusive answer in Indonesian to the original question.
-2. Compute comparisons, ratios, and percentages directly from the raw data in each step.
-3. Identify the root cause based on the pattern across all dimensions.
-4. Distinguish organic vs promotional patterns: if all partners rise proportionally → organic; if only 2-3 partners spike while others are flat → promo.
-5. If a step has 0 rows or failed, skip it briefly and work with available data.
-6. Max 6-8 sentences total.
-
-Your insights in Indonesian:"""
-
-    def _build_investigation_block(self, steps: list) -> str:
-        """Format investigation steps for the investigation prompt."""
-        lines = []
-        for step in steps:
-            if step.row_count == 0 or not step.data:
-                lines.append(f"ITERATION {step.iteration}: {step.sub_query}")
-                lines.append("Status: FAILED — skip")
-                lines.append("")
-            else:
-                preview = json.dumps(step.data[:10], indent=2, default=str)
-                lines.append(f"ITERATION {step.iteration}: {step.sub_query}")
                 lines.append(f"Results ({step.row_count} rows):")
                 lines.append(preview)
                 lines.append("")
@@ -384,7 +384,7 @@ Your insights in Indonesian:"""
             return None
 
         metric = numeric_keys[0]
-        labels = [f"Tahap {s.step_number}" for s in valid]
+        labels = [s.description or f"Tahap {s.step_number}" for s in valid]
         def _to_f(v: object) -> float:
             if isinstance(v, (int, float)): return float(v)
             try: return float(v)  # type: ignore[arg-type]

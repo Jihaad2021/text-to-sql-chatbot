@@ -151,6 +151,11 @@ DOMAIN NOTES:
   ('linkaja', 'linkaja_wco', 'linkajawco', 'linkaja_app', 'linkaja_basic', 'linkaja_wec')
 - tsel_wallet (in financial_internal/product_summary) = telkomsel_wallet (in daily_master/channel_payment)
 - Success rate formula: ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)
+- "Lonjakan ekstrim" / "anomali" / "spike" definition: compare current period vs previous period average.
+  Use pct_change = ROUND((current - baseline) / NULLIF(baseline, 0) * 100, 2).
+  Flag as extreme if ABS(pct_change) > 30% (significant) or > 50% (extreme).
+  Baseline = AVG of same metric over the previous comparable period (e.g. previous month, previous 7 days).
+  Always show: current value, baseline value, pct_change, and order by ABS(pct_change) DESC.
 
 STRICT RULES:
 1. Only generate a single SELECT query.

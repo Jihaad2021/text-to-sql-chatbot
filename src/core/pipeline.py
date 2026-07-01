@@ -21,7 +21,7 @@ import copy
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from src.agents.analytical_investigator import AnalyticalInvestigator
+from src.agents.analytics_agent import AnalyticsAgent
 from src.agents.insight_generator import InsightGenerator
 from src.agents.intent_classifier import IntentClassifier
 from src.agents.query_executor import QueryExecutor
@@ -32,16 +32,15 @@ from src.agents.schema_retriever import SchemaRetriever
 from src.agents.sql_generator import SQLGenerator
 from src.agents.sql_validator import SQLValidator
 from src.core.base_agent import BaseAgent
+from src.core.baseline_cache import BaselineCache
 from src.core.config import Config
+from src.core.context_snapshot import build_context_snapshot
 from src.core.query_cache import QueryCache, build_snapshot, restore_snapshot
-from src.models.agent_state import AgentState, ExecutionStep, InvestigationStep, StepResult
+from src.models.agent_state import AgentState, ExecutionStep, StepResult
 from src.utils.exceptions import QueryExecutionError
 
 # Maximum retries for SQL generation when PostgreSQL returns an execution error
 _SQL_RETRY_LIMIT = 2
-
-# Maximum iterations for the adaptive investigation loop
-_INVESTIGATION_MAX_ITER = 6
 
 
 class TextToSQLPipeline:
@@ -88,9 +87,24 @@ class TextToSQLPipeline:
         self.sql_validator          = sql_validator
         self.query_executor         = query_executor
         self.insight_generator      = insight_generator
-        self.analytical_investigator = AnalyticalInvestigator()
+        self.analytics_agent = AnalyticsAgent()
 
         self._cache = QueryCache(ttl_seconds=Config.CACHE_TTL_SECONDS)
+
+        # Baseline & context — loaded once at startup, shared across all agents
+        # Use the first available engine (financial_db preferred)
+        _engines = self.query_executor.engines
+        _engine = _engines.get("financial_db") or next(iter(_engines.values()), None)
+        if _engine:
+            self.baseline = BaselineCache(_engine)
+            self.context_snapshot = build_context_snapshot(_engine, self.baseline)
+        else:
+            self.baseline = BaselineCache.__new__(BaselineCache)
+            self.baseline.partner = {}
+            self.baseline.channel = {}
+            self.baseline.overall = {}
+            self.baseline.period = {}
+            self.context_snapshot = ""
 
     @property
     def agents(self) -> list[BaseAgent]:
@@ -129,6 +143,9 @@ class TextToSQLPipeline:
         # Save original query — state.query may be replaced by sub_query later
         original_query = state.query
 
+        # Inject pre-computed context so all agents have business baseline
+        state.context_snapshot = self.context_snapshot
+
         # ── Cache check ──────────────────────────────────────────
         if Config.CACHE_TTL_SECONDS > 0:
             cached = self._cache.get(original_query, state.database)
@@ -146,9 +163,21 @@ class TextToSQLPipeline:
         if state.needs_clarification:
             return state
 
+        # Intents that benefit from tool-calling analytics (multi-dimensional investigation).
+        # complex_analytics: compare_periods/get_trend tools handle period normalization better
+        #   than ad-hoc SQL (e.g. partial months vs full months).
+        # recommendation: excluded — meta-questions like "apa yang harus dilakukan?" don't need
+        #   multi-tool orchestration and caused 180s+ timeouts with mandatory tool call rule.
+        #   SQL pipeline + InsightGenerator handles recommendation queries well enough.
+        _ANALYTICS_INTENTS = {
+            "root_cause_analysis",
+            "ranking_analysis",
+            "complex_analytics",
+        }
+
         # ── 3–7: SQL sub-pipeline + InsightGenerator ─────────────
-        if state.intent and state.intent.get("category") == "root_cause_analysis":
-            state = self._run_investigation(state)
+        if state.intent and state.intent.get("category") in _ANALYTICS_INTENTS:
+            state = self._run_analytics(state)
         elif state.is_multi_step:
             state = self._run_multi_step(state)
         else:
@@ -305,58 +334,12 @@ class TextToSQLPipeline:
         state.query = original_query
         return state
 
-    def _run_investigation(self, state: AgentState) -> AgentState:
-        """Adaptive investigation loop — each iteration queries a new dimension."""
-        original_query = state.query
-
-        for iteration in range(1, _INVESTIGATION_MAX_ITER + 1):
-            self.analytical_investigator.log(f"Starting iteration {iteration}")
-            state = self.analytical_investigator.run(state)
-            decision = state.investigation_decision or {}
-            self.analytical_investigator.log(f"Decision at iteration {iteration}: {decision}")
-
-            if decision.get("action") == "done":
-                self.analytical_investigator.log(f"Investigation complete at iteration {iteration}")
-                break
-
-            sub_query = decision.get("sub_query") or ""
-            if not sub_query:
-                self.analytical_investigator.log(f"Empty sub_query at iteration {iteration}, stopping")
-                break
-
-            state.query = sub_query
-            state.sql = None
-            state.validated_sql = None
-            state.query_result = None
-            state.row_count = 0
-            state.retrieved_tables = []
-            state.evaluated_tables = []
-
-            try:
-                state = self._run_sql_pipeline(state)
-                step = InvestigationStep(
-                    iteration=iteration,
-                    sub_query=sub_query,
-                    sql=state.validated_sql or "",
-                    data=state.query_result or [],
-                    row_count=state.row_count,
-                    summary=f"Iteration {iteration}: {sub_query[:80]} → {state.row_count} rows",
-                )
-            except Exception as exc:
-                step = InvestigationStep(
-                    iteration=iteration,
-                    sub_query=sub_query,
-                    sql="",
-                    data=[],
-                    row_count=0,
-                    summary=f"Iteration {iteration} failed: {exc}",
-                )
-                state.add_error(f"Investigation iteration {iteration} error: {exc}")
-
-            state.investigation_steps.append(step)
-
-        state.query = original_query
-        state.is_multi_step = True  # so InsightGenerator knows there are multiple results
+    def _run_analytics(self, state: AgentState) -> AgentState:
+        """Route root_cause_analysis to AnalyticsAgent (tool calling)."""
+        state = self.analytics_agent.run(state)
+        # Mark as investigation so InsightGenerator skips re-generating insights
+        # (AnalyticsAgent already writes state.insights directly)
+        state.is_multi_step = False
         return state
 
     # ─────────────────────────────────────────────

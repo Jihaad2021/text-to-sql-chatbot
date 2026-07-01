@@ -33,7 +33,7 @@ from src.core.config import Config
 from src.core.pipeline import TextToSQLPipeline
 from src.core.startup import validate_environment
 from src.models.agent_state import AgentState
-from src.utils.exceptions import AgentExecutionError
+from src.utils.exceptions import AgentExecutionError, QueryExecutionError, SQLValidationError
 from src.utils.logger import setup_logger
 
 logger = setup_logger(name="main")
@@ -139,6 +139,8 @@ class QueryResponse(BaseModel):
     step_results: Optional[List[Dict[str, Any]]] = None
     chart_config: Optional[Dict[str, Any]] = None
     conversation_history: List[Dict[str, Any]] = []
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    intent: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any]
 
 
@@ -269,18 +271,7 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
             "is_multi_step": state.is_multi_step,
         }]
 
-        if state.investigation_steps:
-            serialized_steps = [
-                {
-                    "step_number": s.iteration,
-                    "description": s.sub_query,
-                    "sql": s.sql,
-                    "row_count": s.row_count,
-                    "summary": s.summary,
-                }
-                for s in state.investigation_steps
-            ]
-        elif state.step_results:
+        if state.step_results:
             serialized_steps = [
                 {
                     "step_number": sr.step_number,
@@ -305,6 +296,8 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
             step_results=serialized_steps,
             chart_config=state.chart_config,
             conversation_history=updated_history,
+            tool_calls=state.tool_calls or None,
+            intent=state.intent,
             metadata={
                 "request_id": request_id,
                 "pipeline_stage": "complete",
@@ -317,6 +310,35 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
                 "rewrite_notes": state.rewrite_notes,
                 "rewritten_query": state.query if state.rewrite_notes else None,
             },
+        )
+
+    except (QueryExecutionError, SQLValidationError) as e:
+        # SQL that cannot be executed or validated (e.g. column not found, data unavailable)
+        # Return 422 with a user-facing Indonesian explanation instead of a raw 500
+        logger.warning(
+            "query execution error",
+            extra={"request_id": request_id, "agent": e.agent_name, "error": e.message},
+        )
+        # Try to give a more specific hint based on what the user asked
+        question_lower = body.question.lower()
+        _PRODUCT_KEYWORDS = {"simpati", "loop", "halo", "paket", "harga", "kuota", "pelanggan", "pengguna"}
+        if any(kw in question_lower for kw in _PRODUCT_KEYWORDS):
+            user_hint = (
+                "Database ini berisi data settlement transaksi digital (partner, channel, success rate, revenue). "
+                "Data produk Telkomsel (nama paket, harga, kuota, segmentasi pelanggan Simpati/Loop/Halo) "
+                "tidak tersedia di sini. "
+                "Coba tanyakan: total transaksi per partner, success rate, tren revenue, atau perbandingan antar periode."
+            )
+        else:
+            user_hint = (
+                "Pertanyaan tidak dapat dijawab dengan data yang tersedia. "
+                "Kemungkinan data dengan granularitas tersebut tidak ada "
+                "(contoh: data per jam tidak tersedia, hanya tersedia data harian). "
+                "Coba ubah pertanyaan Anda atau tanyakan dalam cakupan yang berbeda."
+            )
+        raise HTTPException(
+            status_code=422,
+            detail={"request_id": request_id, "error": user_hint},
         )
 
     except AgentExecutionError as e:

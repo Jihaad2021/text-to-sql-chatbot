@@ -37,18 +37,6 @@ class StepResult:
 
 
 @dataclass
-class InvestigationStep:
-    """One iteration of an adaptive root-cause investigation."""
-
-    iteration: int
-    sub_query: str    # natural language question for this iteration
-    sql: str          # executed SQL
-    data: list[dict]  # query results
-    row_count: int
-    summary: str      # 1-line description of what was found
-
-
-@dataclass
 class AgentState:
     """
     Shared state passed between all agents in the pipeline.
@@ -99,9 +87,11 @@ class AgentState:
     step_results: List[Any] = field(default_factory=list)    # list[StepResult]
     is_multi_step: bool = False
 
-    # Adaptive investigation (root_cause_analysis intent)
-    investigation_steps: list[InvestigationStep] = field(default_factory=list)
-    investigation_decision: dict | None = None
+    # Analytics agent tool calling log
+    tool_calls: list[dict] = field(default_factory=list)
+
+    # Pre-computed context injected by pipeline at request time
+    context_snapshot: str = ""
 
     # Chart visualization config (built by InsightGenerator)
     chart_config: dict | None = None
