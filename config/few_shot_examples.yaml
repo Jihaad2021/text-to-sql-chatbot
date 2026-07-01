@@ -106,3 +106,96 @@ examples:
       GROUP BY payment_provider
       ORDER BY total_net_gap ASC
       LIMIT 10;
+
+  - question: "apakah ada partner yang mengalami lonjakan ekstrim bulan Juni 2026?"
+    sql: |
+      WITH current_period AS (
+        SELECT
+          partner,
+          SUM(total_trx)     AS trx_current,
+          SUM(total_revenue) AS rev_current
+        FROM daily_master
+        WHERE date >= '2026-06-01' AND date <= '2026-06-20'
+        GROUP BY partner
+      ),
+      baseline_period AS (
+        SELECT
+          partner,
+          SUM(total_trx)     AS trx_baseline,
+          SUM(total_revenue) AS rev_baseline
+        FROM daily_master
+        WHERE date >= '2026-05-01' AND date <= '2026-05-20'
+        GROUP BY partner
+      )
+      SELECT
+        c.partner,
+        c.trx_current,
+        b.trx_baseline,
+        ROUND((c.trx_current - b.trx_baseline)::numeric / NULLIF(b.trx_baseline, 0) * 100, 2) AS trx_pct_change,
+        c.rev_current,
+        b.rev_baseline,
+        ROUND((c.rev_current - b.rev_baseline)::numeric / NULLIF(b.rev_baseline, 0) * 100, 2) AS rev_pct_change
+      FROM current_period c
+      JOIN baseline_period b USING (partner)
+      ORDER BY ABS(ROUND((c.trx_current - b.trx_baseline)::numeric / NULLIF(b.trx_baseline, 0) * 100, 2)) DESC
+      LIMIT 20;
+
+  - question: "partner mana yang konsisten tumbuh setiap bulan dari Maret sampai Juni 2026?"
+    sql: |
+      WITH monthly AS (
+        SELECT
+          partner,
+          TO_CHAR(date, 'YYYY-MM')  AS bulan,
+          SUM(total_trx)            AS total_trx
+        FROM daily_master
+        WHERE date >= '2026-03-01' AND date <= '2026-06-30'
+        GROUP BY partner, TO_CHAR(date, 'YYYY-MM')
+      ),
+      with_growth AS (
+        SELECT
+          partner,
+          bulan,
+          total_trx,
+          LAG(total_trx) OVER (PARTITION BY partner ORDER BY bulan) AS prev_trx
+        FROM monthly
+      )
+      SELECT
+        partner,
+        COUNT(*)                                                    AS jumlah_bulan,
+        BOOL_AND(total_trx > prev_trx)                             AS konsisten_naik,
+        MIN(total_trx)                                             AS trx_terendah,
+        MAX(total_trx)                                             AS trx_tertinggi,
+        ROUND((MAX(total_trx) - MIN(total_trx))::numeric / NULLIF(MIN(total_trx), 0) * 100, 1) AS total_growth_pct
+      FROM with_growth
+      WHERE prev_trx IS NOT NULL
+      GROUP BY partner
+      HAVING BOOL_AND(total_trx > prev_trx)
+      ORDER BY total_growth_pct DESC;
+
+  - question: "partner mana yang transaksinya naik atau turun signifikan bulan ini dibanding bulan lalu?"
+    sql: |
+      WITH cur AS (
+        SELECT partner, SUM(total_trx) AS trx_cur, SUM(total_revenue) AS rev_cur
+        FROM daily_master
+        WHERE date >= '2026-06-01' AND date <= '2026-06-20'
+        GROUP BY partner
+      ),
+      prev AS (
+        SELECT partner, SUM(total_trx) AS trx_prev, SUM(total_revenue) AS rev_prev
+        FROM daily_master
+        WHERE date >= '2026-05-01' AND date <= '2026-05-20'
+        GROUP BY partner
+      )
+      SELECT
+        c.partner,
+        c.trx_cur                                                                                      AS transaksi_juni,
+        p.trx_prev                                                                                     AS transaksi_mei,
+        ROUND((c.trx_cur - p.trx_prev)::numeric / NULLIF(p.trx_prev, 0) * 100, 2)                    AS perubahan_trx_pct,
+        ROUND(c.rev_cur::numeric / 1e9, 2)                                                             AS revenue_juni_miliar,
+        ROUND(p.rev_prev::numeric / 1e9, 2)                                                            AS revenue_mei_miliar,
+        ROUND((c.rev_cur - p.rev_prev)::numeric / NULLIF(p.rev_prev, 0) * 100, 2)                    AS perubahan_rev_pct
+      FROM cur c
+      JOIN prev p USING (partner)
+      WHERE ABS(ROUND((c.trx_cur - p.trx_prev)::numeric / NULLIF(p.trx_prev, 0) * 100, 2)) > 10
+      ORDER BY ABS(ROUND((c.trx_cur - p.trx_prev)::numeric / NULLIF(p.trx_prev, 0) * 100, 2)) DESC
+      LIMIT 20;
