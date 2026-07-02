@@ -38,7 +38,7 @@ from src.utils.thresholds import render_thresholds_block
 # Chart.js-producing visual_block types — used to count expected chart configs
 # for index-based anchor enrichment. Other types (kpi_grid, anomaly_callout,
 # data_table, ranking_table) do not produce entries in chart_configs.
-_CHARTJS_VISUAL_TYPES = {"line_chart", "bar_chart", "doughnut"}
+_CHARTJS_VISUAL_TYPES = {"line_chart", "bar_chart", "donut_chart"}
 
 
 class InsightGenerator(LLMBaseAgent):
