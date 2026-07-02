@@ -26,10 +26,11 @@ from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.tools.tool_registry import TOOL_DEFINITIONS, execute_tool, to_anthropic_tools
 from src.utils.exceptions import LLMCallError
+from src.utils.thresholds import render_thresholds_block as _render_thresholds
 
 _MAX_TOOL_ITERATIONS = 8
 
-_SYSTEM_PROMPT = """Kamu adalah analis data senior untuk platform pembayaran digital Telkomsel.
+_SYSTEM_PROMPT = f"""Kamu adalah analis data senior untuk platform pembayaran digital Telkomsel.
 Gunakan tools yang tersedia untuk menjawab pertanyaan analitik secara sistematis.
 
 Data tersedia: Maret 2026 – Juni 2026.
@@ -56,12 +57,7 @@ Strategi investigasi setelah tool pertama:
 3. Drill down dengan get_distribution untuk tahu kontributor utama jika perlu
 4. Berhenti memanggil tool jika pertanyaan sudah terjawab — jangan over-investigate
 
-BUSINESS THRESHOLDS (gunakan ini untuk kontekstualisasi hasil):
-- Success Rate: ≥97% = normal (tidak perlu disebutkan), 95–96.99% = perlu perhatian, <95% = kritis
-  → HANYA flag nilai yang BENAR-BENAR di bawah 97%. Nilai 99.x% adalah normal meski tidak 100%.
-- Perubahan transaksi harian vs baseline: <15% = normal, 15–35% = signifikan, >35% = ekstrim
-- Perubahan revenue vs baseline: <10% = normal, 10–25% = signifikan, >25% = ekstrim
-- Lonjakan positif >35% biasanya indikasi promo atau event; negatif >35% indikasi gangguan sistem
+{_render_thresholds()}
 
 PERIODE PARSIAL — sebutkan jika bulan sedang berjalan:
 - Jika data periode yang dianalisis belum bulan penuh (misalnya Juni 2026 baru 20 hari),

@@ -1,0 +1,50 @@
+# Business Thresholds — single source of truth
+#
+# Consumers: analytics_agent.py, insight_generator.py (single-step + multi-step)
+# Edit this file ONLY to change threshold values — never edit prompt strings directly.
+# Loaded once at process startup (lru_cache); restart to pick up changes.
+#
+# SR threshold rationale: >98% = SEHAT confirmed 2026-07-03 via historical analysis
+# (only 1.41% of partner-days in 97–98% flip zone, concentrated on 2 anomaly dates).
+
+thresholds:
+  - metric: "MoM Volume Growth"
+    sehat:    "> 0%"
+    perhatian: "-10% s/d 0%"
+    kritis:   "< -10%"
+
+  - metric: "Success Rate"
+    sehat:    "> 98%"
+    perhatian: "95% – 98%"
+    kritis:   "< 95%"
+
+  - metric: "Konsentrasi Top-2"
+    sehat:    "< 50%"
+    perhatian: "50% – 70%"
+    kritis:   "> 70%"
+
+  - metric: "Streak Turun (hari)"
+    sehat:    "0–1"
+    perhatian: "2–3"
+    kritis:   "≥ 4"
+
+  - metric: "DoD Spike/Drop"
+    sehat:    "< ±20%"
+    perhatian: "±20% – 40%"
+    kritis:   "> ±40%"
+
+  - metric: "Perubahan transaksi"
+    sehat:    "< 15%"
+    perhatian: "15% – 35%"
+    kritis:   "> 35%"
+
+  - metric: "Perubahan revenue"
+    sehat:    "< 10%"
+    perhatian: "10% – 25%"
+    kritis:   "> 25%"
+
+notes:
+  - "VERDICT WAJIB: setiap jawaban harus menyebut salah satu — SEHAT / PERHATIAN / KRITIS — [1 kalimat alasan]"
+  - "HANYA flag SR yang benar-benar di bawah 98%. Nilai 99.x% adalah SEHAT, jangan sebut sebagai 'di bawah threshold'."
+  - "KONTEKS WAKTU WAJIB: selalu sebut konteks perbandingan — 'vs kemarin', 'vs bulan lalu', 'vs rata-rata periode'"
+  - "Lonjakan positif >35% biasanya indikasi promo atau event; negatif >35% indikasi gangguan sistem."
