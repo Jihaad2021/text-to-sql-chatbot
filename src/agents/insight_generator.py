@@ -578,7 +578,16 @@ SYNTHESIS RULES:
             return []
 
         visual_blocks = plan.get("visual_blocks", [])
-        chart_vblocks = [b for b in visual_blocks if b.get("type") in _CHARTJS_VISUAL_TYPES]
+        # TODO(Prompt 4): add diverging_bar_chart to _CHARTJS_VISUAL_TYPES once its
+        # chart config builder is implemented; until then it falls through to the warning.
+        _KNOWN_NON_CHART = {"kpi_grid", "anomaly_callout", "data_table", "ranking_table"}
+        chart_vblocks = []
+        for b in visual_blocks:
+            btype = b.get("type", "")
+            if btype in _CHARTJS_VISUAL_TYPES:
+                chart_vblocks.append(b)
+            elif btype not in _KNOWN_NON_CHART:
+                self.log(f"visual_block type '{btype}' not in _CHARTJS_VISUAL_TYPES — skipped in chart matching", level="warning")
 
         if len(raw_configs) != len(chart_vblocks):
             self.log(

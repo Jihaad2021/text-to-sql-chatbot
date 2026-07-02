@@ -88,7 +88,7 @@ _CHEAP_MODELS: dict[str, str] = {
 }
 
 _VALID_VISUAL_TYPES = {
-    "line_chart", "bar_chart", "donut_chart",
+    "line_chart", "bar_chart", "diverging_bar_chart", "donut_chart",
     "kpi_grid", "anomaly_callout", "data_table", "ranking_table",
 }
 
@@ -266,7 +266,7 @@ DATA_SHAPE field guide (use these to choose visual_blocks type):
   has_time_dimension    — true when a date/period/month column is present → prefer line_chart
   has_pct_change_column — true when a *_pct_change column exists → prefer bar_chart for comparison
   has_share_column      — true when a *_share_pct / distribution column exists → prefer donut_chart (≤6 rows) or bar_chart
-  distinct_entity_count — number of rows = number of categories; ≤6 → donut_chart eligible, >6 → bar_chart
+  distinct_entity_count — number of rows = number of categories; ≤6 → donut_chart eligible (guarded by has_time_dimension=false, see Rule 1), >6 → bar_chart
 
 Return ONLY valid JSON — no explanation, no markdown fences:
 {{
@@ -281,7 +281,7 @@ Return ONLY valid JSON — no explanation, no markdown fences:
       "purpose":      "leading_answer"
     }},
     {{
-      "type":         "line_chart"|"donut_chart"|"kpi_grid"|"anomaly_callout"|"ranking_table",
+      "type":         "line_chart"|"bar_chart"|"diverging_bar_chart"|"donut_chart"|"kpi_grid"|"anomaly_callout"|"ranking_table",
       "anchor_after": "s1"|"s2"|"s3"|"s4",
       "purpose":      "supporting_evidence"
     }},
@@ -312,14 +312,44 @@ SECTION RULES
 ═══════════════════════════════════════════════
 VISUAL BLOCK RULES
 ═══════════════════════════════════════════════
-Choose type:
-  line_chart     → time-series data (date/period column present)
-  bar_chart      → categorical ranking (partner, product, channel — more than 6 entities)
-  donut_chart    → distribution/share (2–6 entities only)
-  kpi_grid       → ≤6 rows × ≤4 cols of scalar metrics (no time dimension)
-  anomaly_callout → only when anomaly/spike/drop detected
-  data_table     → raw drill-down reference, many rows
-  ranking_table  → top/bottom N list with scores
+CHART SELECTION — check rules in order, take first match:
+
+  1. donut_chart
+     WHEN: has_share_column=true AND has_time_dimension=false AND distinct_entity_count ≤ 6
+     NOTE: has_time_dimension=false is mandatory. distinct_entity_count equals row_count,
+     so a 5-partner × 6-month query gives distinct_entity_count=30 (not 5). Without
+     this guard the rule fires on multi-entity time-series; rule 2 handles those instead.
+
+  2. line_chart
+     WHEN: has_time_dimension=true
+
+  3. diverging_bar_chart
+     WHEN: is_multi_step=true
+           AND steps[0].columns == steps[1].columns (identical column names)
+           AND steps[0].row_count == steps[1].row_count
+     (Side-by-side period comparison detected. InsightGenerator computes % change later;
+     ResponsePlanner only needs to recognise the structural pattern.)
+
+  4. bar_chart
+     WHEN: has_share_column=true AND distinct_entity_count > 6
+     (Too many slices for a donut — use bar chart.)
+
+  5. data_table  (no chart — do not add a chart entry in visual_blocks)
+     WHEN: distinct_entity_count > 10 AND has_time_dimension=false
+     (Too many categories to chart meaningfully; surface raw data only.)
+
+  6. bar_chart
+     WHEN: is_multi_step=false AND has_time_dimension=false AND has_share_column=false
+     (Ranking / top-N / categorical breakdown.)
+
+  7. DEFAULT: kpi_grid + data_table
+     (Scalar metrics or unclassified result.)
+
+Non-chart types (always available regardless of rules above):
+  kpi_grid        → ≤6 rows × ≤4 cols of scalar metrics (no time dimension)
+  anomaly_callout → only when anomaly/spike/drop is the primary finding
+  data_table      → raw drill-down reference
+  ranking_table   → top/bottom N list with scores
 
 Choose purpose — this controls WHERE the visual appears in the response:
   "leading_answer"     → The chart IS the primary answer (comparison, distribution, top-N ranking).
