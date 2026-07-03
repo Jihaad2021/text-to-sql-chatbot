@@ -93,55 +93,24 @@ function appendClarificationMessage(container, reason) {
 function appendAssistantMessage(container, result) {
   const gid       = 'g' + Date.now() + Math.random().toString(36).slice(2, 6)
   const isMulti   = result.is_multi_step && result.step_results?.length > 0
-  const hasData   = result.data?.length > 0
   const hasSql    = Boolean(result.sql)
   const chartList = result.chart_configs?.length ? result.chart_configs : (result.chart_config ? [result.chart_config] : [])
-  const hasCharts = chartList.length > 0
   const toolCalls = result.tool_calls ?? []
   const intent    = result.metadata?.intent?.category ?? result.intent?.category ?? ''
   const errors    = result.metadata?.errors ?? []
   const rowCount  = result.row_count ?? 0
+  const plan      = result.layout_plan
 
-  // Auto-detect display format
-  const showKpi  = !isMulti && hasData && _isKpiData(result.data)
-  const showBars = !isMulti && hasData && !showKpi && _isBarsData(result.data)
+  // Use anchored layout when ResponsePlanner ran (plan exists) and not multi-step accordion
+  let body = (plan && !isMulti)
+    ? _buildAnchoredBody(gid, result, plan, chartList)
+    : _buildFlatBody(gid, result, chartList, isMulti)
 
-  let body = ''
-
-  // ── 1. Insight text
-  body += `<div class="md-content ai-text">${renderMd(result.insights || '–')}</div>`
-
-  // ── 2. KPI cards
-  if (showKpi) body += _buildKpiGrid(result.data)
-
-  // ── 3. Horizontal bar chart (auto-detected from data shape)
-  if (showBars) body += _buildHbarSection(result.data)
-
-  // ── 4. Chart.js panels (one per config in chart_configs)
-  if (hasCharts && !showBars) {
-    chartList.forEach((cfg, i) => {
-      body += _buildChartPanel(`${gid}_c${i}`, cfg.title ?? '')
-    })
-  }
-
-  // ── 5. Anomaly callout (when intent is anomaly-related and data has anomalous rows)
-  const isAnomalyIntent = intent.includes('anomal') || intent.includes('root_cause')
-  if (isAnomalyIntent && result.insights) body += _buildAnomalyCallout(result.insights, result.data)
-
-  // ── 6. Data table (always show when there's data and not KPI-mode)
-  if (hasData && !showKpi) body += _buildTableSection(result.data, rowCount)
-
-  // ── 7. Multi-step accordion
-  if (isMulti) body += _buildMultiAccordion(result.step_results, gid)
-
-  // ── 8. Bottom tabs (SQL / Tools / Detail) — collapsed by default
+  // Bottom tabs, quick replies, meta — unchanged
   const hasTabs = hasSql || toolCalls.length > 0
   if (hasTabs) body += _buildBottomTabs(result, gid, hasSql, toolCalls)
-
-  // ── 9. Quick replies
   body += _buildQuickReplies(intent)
 
-  // ── 10. Meta line
   const metaParts = []
   if (rowCount > 0) metaParts.push(`${fmtNum(rowCount)} baris`)
   if (intent) metaParts.push(intent.replace(/_/g, ' '))
@@ -161,7 +130,9 @@ function appendAssistantMessage(container, result) {
 
   container.appendChild(el)
 
-  if (hasCharts && !showBars) {
+  // Initialize Chart.js instances — skip entirely when needs_visual=false
+  const needsVisual = plan ? plan.needs_visual !== false : chartList.length > 0
+  if (needsVisual) {
     chartList.forEach((cfg, i) => {
       const cgid = `${gid}_c${i}`
       _chartConfigs.set(cgid, cfg)
@@ -171,16 +142,146 @@ function appendAssistantMessage(container, result) {
 
   _initBottomTabs(el, gid)
   _initAccordion(el, gid)
+  _initDetailToggle(el, gid)
   _initSortable(el)
   _initCopyBtns(el)
   _initQuickReplies(el)
 
-  // Animate bar fills after DOM paint
   requestAnimationFrame(() => {
     el.querySelectorAll('.hbar-fill[data-w]').forEach(bar => {
       bar.style.width = bar.dataset.w + '%'
     })
   })
+}
+
+// ─────────────────────────────────────────────────────────────
+// Anchored layout helpers
+// ─────────────────────────────────────────────────────────────
+
+function _parseSectionMarkers(text) {
+  // Split on <!-- SECTION:sN --> markers emitted by InsightGenerator
+  const parts = text.split(/\n?<!--\s*SECTION:(s\d+)\s*-->\n?/)
+  if (parts.length < 3) return { s1: text }
+  const out = { s1: parts[0].trim() }
+  for (let i = 1; i < parts.length - 1; i += 2) {
+    out[parts[i]] = (parts[i + 1] ?? '').trim()
+  }
+  return out
+}
+
+function _buildAnchoredBody(gid, result, plan, chartList) {
+  const needsVisual = plan.needs_visual !== false
+  const sections    = plan.narrative_sections ?? []
+  const sectionMap  = _parseSectionMarkers(result.insights || '')
+  const hasData     = result.data?.length > 0
+  const rowCount    = result.row_count ?? 0
+
+  // Stable canvas id per config entry — must match the init loop in appendAssistantMessage
+  const cid = (cfg) => `${gid}_c${chartList.indexOf(cfg)}`
+
+  // Show KPI grid only when plan explicitly includes kpi_grid block AND data is KPI-shaped
+  const wantKpi = plan.visual_blocks?.some(b => b.type === 'kpi_grid')
+  const showKpi = needsVisual && hasData && wantKpi && _isKpiData(result.data)
+
+  let body = ''
+
+  if (!needsVisual) {
+    // Single scalar / brief — insight text only, no charts, no table
+    if (sections.length > 1) {
+      body = sections.map(sec => sectionMap[sec.id] ?? '').filter(Boolean)
+        .map(t => `<div class="md-content ai-text">${renderMd(t)}</div>`).join('')
+    } else {
+      body = `<div class="md-content ai-text">${renderMd(result.insights || '–')}</div>`
+    }
+    return body
+  }
+
+  // ── 1. Leading answer charts (before all narrative text) ──
+  chartList.forEach(cfg => {
+    if (cfg.purpose === 'leading_answer') {
+      body += _buildChartPanel(cid(cfg), cfg.title ?? '')
+    }
+  })
+
+  // ── 2. Section text + supporting charts per section ──
+  if (sections.length > 0) {
+    sections.forEach(sec => {
+      const text = sectionMap[sec.id] ?? ''
+      if (text) body += `<div class="md-content ai-text">${renderMd(text)}</div>`
+      if (sec.id === 's1' && showKpi) body += _buildKpiGrid(result.data)
+      chartList.forEach(cfg => {
+        if (cfg.purpose === 'supporting_evidence' && cfg.anchor_after === sec.id) {
+          body += _buildChartPanel(cid(cfg), cfg.title ?? '')
+        }
+      })
+    })
+  } else {
+    // Fallback: no sections declared — render full insight + inline charts
+    body += `<div class="md-content ai-text">${renderMd(result.insights || '–')}</div>`
+    if (showKpi) body += _buildKpiGrid(result.data)
+    chartList.forEach(cfg => {
+      if (!cfg.purpose || cfg.purpose === 'supporting_evidence') {
+        body += _buildChartPanel(cid(cfg), cfg.title ?? '')
+      }
+    })
+  }
+
+  // ── 3. Anomaly callout ──
+  if (plan.anomaly_flag && result.insights) {
+    body += _buildAnomalyCallout(result.insights, result.data)
+  }
+
+  // ── 4. Detail reference — collapsed at bottom ──
+  const detailCharts  = chartList.filter(c => c.purpose === 'detail_reference')
+  const hasTableBlock = hasData && !showKpi && plan.visual_blocks?.some(
+    b => (b.type === 'data_table' || b.type === 'ranking_table') && b.purpose === 'detail_reference'
+  )
+  if (detailCharts.length > 0 || hasTableBlock) {
+    body += _buildDetailReferenceSection(gid, detailCharts.map(c => cid(c)), result, hasTableBlock, rowCount)
+  }
+
+  return body
+}
+
+function _buildFlatBody(gid, result, chartList, isMulti) {
+  // Legacy rendering path — used when layout_plan is absent or is_multi_step
+  const hasData   = result.data?.length > 0
+  const hasCharts = chartList.length > 0
+  const rowCount  = result.row_count ?? 0
+  const intent    = result.metadata?.intent?.category ?? result.intent?.category ?? ''
+  const showKpi   = !isMulti && hasData && _isKpiData(result.data)
+  const showBars  = !isMulti && hasData && !showKpi && _isBarsData(result.data)
+
+  let body = ''
+  body += `<div class="md-content ai-text">${renderMd(result.insights || '–')}</div>`
+  if (showKpi)  body += _buildKpiGrid(result.data)
+  if (showBars) body += _buildHbarSection(result.data)
+  if (hasCharts && !showBars) {
+    chartList.forEach((cfg, i) => { body += _buildChartPanel(`${gid}_c${i}`, cfg.title ?? '') })
+  }
+  const isAnomalyIntent = intent.includes('anomal') || intent.includes('root_cause')
+  if (isAnomalyIntent && result.insights) body += _buildAnomalyCallout(result.insights, result.data)
+  if (hasData && !showKpi) body += _buildTableSection(result.data, rowCount)
+  if (isMulti) body += _buildMultiAccordion(result.step_results, gid)
+  return body
+}
+
+function _buildDetailReferenceSection(gid, detailCids, result, hasTable, rowCount) {
+  let inner = ''
+  detailCids.forEach(id => { inner += _buildChartPanel(id, '') })
+  if (hasTable && result.data?.length) inner += _buildTableSection(result.data, rowCount)
+  return `
+    <div data-detail-wrapper="${gid}" style="border-top:1px solid #F0EDE9;">
+      <button data-detail-toggle="${gid}"
+        style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:7px 18px;background:none;border:none;cursor:pointer;font-size:11px;color:#B3ADA6;font-family:inherit;">
+        <span>Rincian data</span>
+        <svg data-detail-chevron style="transition:transform 0.2s;" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div data-detail-body="${gid}" class="hidden" style="padding:0 0 4px;">
+        ${inner}
+      </div>
+    </div>
+  `
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -852,6 +953,27 @@ function _initAccordion(container, gid) {
         })
       }
     })
+  })
+}
+
+// ─────────────────────────────────────────────────────────────
+// Detail reference toggle
+// ─────────────────────────────────────────────────────────────
+
+function _initDetailToggle(container, gid) {
+  const toggle  = container.querySelector(`[data-detail-toggle="${gid}"]`)
+  const body    = container.querySelector(`[data-detail-body="${gid}"]`)
+  const chevron = toggle?.querySelector('[data-detail-chevron]')
+  if (!toggle || !body) return
+  toggle.addEventListener('click', () => {
+    const nowHidden = body.classList.toggle('hidden')
+    if (chevron) chevron.style.transform = nowHidden ? '' : 'rotate(180deg)'
+    // Resize Chart.js instances that were initialized while the container was hidden
+    if (!nowHidden) {
+      body.querySelectorAll('canvas[data-chart-gid]').forEach(canvas => {
+        if (canvas._chartInstance) canvas._chartInstance.resize()
+      })
+    }
   })
 }
 
