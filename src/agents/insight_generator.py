@@ -30,15 +30,152 @@ Example:
 
 import json
 import re
+from datetime import datetime
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.thresholds import render_thresholds_block
 
+_MONTH_ID = [
+    "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+]
+
+
+def _format_date_id(date_str: str) -> str:
+    """Convert 'YYYY-MM-DD' to 'DD Nama_Bulan YYYY' in Indonesian."""
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        return f"{d.day} {_MONTH_ID[d.month]} {d.year}"
+    except ValueError:
+        return date_str
+
 # Chart.js-producing visual_block types — used to route per-block builders.
 # Non-chart types (kpi_grid, anomaly_callout, data_table, ranking_table) are
 # excluded from chart_configs entirely.
 _CHARTJS_VISUAL_TYPES = {"line_chart", "bar_chart", "donut_chart", "diverging_bar_chart"}
+
+# Recommendation rules block — injected BEFORE SQL/RESULTS so the LLM processes
+# the threshold-first ordering instruction before forming a volume-based approach.
+_RECOMMENDATION_RULES_BLOCK = """
+⚠️ ANALISIS REKOMENDASI — IKUTI TIGA LANGKAH INI SECARA BERURUTAN:
+
+LANGKAH 1 — KLASIFIKASI (lakukan ini diam-diam, sebelum menulis output):
+Untuk setiap baris data, tentukan statusnya:
+  SR < 95%         → KRITIS  (intervensi segera)
+  95% ≤ SR < 98%   → PERHATIAN  (monitoring ketat)
+  SR ≥ 98%         → SEHAT
+
+LANGKAH 2 — URUTKAN berdasarkan status (bukan volume atau revenue):
+  KRITIS (paling mendesak) → PERHATIAN → SEHAT
+
+LANGKAH 3 — TULIS OUTPUT dalam format ini:
+
+Partner yang paling membutuhkan perhatian berdasarkan tingkat keberhasilan transaksi.
+
+## 🔴 KRITIS — Perlu Tindakan Segera
+- **[nama_partner]**: SR **X,XX%** (standar **≥98%** | selisih **-Y,YY pp**) — [rekomendasi spesifik]
+
+## 🟡 PERHATIAN — Perlu Monitoring Ketat
+- **[nama_partner]**: SR **X,XX%** (standar **≥98%** | selisih **-Y,YY pp**) — [rekomendasi]
+
+## 🟢 SEHAT — Pertahankan Performa
+- **[nama_partner]**: SR **X,XX%** ✓
+
+ATURAN KERAS:
+✗ DILARANG mengurutkan berdasarkan total transaksi atau pendapatan
+✗ DILARANG menyebut partner SEHAT sebagai yang "perlu diprioritaskan"
+✗ DILARANG melewati satu partner tanpa mengklasifikasi SR-nya
+"""
+
+# Standard RULES/FORMAT/CONTOH block for non-recommendation single-step queries.
+_STANDARD_RULES_AND_FORMAT_BLOCK = """
+RULES:
+1. Jawab pertanyaan literal terlebih dahulu — 1–2 kalimat singkat tanpa sub-judul
+2. Lihat nama kolom di SQL untuk menentukan apakah itu transaksi, revenue, atau persentase
+3. Setiap section setelah jawaban langsung: gunakan bullet points, BUKAN paragraf panjang
+
+FORMAT OUTPUT — WAJIB DIIKUTI:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Bagian pembuka: 1–2 kalimat singkat langsung menjawab (tanpa sub-judul)
+✓ Setiap section berikutnya:
+   - Tulis ## Sub-Judul terlebih dahulu
+   - Temuan ditulis sebagai BULLET POINTS (- ), bukan paragraf
+   - Tiap bullet: maks 1–2 kalimat, langsung ke angka dan fakta
+   - Boleh 1 kalimat intro sebelum bullet, tapi TIDAK LEBIH
+✓ Angka kunci WAJIB di-bold: **28,4 juta**, **Rp 3,2 miliar**, **99,2%**
+✓ Ranking → gunakan 1. 2. 3. (numbered list)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✗ DILARANG: paragraf >2 kalimat berturut-turut tanpa bullet
+✗ DILARANG: blok kode SQL, backticks (```)
+✗ DILARANG: nama kolom teknis (total_trx → "transaksi", net_revenue → "pendapatan bersih")
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONTOH FORMAT YANG BENAR:
+Total transaksi GoPay bulan April mencapai **12,3 juta transaksi**, lebih tinggi dari OVO.
+
+## Perbandingan Utama
+- GoPay: **12,3 juta transaksi** — naik **8%** dari Maret
+- OVO: **10,1 juta transaksi** — turun **3%** dari Maret
+- Selisih: GoPay unggul **2,2 juta transaksi (22% lebih tinggi)**
+
+## Success Rate
+- GoPay: **99,4%** — dalam batas normal (≥97%)
+- OVO: **98,9%** — dalam batas normal (≥97%)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+# Late-position reinforcement for recommendation synthesis (threshold-first, not volume ranking).
+# Injected after business_thresholds_block as a closing reminder.
+_RECOMMENDATION_SYNTHESIS_INSTRUCTIONS = """
+INSTRUKSI SYNTHESIS REKOMENDASI — WAJIB DIIKUTI (menggantikan urutan standar):
+
+Langkah 1 — SCAN THRESHOLD: Periksa SETIAP baris data terhadap threshold resmi di atas.
+  - SR < 95%         → KRITIS
+  - 95% ≤ SR < 98%   → PERHATIAN
+  - SR ≥ 98%         → SEHAT
+
+Langkah 2 — URUTKAN berdasarkan tingkat keparahan, BUKAN volume atau revenue:
+  KRITIS dulu → PERHATIAN → SEHAT (sebagai konteks saja)
+
+Langkah 3 — SETIAP entitas WAJIB menyebutkan tiga hal:
+  a) Angka aktual (contoh: SR **92,87%**)
+  b) Threshold yang berlaku (contoh: threshold minimum **98%**)
+  c) Selisih dari threshold (contoh: **-5,13 pp dari standar**)
+
+FORMAT OUTPUT WAJIB:
+
+## 🔴 KRITIS — Perlu Tindakan Segera
+- **[nama_partner]**: SR **X,XX%** (standar **≥98%** | selisih **-Y,YY pp**) — [rekomendasi tindakan spesifik]
+
+## 🟡 PERHATIAN — Perlu Monitoring Ketat
+- **[nama_partner]**: SR **X,XX%** (standar **≥98%** | selisih **-Y,YY pp**) — [rekomendasi tindakan]
+
+## 🟢 SEHAT — Referensi Performa Baik
+- **[nama_partner]**: SR **X,XX%** ✓ — pertahankan performa
+
+LARANGAN KERAS:
+✗ DILARANG mengurutkan partner berdasarkan total_trx atau revenue
+✗ DILARANG menjadikan partner dengan volume terbesar sebagai prioritas utama jika SR-nya ≥98%
+✗ DILARANG melewati satu entitas pun tanpa mengecek threshold SR-nya
+✗ DILARANG menyebut partner SEHAT sebagai yang perlu "diprioritaskan"
+"""
+
+# Standard analysis block for non-recommendation single-step queries.
+_GENERAL_ANALYSIS_BLOCK = """
+RANKED DATA: bullet tiap entitas — nilai, persentase kontribusi, delta vs periode lain
+TIME SERIES: bullet per temuan penting — puncak, lembah, lonjakan tiba-tiba (>30%)
+
+PERIODE PARSIAL — wajib disebutkan jika ada:
+- Jika data mencakup bulan yang belum selesai (misalnya Juni 2026 baru ~20 hari), SELALU cantumkan:
+  "data Juni mencakup X hari pertama" sehingga pembaca tidak salah membandingkan dengan bulan penuh.
+- Saat membandingkan bulan parsial vs bulan penuh, gunakan rata-rata harian untuk normalisasi,
+  bukan total absolut langsung.
+
+If no results (0 rows):
+- Explain what data is available
+- Suggest alternative queries or time ranges
+"""
 
 
 class InsightGenerator(LLMBaseAgent):
@@ -73,6 +210,20 @@ class InsightGenerator(LLMBaseAgent):
         Returns:
             Updated state with state.insights and state.chart_config
         """
+        # ── Out-of-range guard ────────────────────────────────────────────
+        # Period starts after data_end_date → skip LLM entirely, return deterministic message.
+        if state.query_out_of_range and state.out_of_range_latest:
+            latest_fmt = _format_date_id(state.out_of_range_latest)
+            state.insights = (
+                f"Data terbaru yang tersedia adalah sampai **{latest_fmt}**. "
+                f"Belum ada data untuk periode yang diminta."
+            )
+            self.log(
+                f"Skipped LLM — query_out_of_range=True, latest={state.out_of_range_latest}",
+                level="warning",
+            )
+            return state
+
         plan = state.layout_plan or {}
 
         try:
@@ -120,6 +271,8 @@ class InsightGenerator(LLMBaseAgent):
 
     def _build_prompt(self, state: AgentState) -> str:
         """Branch to the right prompt based on state."""
+        if state.recommendation_from_history:
+            return self._build_recommendation_synthesis_prompt(state)
         if state.tool_results:
             return self._build_tool_results_prompt(state)
         if state.is_multi_step and state.step_results:
@@ -168,6 +321,23 @@ class InsightGenerator(LLMBaseAgent):
         ) or self._detect_segment(state.query)
         segment_guide             = self._build_segment_guide(segment)
         business_thresholds_block = render_thresholds_block()
+        intent_category = (
+            (state.intent or {}).get("category", "")
+            if isinstance(state.intent, dict)
+            else ""
+        )
+        if intent_category == "recommendation":
+            # For recommendation: inject rules BEFORE data so the LLM processes
+            # threshold-first ordering before it sees any volume numbers.
+            early_rules_block = _RECOMMENDATION_RULES_BLOCK
+            late_rules_block = ""
+            late_synthesis_block = _RECOMMENDATION_SYNTHESIS_INSTRUCTIONS
+            general_analysis_block = ""
+        else:
+            early_rules_block = ""
+            late_rules_block = _STANDARD_RULES_AND_FORMAT_BLOCK
+            late_synthesis_block = ""
+            general_analysis_block = _GENERAL_ANALYSIS_BLOCK
 
         elaboration_block = self._build_single_elaboration(response_length, has_context)
 
@@ -176,7 +346,7 @@ class InsightGenerator(LLMBaseAgent):
 USER QUESTION: "{state.query}"
 
 {elaboration_block}
-
+{early_rules_block}
 SQL EXECUTED:
 {state.validated_sql}
 
@@ -200,40 +370,7 @@ REVENUE / MONEY (kolom: total_revenue, net_revenue, platform_fee, net_gap, total
 
 PERCENTAGES (kolom: success_rate_pct, avg_success_rate):
   - Format as "92,5%"
-
-RULES:
-1. Jawab pertanyaan literal terlebih dahulu — 1–2 kalimat singkat tanpa sub-judul
-2. Lihat nama kolom di SQL untuk menentukan apakah itu transaksi, revenue, atau persentase
-3. Setiap section setelah jawaban langsung: gunakan bullet points, BUKAN paragraf panjang
-
-FORMAT OUTPUT — WAJIB DIIKUTI:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ Bagian pembuka: 1–2 kalimat singkat langsung menjawab (tanpa sub-judul)
-✓ Setiap section berikutnya:
-   - Tulis ## Sub-Judul terlebih dahulu
-   - Temuan ditulis sebagai BULLET POINTS (- ), bukan paragraf
-   - Tiap bullet: maks 1–2 kalimat, langsung ke angka dan fakta
-   - Boleh 1 kalimat intro sebelum bullet, tapi TIDAK LEBIH
-✓ Angka kunci WAJIB di-bold: **28,4 juta**, **Rp 3,2 miliar**, **99,2%**
-✓ Ranking → gunakan 1. 2. 3. (numbered list)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✗ DILARANG: paragraf >2 kalimat berturut-turut tanpa bullet
-✗ DILARANG: blok kode SQL, backticks (```)
-✗ DILARANG: nama kolom teknis (total_trx → "transaksi", net_revenue → "pendapatan bersih")
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-CONTOH FORMAT YANG BENAR:
-Total transaksi GoPay bulan April mencapai **12,3 juta transaksi**, lebih tinggi dari OVO.
-
-## Perbandingan Utama
-- GoPay: **12,3 juta transaksi** — naik **8%** dari Maret
-- OVO: **10,1 juta transaksi** — turun **3%** dari Maret
-- Selisih: GoPay unggul **2,2 juta transaksi (22% lebih tinggi)**
-
-## Success Rate
-- GoPay: **99,4%** — dalam batas normal (≥97%)
-- OVO: **98,9%** — dalam batas normal (≥97%)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{late_rules_block}
 
 DATA INTEGRITY — ANTI-HALLUCINATION (wajib diikuti):
 - Gunakan angka dari RESULTS atau dari CONTEXT SNAPSHOT — keduanya valid
@@ -246,21 +383,7 @@ METODOLOGI ANALISIS — ikuti urutan ini:
 3. HITUNG SINYAL → perubahan %, selisih absolut, ranking, anomali
 4. BERI VERDICT → SEHAT / PERHATIAN / KRITIS berdasarkan threshold di bawah
 
-{business_thresholds_block}
-
-RANKED DATA: bullet tiap entitas — nilai, persentase kontribusi, delta vs periode lain
-TIME SERIES: bullet per temuan penting — puncak, lembah, lonjakan tiba-tiba (>30%)
-
-PERIODE PARSIAL — wajib disebutkan jika ada:
-- Jika data mencakup bulan yang belum selesai (misalnya Juni 2026 baru ~20 hari), SELALU cantumkan:
-  "data Juni mencakup X hari pertama" sehingga pembaca tidak salah membandingkan dengan bulan penuh.
-- Saat membandingkan bulan parsial vs bulan penuh, gunakan rata-rata harian untuk normalisasi,
-  bukan total absolut langsung.
-
-If no results (0 rows):
-- Explain what data is available
-- Suggest alternative queries or time ranges
-
+{business_thresholds_block}{late_synthesis_block}{general_analysis_block}
 {segment_guide}{layout_block}Your insights in Indonesian:"""
 
     def _build_tool_results_block(self, tool_results: list) -> str:
@@ -649,6 +772,72 @@ SYNTHESIS RULES:
                 lines.append("")
         return "\n".join(lines)
 
+    def _build_synthesis_history_block(self, history: list[dict]) -> str:
+        """Return full conversation history for recommendation synthesis.
+
+        Unlike _build_history_block (which truncates insights to 200 chars for
+        regular prompts), this version shows up to 2000 chars per turn so the
+        LLM can synthesise actionable recommendations from complete prior findings.
+        """
+        if not history:
+            return ""
+
+        recent = history[-3:]
+        lines = ["\nRECENT CONVERSATION (full detail untuk sintesis rekomendasi):"]
+        for turn in recent:
+            q   = turn.get("query", "")
+            a   = turn.get("insights", "")
+            cat = turn.get("intent_category", "")
+            rc  = turn.get("row_count", 0)
+            if q:
+                label = f"[{cat}, {rc} rows] " if cat else ""
+                lines.append(f"User: {label}{q}")
+            if a:
+                lines.append(f"Chatbot: {a[:2000]}{'...' if len(a) > 2000 else ''}")
+        lines.append("")
+        return "\n".join(lines)
+
+    def _build_recommendation_synthesis_prompt(self, state: AgentState) -> str:
+        """Build prompt for recommendation follow-up that synthesises from conversation history.
+
+        No SQL was executed for this turn. The LLM must derive all recommendations
+        exclusively from prior conversation turns.
+        """
+        history_block = self._build_synthesis_history_block(state.conversation_history)
+        context_block = f"\n{state.context_snapshot}\n" if state.context_snapshot else ""
+        thresholds    = render_thresholds_block()
+        segment = (
+            (state.intent or {}).get("segment")
+            if isinstance(state.intent, dict)
+            else None
+        ) or self._detect_segment(state.query)
+        segment_guide = self._build_segment_guide(segment)
+
+        return f"""You are a data analyst for Telkomsel's digital payment platform.
+{context_block}{history_block}
+USER QUESTION: "{state.query}"
+
+INSTRUKSI KHUSUS — SINTESIS REKOMENDASI DARI HISTORI:
+Pertanyaan ini adalah follow-up dari analisis di atas. Tidak ada SQL baru yang dijalankan untuk turn ini.
+
+WAJIB DIIKUTI — ANTI-HALUSINASI:
+1. Sintesis rekomendasi HANYA dari data dan temuan yang BENAR-BENAR muncul di RECENT CONVERSATION di atas.
+2. DILARANG mengarang angka baru, klaim baru, atau konteks yang tidak ada di percakapan sebelumnya.
+3. DILARANG menyebut "data tidak tersedia" atau meminta data tambahan — data sudah ada di histori.
+4. Setiap rekomendasi HARUS didukung kutipan angka/temuan konkret dari percakapan sebelumnya.
+5. Jika histori tidak cukup untuk memberi rekomendasi spesifik, katakan apa yang sudah diketahui dan apa yang perlu diinvestigasi lebih lanjut.
+
+{thresholds}
+
+FORMAT OUTPUT:
+- Mulai dengan ringkasan situasi berdasarkan temuan di histori (1-2 kalimat)
+- Lanjutkan dengan rekomendasi berurutan dari paling kritis:
+  **1. [Judul rekomendasi]** — [penjelasan + angka pendukung dari histori]
+  **2. [Judul rekomendasi]** — ...
+- Bahasa Indonesia
+
+{segment_guide}Your insights in Indonesian:"""
+
     def _build_history_block(self, history: list[dict]) -> str:
         """Return formatted last 2 conversation turns, or empty string."""
         if not history:
@@ -735,6 +924,11 @@ SYNTHESIS RULES:
             low = col.lower()
             return any(kw in low for kw in ('_pct', 'rate', 'share', 'percent', 'ratio', '_mom', 'growth'))
 
+        def _series_max(col: str) -> float:
+            """Max absolute value across all data rows for a column."""
+            vals = [abs(_to_num(row.get(col)) or 0.0) for row in data]
+            return max(vals) if vals else 0.0
+
         configs: list[dict] = []
         metric_groups = [numeric_cols[i:i+2] for i in range(0, min(len(numeric_cols), 4), 2)]
 
@@ -746,12 +940,26 @@ SYNTHESIS RULES:
             else:
                 chart_type = 'bar'
 
-            # Dual axis: when one col is absolute and the other is a percentage/ratio
-            use_dual = (
-                len(group) == 2
-                and chart_type != 'doughnut'
-                and _is_pct_col(group[0]) != _is_pct_col(group[1])
-            )
+            # Dual axis: type mismatch (pct vs absolute) OR >10× magnitude gap.
+            # Type-mismatch: primary axis (y) = non-pct col, secondary (y1) = pct col.
+            # Magnitude-gap: primary axis (y) = smaller series, secondary (y1) = larger series.
+            # Both protect against one series flattening to ~0 when sharing the same Y scale.
+            use_dual = False
+            dual_primary_col: str | None = None  # col assigned to 'y' (primary / left axis)
+
+            if len(group) == 2 and chart_type != 'doughnut':
+                type_mismatch = _is_pct_col(group[0]) != _is_pct_col(group[1])
+                maxes = [_series_max(c) for c in group]
+                magnitude_gap = min(maxes) > 0 and (max(maxes) / min(maxes)) > 10
+
+                if type_mismatch:
+                    use_dual = True
+                    # non-pct col → primary axis (y)
+                    dual_primary_col = group[0] if not _is_pct_col(group[0]) else group[1]
+                elif magnitude_gap:
+                    use_dual = True
+                    # smaller-magnitude col → primary axis (y) so both series are visible
+                    dual_primary_col = group[0] if maxes[0] <= maxes[1] else group[1]
 
             datasets = []
             for i, y_col in enumerate(group):
@@ -771,7 +979,7 @@ SYNTHESIS RULES:
                     ds['tension'] = 0.3
                     ds['fill']    = False
                 if use_dual:
-                    ds['yAxisID'] = 'y1' if _is_pct_col(y_col) else 'y'
+                    ds['yAxisID'] = 'y' if y_col == dual_primary_col else 'y1'
                 datasets.append(ds)
 
             configs.append({
