@@ -471,3 +471,89 @@ class TestCase8RootCause2Tool:
         assert len(vbs) == 2, (
             f"Expected 2 unique blocks after removing 2 duplicates, got {len(vbs)}: {vbs}"
         )
+
+
+# ────────────────────────────────────────────────────────────────────────
+# TEST B2 REGRESSION — analytics path with empty query_result
+# ────────────────────────────────────────────────────────────────────────
+
+class TestB2AnalyticsPathGuardRegression:
+    """Regression: _enforce_chart_rules must NOT skip when query_result=[] but
+    tool_results is populated (analytics agent path).
+
+    The old guard was: `if state.is_multi_step or not state.query_result: return plan`
+    which silently skipped the entire rule-set for AnalyticsAgent queries because
+    AnalyticsAgent sets query_result to the last tool's data only AFTER ResponsePlanner
+    runs — so query_result is [] at the time _enforce_chart_rules fires.
+    """
+
+    _COMPARE_DATA = [
+        {"channel": "QRIS",      "trx_pct_change": -3.2, "rev_pct_change": -1.8},
+        {"channel": "GoPay",     "trx_pct_change":  2.1, "rev_pct_change":  3.0},
+        {"channel": "OVO",       "trx_pct_change": -8.4, "rev_pct_change": -6.1},
+        {"channel": "Dana",      "trx_pct_change":  1.5, "rev_pct_change":  2.2},
+        {"channel": "ShopeePay", "trx_pct_change": -0.7, "rev_pct_change": -0.3},
+    ]
+
+    def _state(self) -> AgentState:
+        state = AgentState(
+            query="bagaimana dengan channel di tanggal 30 juni?",
+            database="financial_db",
+        )
+        state.intent = {"category": "root_cause_analysis", "segment": "channels", "confidence": 0.9, "reason": "follow-up"}
+        state.is_multi_step = False
+        state.tool_results = [
+            ToolCallResult(
+                tool_name="compare_periods",
+                data=self._COMPARE_DATA,
+                row_count=len(self._COMPARE_DATA),
+                sql_or_params='{"date": "2026-06-30"}',
+                description="Channel comparison on 2026-06-30",
+            )
+        ]
+        # Simulate AnalyticsAgent state BEFORE backward-compat copy:
+        # tool_results is populated but query_result is still empty.
+        state.query_result = []
+        state.row_count = 0
+        return state
+
+    def test_diverging_bar_when_query_result_empty_tool_results_populated(self, planner):
+        """Rule 2 must fire even when query_result=[] if tool_results has pct_change data."""
+        state = self._state()
+        mock_json = _make_plan_json([
+            {"type": "bar_chart", "anchor_after": None, "purpose": "leading_answer"},
+        ], response_length="detailed")
+        with patch.object(planner, "_call_llm", return_value=mock_json):
+            state = planner.run(state)
+
+        vb_types = [b["type"] for b in state.layout_plan["visual_blocks"]]
+        assert "diverging_bar_chart" in vb_types, (
+            f"Rule 2 must upgrade bar → diverging_bar_chart when tool_results has "
+            f"pct_change data (query_result=[]).  Got: {vb_types}"
+        )
+        assert "bar_chart" not in vb_types, (
+            f"bar_chart should be fully replaced by diverging_bar_chart. Got: {vb_types}"
+        )
+
+    def test_guard_still_skips_when_both_empty(self, planner):
+        """Guard must still skip (no data anywhere) when both query_result AND tool_results are empty."""
+        state = AgentState(
+            query="test empty",
+            database="financial_db",
+        )
+        state.query_result = []
+        state.row_count = 0
+        state.tool_results = []
+
+        plan = {
+            "visual_blocks": [{"type": "bar_chart", "anchor_after": None, "purpose": "leading_answer"}],
+            "needs_visual": True,
+            "response_length": "standard",
+            "key_metrics": [],
+            "anomaly_flag": False,
+        }
+        result = planner._enforce_chart_rules(state, plan)
+        vb_types = [b["type"] for b in result["visual_blocks"]]
+        assert vb_types == ["bar_chart"], (
+            f"With no data anywhere, guard must skip all rules (bar_chart must survive). Got: {vb_types}"
+        )

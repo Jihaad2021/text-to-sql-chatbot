@@ -133,7 +133,11 @@ class ResponsePlanner(LLMBaseAgent):
             self.model = cheap
 
     def execute(self, state: AgentState) -> AgentState:
-        has_data = bool(state.query_result) or (state.is_multi_step and state.step_results)
+        has_data = (
+            bool(state.query_result)
+            or bool(state.tool_results)
+            or (state.is_multi_step and state.step_results)
+        )
         if not has_data:
             state.layout_plan = self._default_plan("empty")
             return state
@@ -586,6 +590,10 @@ OTHER RULES
         if state.is_multi_step and state.step_results:
             return any(s.row_count >= 2 for s in state.step_results)
 
+        # Analytics tool path: tool_results populated, query_result may be empty
+        if state.tool_results:
+            return any(tr.row_count >= 2 for tr in state.tool_results)
+
         row_count = state.row_count or (
             len(state.query_result) if state.query_result else 0
         )
@@ -608,10 +616,17 @@ OTHER RULES
         Rules enforced:
           1. donut_chart + entity_count > 6          → downgrade to bar_chart.
           2. bar_chart + has_pct_change + no time    → upgrade to diverging_bar_chart.
-             Covers both single-step and tool_results (compare_periods / detect_anomaly)
-             where ± deltas are already in the data and need explicit sign direction.
+             Covers both single-step (query_result) and analytics tool path
+             (tool_results from compare_periods / detect_anomaly) where ± deltas
+             are pre-computed and need explicit sign direction in the chart.
+
+        Guard condition: skip only when there is genuinely no data anywhere —
+        neither query_result NOR tool_results.  The old guard (not state.query_result)
+        incorrectly skipped analytics-path results where tool_results is populated
+        but query_result is empty.
         """
-        if state.is_multi_step or not state.query_result:
+        has_any_data = bool(state.query_result) or bool(state.tool_results)
+        if state.is_multi_step or not has_any_data:
             return plan
 
         shape        = self._build_data_shape(state)
