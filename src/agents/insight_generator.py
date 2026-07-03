@@ -119,7 +119,9 @@ class InsightGenerator(LLMBaseAgent):
         return state
 
     def _build_prompt(self, state: AgentState) -> str:
-        """Branch to multi-step or single-step prompt based on state."""
+        """Branch to the right prompt based on state."""
+        if state.tool_results:
+            return self._build_tool_results_prompt(state)
         if state.is_multi_step and state.step_results:
             return self._build_multi_step_prompt(state)
         return self._build_single_step_prompt(state)
@@ -258,6 +260,103 @@ PERIODE PARSIAL — wajib disebutkan jika ada:
 If no results (0 rows):
 - Explain what data is available
 - Suggest alternative queries or time ranges
+
+{segment_guide}{layout_block}Your insights in Indonesian:"""
+
+    def _build_tool_results_block(self, tool_results: list) -> str:
+        """Format AnalyticsAgent tool call results for the investigation prompt.
+
+        Shows each tool's result separately so the LLM can reason per-tool
+        rather than getting a heterogeneous row soup.
+        """
+        lines = []
+        for i, tr in enumerate(tool_results, 1):
+            if tr.row_count == 0 or not tr.data:
+                lines.append(f"TOOL {i} — {tr.tool_name}: {tr.description}")
+                lines.append("Status: returned 0 rows — no data available for this tool")
+                lines.append("")
+            else:
+                preview = json.dumps(tr.data[:15], indent=2, default=str)
+                lines.append(f"TOOL {i} — {tr.tool_name}: {tr.description}")
+                lines.append(f"SQL: {tr.sql_or_params}")
+                lines.append(f"Results ({tr.row_count} rows):")
+                lines.append(preview)
+                lines.append("")
+        return "\n".join(lines)
+
+    def _build_tool_results_prompt(self, state: AgentState) -> str:
+        """Build insight prompt for analytics queries with structured tool call results.
+
+        Used when state.tool_results is non-empty (AnalyticsAgent path).
+        Presents each tool's result with its own label so the LLM can
+        reason per-tool, unlike the old flat-concat approach.
+        """
+        history_block             = self._build_history_block(state.conversation_history)
+        tools_block               = self._build_tool_results_block(state.tool_results)
+        context_block             = f"\n{state.context_snapshot}\n" if state.context_snapshot else ""
+        layout_block              = self._build_layout_block(state.layout_plan)
+        business_thresholds_block = render_thresholds_block()
+
+        response_length   = (state.layout_plan or {}).get("response_length", "standard")
+        has_context       = bool(state.context_snapshot)
+        elaboration_block = self._build_multi_elaboration(response_length, has_context)
+
+        segment = (
+            (state.intent or {}).get("segment")
+            if isinstance(state.intent, dict)
+            else None
+        ) or self._detect_segment(state.query)
+        segment_guide = self._build_segment_guide(segment)
+
+        return f"""You are a data analyst for Telkomsel's digital payment platform.
+{context_block}{history_block}
+USER QUESTION: "{state.query}"
+
+{elaboration_block}
+
+INVESTIGATION TOOLS EXECUTED:
+
+{tools_block}
+
+CRITICAL — Number formatting rules:
+
+TRANSACTION COUNTS (kolom: total_trx, success_trx, fail_trx, unique_users_daily, unique_users, unique_users_monthly):
+  - INTEGER COUNTS — NEVER format as Rupiah
+  - Under 1,000: "452 transaksi"
+  - Under 1 million: "52.000 transaksi"
+  - 1M–999M: "52,6 juta transaksi"
+  - 1B+: "1,2 miliar transaksi"
+
+REVENUE / MONEY (kolom: total_revenue, net_revenue, platform_fee, net_gap, total_net_revenue, total_platform_fee):
+  - Rupiah amounts — format with Rp prefix
+  - Under 1 million: "Rp 500.000"
+  - 1M–999M: "Rp 252,3 juta"
+  - 1B+: "Rp 1,2 miliar"
+
+PERCENTAGES: format as "92,5%"
+
+{business_thresholds_block}
+
+DATA INTEGRITY — ANTI-HALLUCINATION (wajib diikuti):
+- HANYA gunakan angka yang BENAR-BENAR muncul di tool results di atas
+- DILARANG mengarang atau menginterpolasi angka spesifik
+- Setiap klaim kausal HARUS didukung angka konkret dari tool result
+- Jika ada outlier >50% dari rata-rata, sorot secara eksplisit
+
+FORMAT OUTPUT — gunakan markdown untuk struktur yang jelas:
+- Mulai dengan jawaban langsung atas pertanyaan utama (penyebab utama / verdict)
+- Gunakan ## untuk setiap sub-topik investigasi
+- Gunakan **teks** untuk bold angka kunci
+- Gunakan - untuk bullet list
+- JANGAN menyertakan blok kode SQL, backticks triple (```), atau teks teknis
+- Bahasa Indonesia
+
+SYNTHESIS RULES:
+1. Lead with the direct causal answer to the question
+2. Quote key numbers from each relevant tool result with correct formatting
+3. Cross-reference findings across tools to build a causal chain
+4. Acknowledge if a tool returned 0 rows or inconclusive data
+5. Panjang jawaban proporsional dengan jumlah tool dan temuan — jangan potong jika ada bukti penting
 
 {segment_guide}{layout_block}Your insights in Indonesian:"""
 

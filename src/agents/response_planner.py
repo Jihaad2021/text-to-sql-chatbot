@@ -174,17 +174,24 @@ class ResponsePlanner(LLMBaseAgent):
         Used by _build_prompt() to give the LLM precise, typed signals instead of
         a freeform string — helps Haiku consistently choose visual_blocks.
 
-        For multi-step queries, returns a list of per-step descriptors under
-        the key "steps" and sets is_multi_step=true.
+        Priority:
+          1. tool_results (analytics path) — per-tool shapes, each with its own schema
+          2. step_results (multi-step SQL path) — per-step shapes
+          3. query_result (single-step SQL path) — single shape
 
-        Single-step fields:
-            row_count             int   — number of rows returned
-            columns               list  — column names (all)
-            has_time_dimension    bool  — any col name contains a time keyword
-            has_pct_change_column bool  — any col name contains pct_change/pct_growth/pct_diff
-            has_share_column      bool  — any col name contains share_pct/distribution/share/kontribusi
-            distinct_entity_count int   — same as row_count; proxy for number of categories
+        For multi-tool / multi-step: returns {"is_multi_step": True, "steps": [...]}
+        For single-step:             returns {"is_multi_step": False, <shape fields>}
         """
+        # Analytics tool-calling path: each tool has its own schema — never mix them
+        if state.tool_results:
+            steps = []
+            for tr in state.tool_results:
+                if not tr.data:
+                    continue
+                cols = list(tr.data[0].keys())
+                steps.append(self._shape_for_cols(cols, tr.row_count, tr.tool_name))
+            return {"is_multi_step": True, "steps": steps}
+
         if state.is_multi_step and state.step_results:
             steps = []
             for s in state.step_results:

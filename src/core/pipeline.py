@@ -23,6 +23,7 @@ from typing import Any
 
 from src.agents.analytics_agent import AnalyticsAgent
 from src.agents.insight_generator import InsightGenerator
+from src.agents.response_planner import ResponsePlanner
 from src.agents.intent_classifier import IntentClassifier
 from src.agents.query_executor import QueryExecutor
 from src.agents.query_planner import QueryPlanner
@@ -37,6 +38,7 @@ from src.core.config import Config
 from src.core.context_snapshot import build_context_snapshot
 from src.core.query_cache import QueryCache, build_snapshot, restore_snapshot
 from src.models.agent_state import AgentState, ExecutionStep, StepResult
+from src.utils.context_distiller import distill_context
 from src.utils.exceptions import QueryExecutionError
 
 # Maximum retries for SQL generation when PostgreSQL returns an execution error
@@ -87,7 +89,8 @@ class TextToSQLPipeline:
         self.sql_validator          = sql_validator
         self.query_executor         = query_executor
         self.insight_generator      = insight_generator
-        self.analytics_agent = AnalyticsAgent()
+        self.analytics_agent  = AnalyticsAgent()
+        self.response_planner = ResponsePlanner()
 
         self._cache = QueryCache(ttl_seconds=Config.CACHE_TTL_SECONDS)
 
@@ -113,12 +116,12 @@ class TextToSQLPipeline:
             self.query_rewriter,
             self.intent_classifier,
             self.query_planner,
-            self.analytical_investigator,
             self.schema_retriever,
             self.retrieval_evaluator,
             self.sql_generator,
             self.sql_validator,
             self.query_executor,
+            self.response_planner,
             self.insight_generator,
         ]
 
@@ -163,6 +166,15 @@ class TextToSQLPipeline:
         if state.needs_clarification:
             return state
 
+        # Out-of-scope queries: return an informative answer without running SQL
+        if state.intent and state.intent.get("category") == "out_of_scope":
+            oos_message = state.intent.get(
+                "out_of_scope_message",
+                "Pertanyaan ini membutuhkan data atau analisis yang belum tersedia di pipeline saat ini."
+            )
+            state.insights = oos_message
+            return state
+
         # Intents that benefit from tool-calling analytics (multi-dimensional investigation).
         # complex_analytics: compare_periods/get_trend tools handle period normalization better
         #   than ad-hoc SQL (e.g. partial months vs full months).
@@ -183,6 +195,14 @@ class TextToSQLPipeline:
         else:
             state.query = state.execution_plan[0].sub_query
             state = self._run_sql_pipeline(state)
+
+        # ── Context Distiller: enrich snapshot with dynamic findings ──
+        distilled = distill_context(state)
+        if distilled:
+            state.context_snapshot = state.context_snapshot + "\n\n" + distilled
+
+        # ── Response Planner: decide output structure ──
+        state = self.response_planner.run(state)
 
         state = self.insight_generator.run(state)
 
@@ -335,10 +355,15 @@ class TextToSQLPipeline:
         return state
 
     def _run_analytics(self, state: AgentState) -> AgentState:
-        """Route root_cause_analysis to AnalyticsAgent (tool calling)."""
+        """Route analytics intents to AnalyticsAgent (tool calling).
+
+        After AnalyticsAgent runs, ResponsePlanner and InsightGenerator still execute.
+        InsightGenerator uses state.tool_results (populated by AnalyticsAgent) to build
+        a per-tool structured prompt rather than re-using state.insights from the agent.
+        """
         state = self.analytics_agent.run(state)
-        # Mark as investigation so InsightGenerator skips re-generating insights
-        # (AnalyticsAgent already writes state.insights directly)
+        # Ensure is_multi_step=False so InsightGenerator routes to _build_tool_results_prompt
+        # (not _build_multi_step_prompt which reads step_results, not tool_results).
         state.is_multi_step = False
         return state
 

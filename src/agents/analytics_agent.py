@@ -23,7 +23,7 @@ from sqlalchemy.engine import Engine
 
 from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
-from src.models.agent_state import AgentState
+from src.models.agent_state import AgentState, ToolCallResult
 from src.tools.tool_registry import TOOL_DEFINITIONS, execute_tool, to_anthropic_tools
 from src.utils.exceptions import LLMCallError
 from src.utils.thresholds import render_thresholds_block as _render_thresholds
@@ -125,7 +125,6 @@ class AnalyticsAgent(LLMBaseAgent):
         tool_calls_log: list[dict] = []
         # Track (tool_name, frozen_args) to prevent identical repeated calls
         seen_calls: set[tuple] = set()
-        all_tool_data: list[dict] = []
 
         for iteration in range(_MAX_TOOL_ITERATIONS):
             response = self.client.chat.completions.create(
@@ -183,12 +182,15 @@ class AnalyticsAgent(LLMBaseAgent):
                     "content":      json.dumps(result["data"][:50], default=str),
                 })
 
-                # Accumulate all tool data for InsightGenerator
                 if result["row_count"] > 0:
-                    all_tool_data.extend(result["data"])
-
-                # Keep last tool result accessible from state
-                if result["row_count"] > 0:
+                    state.tool_results.append(ToolCallResult(
+                        tool_name=tool_name,
+                        data=result["data"],
+                        row_count=result["row_count"],
+                        sql_or_params=result["sql"],
+                        description=result.get("description", ""),
+                    ))
+                    # Keep last tool's data in query_result for backward compat consumers
                     state.query_result = result["data"]
                     state.validated_sql = result["sql"]
                     state.row_count = result["row_count"]
@@ -196,10 +198,6 @@ class AnalyticsAgent(LLMBaseAgent):
             self.log(f"Iteration {iteration + 1}: {len(msg.tool_calls)} tool(s) called")
 
         state.tool_calls = tool_calls_log
-        # Expose all tool data so InsightGenerator can see results from every call
-        if all_tool_data:
-            state.query_result = all_tool_data
-            state.row_count = len(all_tool_data)
         return state
 
     # ── Anthropic ─────────────────────────────────────────────────────────────
@@ -209,7 +207,6 @@ class AnalyticsAgent(LLMBaseAgent):
         messages: list[dict] = [{"role": "user", "content": state.query}]
         tool_calls_log: list[dict] = []
         seen_calls: set[tuple] = set()
-        all_tool_data: list[dict] = []
 
         for iteration in range(_MAX_TOOL_ITERATIONS):
             response = self.client.messages.create(
@@ -226,7 +223,7 @@ class AnalyticsAgent(LLMBaseAgent):
                 break
 
             messages.append({"role": "assistant", "content": response.content})
-            tool_results = []
+            tool_result_msgs = []
 
             for block in response.content:
                 if block.type != "tool_use":
@@ -238,7 +235,7 @@ class AnalyticsAgent(LLMBaseAgent):
                 call_key = (tool_name, json.dumps(arguments, sort_keys=True))
                 if call_key in seen_calls:
                     self.log(f"Duplicate tool call detected: '{tool_name}' — injecting stop hint", level="warning")
-                    tool_results.append({
+                    tool_result_msgs.append({
                         "type":        "tool_result",
                         "tool_use_id": block.id,
                         "content":     (
@@ -259,23 +256,27 @@ class AnalyticsAgent(LLMBaseAgent):
                     "sql":       result["sql"],
                 })
 
-                tool_results.append({
+                tool_result_msgs.append({
                     "type":        "tool_result",
                     "tool_use_id": block.id,
                     "content":     json.dumps(result["data"][:50], default=str),
                 })
 
                 if result["row_count"] > 0:
-                    all_tool_data.extend(result["data"])
+                    state.tool_results.append(ToolCallResult(
+                        tool_name=tool_name,
+                        data=result["data"],
+                        row_count=result["row_count"],
+                        sql_or_params=result["sql"],
+                        description=result.get("description", ""),
+                    ))
+                    # Keep last tool's data in query_result for backward compat consumers
                     state.query_result = result["data"]
                     state.validated_sql = result["sql"]
                     state.row_count = result["row_count"]
 
-            messages.append({"role": "user", "content": tool_results})
-            self.log(f"Iteration {iteration + 1}: {len(tool_results)} tool(s) called")
+            messages.append({"role": "user", "content": tool_result_msgs})
+            self.log(f"Iteration {iteration + 1}: {len(tool_result_msgs)} tool(s) called")
 
         state.tool_calls = tool_calls_log
-        if all_tool_data:
-            state.query_result = all_tool_data
-            state.row_count = len(all_tool_data)
         return state

@@ -37,6 +37,22 @@ class StepResult:
 
 
 @dataclass
+class ToolCallResult:
+    """Result from a single AnalyticsAgent tool call (detect_anomaly, compare_periods, etc.).
+
+    Stored in state.tool_results (one entry per tool call that returned data).
+    Supersedes the flat-concat approach of all_tool_data so each tool's schema
+    remains intact and accessible to ResponsePlanner and InsightGenerator.
+    """
+
+    tool_name: str          # e.g. "detect_anomaly", "compare_periods"
+    data: list[dict]        # rows returned by the tool
+    row_count: int
+    sql_or_params: str      # SQL executed, or JSON-serialised call args for reference
+    description: str        # one-line summary from analytics_tools (e.g. "Compare partner May vs Apr")
+
+
+@dataclass
 class AgentState:
     """
     Shared state passed between all agents in the pipeline.
@@ -87,14 +103,30 @@ class AgentState:
     step_results: List[Any] = field(default_factory=list)    # list[StepResult]
     is_multi_step: bool = False
 
-    # Analytics agent tool calling log
+    # Analytics agent tool calling log (lightweight — tool name + args + row_count only)
     tool_calls: list[dict] = field(default_factory=list)
+
+    # Structured per-tool results from AnalyticsAgent (one entry per tool that returned data).
+    # Each entry preserves the tool's own column schema — no flat-concat mixing.
+    # state.query_result is kept for backward compat and holds the last tool's data.
+    tool_results: list[Any] = field(default_factory=list)  # list[ToolCallResult]
 
     # Pre-computed context injected by pipeline at request time
     context_snapshot: str = ""
 
     # Chart visualization config (built by InsightGenerator)
     chart_config: dict | None = None
+    # Multiple chart configs — each may carry anchor_after + purpose from visual_blocks
+    chart_configs: list[dict] = field(default_factory=list)
+
+    # Layout plan from ResponsePlanner — guides InsightGenerator structure
+    layout_plan: dict | None = None
+
+    # Structured narrative sections parsed from insights string (Option B+C).
+    # None when ResponsePlanner produced no section markers or only one section.
+    # {"s1": "...", "s2": "...", ...} otherwise.
+    # state.insights (full string) is always the authoritative backward-compat field.
+    insights_sections: dict[str, str] | None = None
 
     # Conversational memory — passed in from client each request
     conversation_history: List[Dict[str, Any]] = field(default_factory=list)
