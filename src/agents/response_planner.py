@@ -190,7 +190,7 @@ class ResponsePlanner(LLMBaseAgent):
                 if not tr.data:
                     continue
                 cols = list(tr.data[0].keys())
-                steps.append(self._shape_for_cols(cols, tr.row_count, tr.tool_name))
+                steps.append(self._shape_for_cols(cols, tr.row_count, tr.tool_name, data=tr.data))
             return {"is_multi_step": True, "steps": steps}
 
         if state.is_multi_step and state.step_results:
@@ -199,22 +199,51 @@ class ResponsePlanner(LLMBaseAgent):
                 if not s.data:
                     continue
                 cols = list(s.data[0].keys())
-                steps.append(self._shape_for_cols(cols, s.row_count, s.description))
+                steps.append(self._shape_for_cols(cols, s.row_count, s.description, data=s.data))
             return {"is_multi_step": True, "steps": steps}
 
         if not state.query_result:
             return {"is_multi_step": False, "row_count": 0, "columns": []}
 
         cols = list(state.query_result[0].keys())
-        return {"is_multi_step": False, **self._shape_for_cols(cols, state.row_count)}
+        return {"is_multi_step": False, **self._shape_for_cols(cols, state.row_count, data=state.query_result)}
 
-    def _shape_for_cols(self, cols: list[str], row_count: int, label: str | None = None) -> dict:
-        """Compute shape signals for a single column list + row count."""
+    def _shape_for_cols(
+        self,
+        cols: list[str],
+        row_count: int,
+        label: str | None = None,
+        *,
+        data: list[dict] | None = None,
+    ) -> dict:
+        """Compute shape signals for a single column list + row count.
+
+        Args:
+            cols:      Column names from the result set.
+            row_count: Number of rows.
+            label:     Optional label (tool name / step description) for multi-step shapes.
+            data:      Actual row data — used to count distinct time values so that a
+                       single-date filter (WHERE date = '2026-06-30') is NOT treated as a
+                       real time series.  When data is None the column-name heuristic alone
+                       is used (conservative: presence of a date column → has_time=True).
+        """
         cols_lower = [c.lower() for c in cols]
 
         has_time   = any(kw in c for c in cols_lower for kw in self._TIME_KEYWORDS)
         has_pct    = any(kw in c for c in cols_lower for kw in self._PCT_CHANGE_KEYWORDS)
         has_share  = any(kw in c for c in cols_lower for kw in self._SHARE_KEYWORDS)
+
+        # Refine has_time when actual row data is available: a time column with only one
+        # distinct value is a point filter (e.g. WHERE date = '2026-06-30'), NOT a real
+        # time series.  Only treat it as a time dimension when ≥2 distinct values exist.
+        if has_time and data:
+            time_col = next(
+                (c for c in cols if any(kw in c.lower() for kw in self._TIME_KEYWORDS)),
+                None,
+            )
+            if time_col:
+                distinct_time_vals = len({row.get(time_col) for row in data})
+                has_time = distinct_time_vals > 1
 
         shape: dict = {
             "row_count":              row_count,
