@@ -73,21 +73,21 @@ _PERSISTENT_PATTERN = re.compile(
 def _is_root_cause_override(query: str) -> bool:
     """Return True if query should be forced to root_cause_analysis.
 
-    Two conditions qualify:
-    1. Explicit causal phrase (apa penyebab, penyebab naik/turun, etc.) — always.
-    2. Why-word (kenapa/mengapa) + event signal (change word OR specific time),
-       AND no persistent-pattern word (selalu, biasanya, konsisten, etc.).
-
-    "kenapa DANA selalu rendah" → False  (persistent-pattern word present)
-    "kenapa GoPay turun kemarin" → True  (change + time, no persistent word)
-    "apa penyebab penurunan SR?" → True  (explicit causal phrase)
+    Priority order:
+    1. Explicit causal phrase (apa penyebab, penyebab naik/turun, etc.) → always True.
+    2. Why-word + _CHANGE_EVENT → True, even if persistent-pattern word is present.
+       "kenapa GoPay selalu turun di akhir bulan" → True (change beats persistent).
+    3. Why-word + no persistent-pattern + _TIME_SPECIFIC → True.
+       "kenapa SR tinggi hari ini?" → True (specific time, no change/persistent).
+    4. Why-word + persistent-pattern + no change → False.
+       "kenapa DANA selalu rendah" → False (static position, not an event).
     """
     if _ROOT_CAUSE_EXPLICIT.search(query):
         return True
     if _WHY_QUESTION.search(query):
-        if _PERSISTENT_PATTERN.search(query):
-            return False
-        if _CHANGE_EVENT.search(query) or _TIME_SPECIFIC.search(query):
+        if _CHANGE_EVENT.search(query):          # change event wins over persistent
+            return True
+        if not _PERSISTENT_PATTERN.search(query) and _TIME_SPECIFIC.search(query):
             return True
     return False
 

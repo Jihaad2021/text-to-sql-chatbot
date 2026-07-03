@@ -222,9 +222,8 @@ class TestRootCauseOverride:
         assert _is_root_cause_override("kenapa GoPay turun kemarin") is True
 
     def test_persistent_pattern_suppresses_override(self, classifier):
-        """'kenapa DANA selalu rendah' — persistent-pattern word → override suppressed, ranking_analysis preserved."""
+        """'kenapa DANA selalu rendah' — persistent without change → override suppressed."""
         state = AgentState(query="kenapa DANA selalu rendah", database="financial_db")
-        # LLM says ranking_analysis; override must NOT fire
         mock_response = (
             "INTENT: ranking_analysis\nSEGMENT: partners\n"
             "CONFIDENCE: 0.85\nREASON: ranking context — persistent low position"
@@ -233,7 +232,22 @@ class TestRootCauseOverride:
             state = classifier.run(state)
 
         assert state.intent["category"] == "ranking_analysis", (
-            "Persistent-pattern query must not be overridden — ranking_analysis should be preserved"
+            "No change event → persistent suppresses override → ranking_analysis preserved"
         )
-        # Helper function agrees
         assert _is_root_cause_override("kenapa DANA selalu rendah") is False
+
+    def test_change_event_beats_persistent(self, classifier):
+        """'kenapa GoPay selalu turun di akhir bulan' — change event wins over persistent word."""
+        state = AgentState(query="kenapa GoPay selalu turun di akhir bulan", database="financial_db")
+        # LLM says ranking_analysis; change event should force root_cause_analysis
+        mock_response = (
+            "INTENT: ranking_analysis\nSEGMENT: partners\n"
+            "CONFIDENCE: 0.80\nREASON: recurring pattern ranking"
+        )
+        with patch.object(classifier, "_call_llm", return_value=mock_response):
+            state = classifier.run(state)
+
+        assert state.intent["category"] == "root_cause_analysis", (
+            "Change event (turun) beats persistent (selalu) → override to root_cause_analysis"
+        )
+        assert _is_root_cause_override("kenapa GoPay selalu turun di akhir bulan") is True
