@@ -127,11 +127,14 @@ class AnalyticsAgent(LLMBaseAgent):
         seen_calls: set[tuple] = set()
 
         for iteration in range(_MAX_TOOL_ITERATIONS):
+            # Force at least one tool call on the first iteration — "required" ensures the
+            # mandatory-tool rule in the system prompt is structurally enforced, not just
+            # instructed. Subsequent iterations use "auto" so the model can stop once done.
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
-                tool_choice="auto",
+                tool_choice="required" if iteration == 0 else "auto",
                 temperature=0,
             )
 
@@ -209,11 +212,15 @@ class AnalyticsAgent(LLMBaseAgent):
         seen_calls: set[tuple] = set()
 
         for iteration in range(_MAX_TOOL_ITERATIONS):
+            # Force at least one tool call on the first iteration via tool_choice=any.
+            # Subsequent iterations use auto so the model can stop once satisfied.
+            tc_override = {"type": "any"} if iteration == 0 else {"type": "auto"}
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=2000,
                 system=system_prompt,
                 tools=anthropic_tools,
+                tool_choice=tc_override,
                 messages=messages,
             )
 

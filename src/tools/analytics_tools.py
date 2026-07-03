@@ -36,13 +36,13 @@ WHERE date >= '{period_start}' AND date <= '{period_end}'
     elif dimension == "partner":
         sql = f"""
 SELECT
-    partner                                                                              AS entity,
+    partner_group                                                                         AS entity,
     SUM(total_trx)                                                                       AS total_trx,
     SUM(total_revenue)                                                                   AS total_revenue,
     ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)             AS success_rate_pct
 FROM daily_master
 WHERE date >= '{period_start}' AND date <= '{period_end}'
-GROUP BY partner
+GROUP BY partner_group
 ORDER BY total_trx DESC
 LIMIT 50
 """
@@ -84,45 +84,49 @@ def compare_periods(
     period_b_end: str,
     dimension: str = "partner",
 ) -> dict:
-    """Bandingkan dua periode dan hitung % perubahan per entitas."""
+    """Bandingkan dua periode dan hitung % perubahan per entitas termasuk success rate (SR)."""
+    # SR aggregation differs by table: channel_payment stores success_rate_pct directly;
+    # daily_master and product_summary compute it from success_trx / total_trx.
     if dimension == "channel":
         table, group_col = "channel_payment", "channel"
-        rev_col = "total_revenue"
-        trx_col = "total_trx"
+        sr_agg = "ROUND(AVG(success_rate_pct)::numeric, 2)"
     elif dimension == "product":
         table, group_col = "product_summary", "product_name"
-        rev_col = "total_revenue"
-        trx_col = "total_trx"
+        sr_agg = "ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)"
     else:
-        table, group_col = "daily_master", "partner"
-        rev_col = "total_revenue"
-        trx_col = "total_trx"
+        table, group_col = "daily_master", "partner_group"
+        sr_agg = "ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)"
 
     sql = f"""
 WITH period_a AS (
     SELECT {group_col} AS entity,
-           SUM({trx_col}) AS trx_a, SUM({rev_col}) AS rev_a
+           SUM(total_trx) AS trx_a, SUM(total_revenue) AS rev_a,
+           {sr_agg} AS sr_a
     FROM {table}
     WHERE date >= '{period_a_start}' AND date <= '{period_a_end}'
     GROUP BY {group_col}
 ),
 period_b AS (
     SELECT {group_col} AS entity,
-           SUM({trx_col}) AS trx_b, SUM({rev_col}) AS rev_b
+           SUM(total_trx) AS trx_b, SUM(total_revenue) AS rev_b,
+           {sr_agg} AS sr_b
     FROM {table}
     WHERE date >= '{period_b_start}' AND date <= '{period_b_end}'
     GROUP BY {group_col}
 )
 SELECT
-    COALESCE(a.entity, b.entity)                                                             AS entity,
-    COALESCE(a.trx_a, 0)                                                                     AS trx_a,
-    COALESCE(b.trx_b, 0)                                                                     AS trx_b,
+    COALESCE(a.entity, b.entity)                                                              AS entity,
+    COALESCE(a.trx_a, 0)                                                                      AS trx_a,
+    COALESCE(b.trx_b, 0)                                                                      AS trx_b,
     ROUND((COALESCE(a.trx_a,0) - COALESCE(b.trx_b,0))::numeric
-          / NULLIF(b.trx_b::numeric, 0) * 100, 2)                                            AS trx_pct_change,
-    COALESCE(a.rev_a, 0)                                                                     AS rev_a,
-    COALESCE(b.rev_b, 0)                                                                     AS rev_b,
+          / NULLIF(b.trx_b::numeric, 0) * 100, 2)                                             AS trx_pct_change,
+    COALESCE(a.rev_a, 0)                                                                      AS rev_a,
+    COALESCE(b.rev_b, 0)                                                                      AS rev_b,
     ROUND((COALESCE(a.rev_a,0) - COALESCE(b.rev_b,0))::numeric
-          / NULLIF(b.rev_b::numeric, 0) * 100, 2)                                            AS rev_pct_change
+          / NULLIF(b.rev_b::numeric, 0) * 100, 2)                                             AS rev_pct_change,
+    a.sr_a                                                                                     AS sr_a,
+    b.sr_b                                                                                     AS sr_b,
+    ROUND(COALESCE(a.sr_a, 0) - COALESCE(b.sr_b, 0), 2)                                       AS sr_pct_change
 FROM period_a a
 FULL OUTER JOIN period_b b USING (entity)
 ORDER BY ABS(ROUND((COALESCE(a.trx_a,0) - COALESCE(b.trx_b,0))::numeric
@@ -140,32 +144,41 @@ def detect_anomaly(
     dimension: str = "partner",
     threshold_pct: float = 30.0,
 ) -> dict:
-    """Deteksi entitas dengan perubahan >threshold_pct% vs rata-rata 7 hari sebelumnya."""
+    """Deteksi entitas dengan perubahan >threshold_pct% vs rata-rata 7 hari sebelumnya, termasuk success rate (SR)."""
     if dimension == "channel":
         table, group_col = "channel_payment", "channel"
+        sr_target_expr = "ROUND(AVG(success_rate_pct)::numeric, 2)"
+        sr_daily_expr  = "ROUND(AVG(success_rate_pct)::numeric, 2) AS daily_sr"
     elif dimension == "product":
         table, group_col = "product_summary", "product_name"
+        sr_target_expr = "ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)"
+        sr_daily_expr  = "ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS daily_sr"
     else:
-        table, group_col = "daily_master", "partner"
+        table, group_col = "daily_master", "partner_group"
+        sr_target_expr = "ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)"
+        sr_daily_expr  = "ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS daily_sr"
 
     sql = f"""
 WITH target AS (
     SELECT {group_col} AS entity,
            SUM(total_trx)     AS trx_target,
-           SUM(total_revenue) AS rev_target
+           SUM(total_revenue) AS rev_target,
+           {sr_target_expr}   AS sr_target
     FROM {table}
     WHERE date::date = '{target_date}'::date
     GROUP BY {group_col}
 ),
 baseline AS (
     SELECT {group_col} AS entity,
-           ROUND(AVG(daily_trx)::numeric, 2)  AS trx_baseline_avg,
-           ROUND(AVG(daily_rev)::numeric, 2)  AS rev_baseline_avg
+           ROUND(AVG(daily_trx)::numeric, 2) AS trx_baseline_avg,
+           ROUND(AVG(daily_rev)::numeric, 2) AS rev_baseline_avg,
+           ROUND(AVG(daily_sr)::numeric,  2) AS sr_baseline_avg
     FROM (
         SELECT {group_col},
                date,
                SUM(total_trx)     AS daily_trx,
-               SUM(total_revenue) AS daily_rev
+               SUM(total_revenue) AS daily_rev,
+               {sr_daily_expr}
         FROM {table}
         WHERE date::date > ('{target_date}'::date - INTERVAL '7 days')
           AND date::date < '{target_date}'::date
@@ -180,7 +193,10 @@ SELECT
     ROUND((t.trx_target - b.trx_baseline_avg)::numeric / NULLIF(b.trx_baseline_avg, 0) * 100, 2) AS trx_pct_change,
     t.rev_target,
     b.rev_baseline_avg,
-    ROUND((t.rev_target::numeric - b.rev_baseline_avg) / NULLIF(b.rev_baseline_avg, 0) * 100, 2) AS rev_pct_change,
+    ROUND((t.rev_target::numeric - b.rev_baseline_avg) / NULLIF(b.rev_baseline_avg, 0) * 100, 2)  AS rev_pct_change,
+    t.sr_target,
+    b.sr_baseline_avg,
+    ROUND(t.sr_target - b.sr_baseline_avg, 2)                                                      AS sr_pct_change,
     ABS(ROUND((t.trx_target - b.trx_baseline_avg)::numeric / NULLIF(b.trx_baseline_avg, 0) * 100, 2)) > {threshold_pct} AS is_anomaly
 FROM target t
 JOIN baseline b USING (entity)
@@ -228,10 +244,11 @@ WITH top5 AS (
     GROUP BY channel ORDER BY SUM(total_trx) DESC LIMIT 5
 )
 SELECT
-    {date_trunc}   AS period,
-    cp.channel         AS entity,
-    SUM(cp.total_trx)     AS total_trx,
-    SUM(cp.total_revenue) AS total_revenue
+    {date_trunc}                                                         AS period,
+    cp.channel                                                           AS entity,
+    SUM(cp.total_trx)                                                    AS total_trx,
+    SUM(cp.total_revenue)                                                AS total_revenue,
+    ROUND(AVG(cp.success_rate_pct)::numeric, 2)                          AS success_rate_pct
 FROM channel_payment cp
 JOIN top5 USING (channel)
 WHERE cp.date >= '{start_date}' AND cp.date <= '{end_date}'
@@ -242,19 +259,20 @@ LIMIT 200
     else:  # partner
         sql = f"""
 WITH top5 AS (
-    SELECT partner FROM daily_master
+    SELECT partner_group FROM daily_master
     WHERE date >= '{start_date}' AND date <= '{end_date}'
-    GROUP BY partner ORDER BY SUM(total_trx) DESC LIMIT 5
+    GROUP BY partner_group ORDER BY SUM(total_trx) DESC LIMIT 5
 )
 SELECT
-    {date_trunc}   AS period,
-    dm.partner         AS entity,
-    SUM(dm.total_trx)     AS total_trx,
-    SUM(dm.total_revenue) AS total_revenue
+    {date_trunc}                                                                               AS period,
+    dm.partner_group                                                                           AS entity,
+    SUM(dm.total_trx)                                                                          AS total_trx,
+    SUM(dm.total_revenue)                                                                      AS total_revenue,
+    ROUND((SUM(dm.success_trx)::numeric / NULLIF(SUM(dm.total_trx), 0)) * 100, 2)             AS success_rate_pct
 FROM daily_master dm
-JOIN top5 USING (partner)
+JOIN top5 USING (partner_group)
 WHERE dm.date >= '{start_date}' AND dm.date <= '{end_date}'
-GROUP BY {date_trunc}, dm.partner
+GROUP BY {date_trunc}, dm.partner_group
 ORDER BY period, total_trx DESC
 LIMIT 200
 """.strip()
@@ -275,7 +293,7 @@ def get_distribution(
     elif dimension == "product":
         table, group_col = "product_summary", "product_name"
     else:
-        table, group_col = "daily_master", "partner"
+        table, group_col = "daily_master", "partner_group"
 
     sql = f"""
 WITH totals AS (
@@ -289,7 +307,8 @@ SELECT
     ROUND(SUM(total_trx)::numeric / NULLIF(t.grand_trx::numeric, 0) * 100, 2)   AS trx_share_pct,
     SUM(total_revenue)                                                           AS total_revenue,
     ROUND(SUM(total_revenue)::numeric / NULLIF(t.grand_rev::numeric, 0) * 100, 2) AS rev_share_pct
-FROM {table}, totals t
+FROM {table}
+CROSS JOIN totals t
 WHERE date >= '{period_start}' AND date <= '{period_end}'
 GROUP BY {group_col}, t.grand_trx, t.grand_rev
 ORDER BY total_trx DESC

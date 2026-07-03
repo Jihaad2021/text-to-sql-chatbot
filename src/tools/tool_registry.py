@@ -47,8 +47,10 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "compare_periods",
             "description": (
-                "Bandingkan dua periode waktu dan hitung % perubahan per entitas. "
-                "Gunakan untuk membuktikan ada/tidaknya kenaikan atau penurunan."
+                "Bandingkan dua periode waktu dan hitung % perubahan per entitas, "
+                "mencakup transaksi, revenue, DAN success rate (SR). "
+                "Gunakan untuk pertanyaan tentang kenaikan/penurunan success rate (SR), "
+                "transaksi, atau revenue antar periode."
             ),
             "parameters": {
                 "type": "object",
@@ -73,8 +75,10 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "detect_anomaly",
             "description": (
                 "Deteksi entitas (partner/channel/produk) yang mengalami perubahan ekstrim "
-                "pada suatu tanggal dibanding rata-rata 7 hari sebelumnya. "
-                "Gunakan untuk pertanyaan tentang lonjakan atau penurunan tidak normal."
+                "pada suatu tanggal dibanding rata-rata 7 hari sebelumnya, "
+                "mencakup transaksi, revenue, DAN success rate (SR). "
+                "Gunakan untuk pertanyaan tentang lonjakan, penurunan tidak normal, "
+                "atau anomali pada success rate (SR)."
             ),
             "parameters": {
                 "type": "object",
@@ -99,8 +103,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "get_trend",
             "description": (
-                "Ambil tren transaksi dan revenue sepanjang waktu (harian/mingguan/bulanan). "
-                "Gunakan untuk melihat pola pergerakan metrik dari waktu ke waktu."
+                "Ambil tren transaksi, revenue, dan success rate (SR) sepanjang waktu "
+                "(harian/mingguan/bulanan). "
+                "Gunakan untuk melihat pola pergerakan metrik — termasuk SR — dari waktu ke waktu."
             ),
             "parameters": {
                 "type": "object",
