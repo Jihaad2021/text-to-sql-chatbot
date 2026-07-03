@@ -375,9 +375,23 @@ Choose purpose — this controls WHERE the visual appears in the response:
                          It renders BEFORE all narrative sections begin.
                          WRONG:   {{"type": "bar_chart", "anchor_after": "s1", "purpose": "leading_answer"}}
                          CORRECT: {{"type": "bar_chart", "anchor_after": null, "purpose": "leading_answer"}}
-  "supporting_evidence"→ The chart reinforces a specific claim in anchor_after section.
-                         Use for time-series that show a trend claimed in the narrative.
+  "supporting_evidence"→ The chart reinforces a specific claim made in anchor_after section.
+                         The TEXT investigation is the primary answer; the chart supports it.
                          anchor_after must be the id of the section it supports ("s1", "s2", ...).
+
+                         DECISION RULE — ask: "Is the chart the answer, or does the text explain
+                         and the chart just shows the trend?"
+                           Query = "berapa / tampilkan / bandingkan"  → chart IS the answer → leading_answer
+                           Query = "kenapa / mengapa / apa penyebab / jelaskan / analisis" → text IS the answer → supporting_evidence
+
+                         EXAMPLE for root_cause_analysis intent:
+                           User: "kenapa GoPay turun bulan Juni?"
+                           WRONG:   {{"type": "line_chart", "anchor_after": null,  "purpose": "leading_answer"}}
+                           CORRECT: {{"type": "line_chart", "anchor_after": "s2", "purpose": "supporting_evidence"}}
+                           Reason: the user wants an explanation (text is primary). The trend chart
+                           sits inside the analysis section ("## Tren Harian") to support the claim,
+                           not as the standalone opening answer.
+
   "detail_reference"   → Raw data table for drill-down. Not everyone needs it.
                          anchor_after should be the last section id.
                          Will always be rendered collapsed, at the bottom of the response.

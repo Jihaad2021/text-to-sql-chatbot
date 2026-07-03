@@ -687,7 +687,7 @@ SYNTHESIS RULES:
             return self._charts_from_multi_step(state.step_results)
 
         data = state.query_result
-        if not data or len(data) <= 1 or len(data) > self._MAX_CHART_ROWS:
+        if not data or len(data) <= 1:
             return []
 
         def _to_num(v: object) -> float | None:
@@ -710,6 +710,26 @@ SYNTHESIS RULES:
         is_time = x_col and any(kw in x_col.lower() for kw in self._TIME_KEYWORDS)
         labels  = [str(row.get(x_col, i)) for i, row in enumerate(data)] if x_col \
                   else [str(i + 1) for i in range(len(data))]
+
+        # Downsample rather than silently dropping charts for large datasets.
+        # Time-series: evenly-spaced indices preserve the trend shape.
+        # Categorical: sort by first numeric col descending, keep top-N.
+        if len(data) > self._MAX_CHART_ROWS:
+            original_count = len(data)
+            if is_time:
+                n    = self._MAX_CHART_ROWS
+                step = (original_count - 1) / (n - 1) if n > 1 else 1
+                idxs = sorted({round(i * step) for i in range(n)})
+                data = [data[i] for i in idxs]
+            else:
+                data = sorted(data, key=lambda r: _to_num(r.get(numeric_cols[0])) or 0, reverse=True)[:self._MAX_CHART_ROWS]
+            labels = [str(row.get(x_col, i)) for i, row in enumerate(data)] if x_col \
+                     else [str(i + 1) for i in range(len(data))]
+            self.log(
+                f"Chart data sampled: {original_count} → {len(data)} rows "
+                f"({'even-interval time-series' if is_time else 'top-N by magnitude'})",
+                level="warning",
+            )
 
         def _is_pct_col(col: str) -> bool:
             low = col.lower()
@@ -850,6 +870,15 @@ SYNTHESIS RULES:
         )
         if val_col is None:
             return None
+
+        # Sort by absolute magnitude (largest movers first) and cap rows for readability
+        if len(data) > self._MAX_CHART_ROWS:
+            original_count = len(data)
+            data = sorted(data, key=lambda r: abs(_to_num(r.get(val_col)) or 0), reverse=True)[:self._MAX_CHART_ROWS]
+            self.log(
+                f"Diverging bar sampled: {original_count} → {len(data)} rows (top-N by |magnitude|)",
+                level="warning",
+            )
 
         label_col     = txt_cols[0] if txt_cols else None
         labels        = [str(row.get(label_col, i)) for i, row in enumerate(data)] if label_col \
