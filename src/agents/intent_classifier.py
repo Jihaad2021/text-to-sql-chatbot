@@ -35,37 +35,108 @@ from datetime import date
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 
-# Deterministic override: queries starting with these words are always root_cause_analysis
-# regardless of what the LLM classifies them as.
-_ROOT_CAUSE_PATTERN = re.compile(
-    r'\b(kenapa|mengapa|apa\s+penyebab|apa\s+yang\s+menyebabkan|penyebab\s+(?:naik|turun|penurunan|kenaikan))\b',
+# ── Deterministic root_cause override — three-step check ─────────────────────
+#
+# Step 1: explicit causal phrases → always override (no further check needed)
+_ROOT_CAUSE_EXPLICIT = re.compile(
+    r'\b(apa\s+penyebab|apa\s+yang\s+menyebabkan|penyebab\s+(?:naik|turun|penurunan|kenaikan))\b',
     re.IGNORECASE,
 )
 
+# Step 2: why-question words
+_WHY_QUESTION = re.compile(r'\b(kenapa|mengapa)\b', re.IGNORECASE)
+
+# Step 3a: event/change signals — indicates a specific incident, not a persistent state
+_CHANGE_EVENT = re.compile(
+    r'\b(turun|naik|anjlok|melonjak|drop|spike|lonjakan|penurunan|kenaikan|'
+    r'menurun|meningkat|tiba-tiba|mendadak|surut|jatuh|merosot|crash|amblas)\b',
+    re.IGNORECASE,
+)
+
+# Step 3b: specific-time signals — implies a recent or pinpointed event
+_TIME_SPECIFIC = re.compile(
+    r'\b(kemarin|hari\s+ini|minggu\s+ini|minggu\s+lalu|bulan\s+lalu|tadi|'
+    r'tanggal\s+\d+|belakangan\s+ini|beberapa\s+hari|malam\s+ini|pagi\s+ini)\b',
+    re.IGNORECASE,
+)
+
+# Step 3c: persistent-pattern words — presence suppresses the override even when
+# kenapa/mengapa is present, because "selalu rendah" is a ranking observation,
+# not a root-cause event investigation.
+_PERSISTENT_PATTERN = re.compile(
+    r'\b(selalu|biasanya|terus[\s-]menerus|konsisten|umumnya|cenderung|'
+    r'dari\s+dulu|sejak\s+awal|historis)\b',
+    re.IGNORECASE,
+)
+
+
+def _is_root_cause_override(query: str) -> bool:
+    """Return True if query should be forced to root_cause_analysis.
+
+    Two conditions qualify:
+    1. Explicit causal phrase (apa penyebab, penyebab naik/turun, etc.) — always.
+    2. Why-word (kenapa/mengapa) + event signal (change word OR specific time),
+       AND no persistent-pattern word (selalu, biasanya, konsisten, etc.).
+
+    "kenapa DANA selalu rendah" → False  (persistent-pattern word present)
+    "kenapa GoPay turun kemarin" → True  (change + time, no persistent word)
+    "apa penyebab penurunan SR?" → True  (explicit causal phrase)
+    """
+    if _ROOT_CAUSE_EXPLICIT.search(query):
+        return True
+    if _WHY_QUESTION.search(query):
+        if _PERSISTENT_PATTERN.search(query):
+            return False
+        if _CHANGE_EVENT.search(query) or _TIME_SPECIFIC.search(query):
+            return True
+    return False
+
 # Valid intent categories
 INTENT_CATEGORIES = {
-    "simple_select": "Basic SELECT query, no filters or aggregations",
-    "filtered_query": "SELECT with WHERE clause filters",
-    "aggregation": "Requires COUNT, SUM, AVG, MIN, MAX",
-    "multi_table_join": "Requires JOIN across multiple tables",
-    "complex_analytics": "Advanced analytics with subqueries, trends, grouping",
+    "simple_select":       "Basic SELECT query, no filters or aggregations",
+    "filtered_query":      "SELECT with WHERE clause filters",
+    "aggregation":         "Requires COUNT, SUM, AVG, MIN, MAX",
+    "multi_table_join":    "Requires JOIN across multiple tables",
+    "complex_analytics":   "Advanced analytics with subqueries, trends, grouping",
     "root_cause_analysis": "Investigative query asking why something happened, root cause of a spike/drop, or multi-dimensional analysis",
-    "ranking_analysis": "Queries asking for leaderboards, top/bottom N rankings, who is best/worst, anomaly detection across all entities",
-    "recommendation": "Queries asking for suggestions, recommendations, or 'what should we do / what needs attention'",
-    "ambiguous": "Unclear query that needs clarification",
+    "ranking_analysis":    "Queries asking for leaderboards, top/bottom N rankings, who is best/worst, anomaly detection across all entities",
+    "recommendation":      "Queries asking for suggestions, recommendations, or 'what should we do / what needs attention'",
+    "out_of_scope":        "Question requires data or capabilities not available in this pipeline (forecasting, multi-period >2 months, user cohort, revenue margin, failure pattern per hour, channel substitution)",
+    "ambiguous":           "Unclear query that needs clarification",
 }
 
 # Strategy hint per category (passed to SQL Generator via state.intent)
 INTENT_SQL_STRATEGY = {
-    "simple_select": "Use basic SELECT with LIMIT 100",
-    "filtered_query": "Use SELECT with WHERE clause",
-    "aggregation": "Use aggregate functions (COUNT/SUM/AVG) with GROUP BY if needed",
-    "multi_table_join": "Use JOIN across relevant tables",
-    "complex_analytics": "Use subqueries, CTEs, or window functions if needed",
+    "simple_select":       "Use basic SELECT with LIMIT 100",
+    "filtered_query":      "Use SELECT with WHERE clause",
+    "aggregation":         "Use aggregate functions (COUNT/SUM/AVG) with GROUP BY if needed",
+    "multi_table_join":    "Use JOIN across relevant tables",
+    "complex_analytics":   "Use subqueries, CTEs, or window functions if needed",
     "root_cause_analysis": "Adaptive investigation across multiple dimensions (time, product, channel, partner)",
-    "ranking_analysis": "Use RANK() / ROW_NUMBER() window functions or ORDER BY + LIMIT; compare all entities to find top/bottom performers and outliers",
-    "recommendation": "Use analytics tools to gather evidence across multiple dimensions (summary, anomaly, trend) before suggesting actions",
-    "ambiguous": "Cannot generate SQL - needs clarification",
+    "ranking_analysis":    "Use RANK() / ROW_NUMBER() window functions or ORDER BY + LIMIT; compare all entities to find top/bottom performers and outliers",
+    "recommendation":      "Use analytics tools to gather evidence across multiple dimensions (summary, anomaly, trend) before suggesting actions",
+    "out_of_scope":        "No SQL needed — return redirect message explaining the data limitation",
+    "ambiguous":           "Cannot generate SQL - needs clarification",
+}
+
+# Business segments — five dimensions from the dashboard question catalog
+SEGMENT_CATEGORIES = {
+    "transactions": "Questions about overall volume, revenue, SR, ARPU, users, daily/weekly trends, anomalies",
+    "products":     "Questions about product portfolio, product momentum (gainers/losers), product SR, product concentration",
+    "partners":     "Questions about partner ecosystem health, partner momentum, partner risk, partner efficiency",
+    "channels":     "Questions about channel distribution, channel health, channel concentration",
+    "general":      "Cross-segment, root cause, momentum direction, or other",
+}
+
+# Out-of-scope messages per topic — returned as state.insights when detected
+_OUT_OF_SCOPE_MESSAGES: dict[str, str] = {
+    "forecasting":    "Pertanyaan ini membutuhkan model *forecasting* yang belum tersedia. Pipeline saat ini hanya menyediakan estimasi pace sederhana berdasarkan rata-rata harian bulan berjalan — bukan proyeksi akurat jangka panjang.",
+    "multi_period":   "Pertanyaan ini membutuhkan data historis multi-periode (lebih dari 2 bulan) yang belum tersedia. Pipeline saat ini membandingkan bulan berjalan dengan bulan sebelumnya saja.",
+    "user_behavior":  "Analisis user behavior detail — frekuensi repeat transaction, cohort, atau lifetime value — belum tersedia. Data yang ada hanya menyediakan jumlah unique user per hari/partner.",
+    "revenue_margin": "Data margin efektif atau biaya per produk belum tersedia di pipeline saat ini. Revenue yang tersedia adalah gross revenue dari settlement.",
+    "failure_pattern":"Analisis pola failure per jam membutuhkan data granular per jam yang belum tersedia dalam format yang bisa di-query.",
+    "substitution":   "Analisis substitusi antar channel — apakah turunnya satu channel berkorelasi dengan naiknya channel lain — membutuhkan data cross-channel yang belum tersedia.",
+    "default":        "Pertanyaan ini membutuhkan data atau analisis yang belum tersedia di pipeline saat ini. Ini termasuk dalam kategori pengembangan ke depan.",
 }
 
 
@@ -100,7 +171,7 @@ class IntentClassifier(LLMBaseAgent):
         # root_cause_analysis regardless of what the LLM classified them as.
         # Check original_query because QueryRewriter may have removed "kenapa" from state.query.
         check_query = state.original_query or state.query
-        if _ROOT_CAUSE_PATTERN.search(check_query):
+        if _is_root_cause_override(check_query):
             if intent["category"] not in ("root_cause_analysis", "ambiguous"):
                 self.log(
                     f"Override: '{intent['category']}' → 'root_cause_analysis' (why-question detected)",
@@ -113,6 +184,8 @@ class IntentClassifier(LLMBaseAgent):
                 }
 
         state.intent = intent
+        # out_of_scope is NOT ambiguous — it's a clear query that we can't answer.
+        # The pipeline handles it with an early return + informative message.
         state.needs_clarification = (
             intent["category"] == "ambiguous" or intent["confidence"] < 0.7
         )
@@ -121,7 +194,7 @@ class IntentClassifier(LLMBaseAgent):
             state.clarification_reason = intent["reason"]
 
         self.log(
-            f"Intent: {intent['category']} "
+            f"Intent: {intent['category']} segment={intent.get('segment', '?')} "
             f"(confidence: {intent['confidence']:.2f}, "
             f"needs_clarification: {state.needs_clarification})"
         )
@@ -131,42 +204,95 @@ class IntentClassifier(LLMBaseAgent):
     def _build_prompt(self, state: AgentState) -> str:
         """Build classification prompt, including recent conversation context if available."""
         categories_text = "\n".join([
-            f"{i + 1}. {cat} - {desc}"
-            for i, (cat, desc) in enumerate(INTENT_CATEGORIES.items())
+            f"  {cat} — {desc}"
+            for cat, desc in INTENT_CATEGORIES.items()
+        ])
+        segments_text = "\n".join([
+            f"  {seg} — {desc}"
+            for seg, desc in SEGMENT_CATEGORIES.items()
         ])
 
         history_block = self._build_history_block(state.conversation_history)
-
         today = date.today().strftime("%Y-%m-%d")
 
-        return f"""You are a SQL query intent classifier for a financial payment analytics system (Telkomsel digital payments).
+        return f"""You are an intent classifier for a Telkomsel digital payment analytics chatbot.
 
 TODAY'S DATE: {today}
-Resolve relative time references using this date: "bulan ini" = current month, "minggu ini" = current week, "hari ini" = today.
+Resolve relative time: "bulan ini"=current month, "minggu ini"=current week, "hari ini"=today.
 
-Classify the user query into ONE of these categories:
-
+STEP 1 — Classify query into ONE intent category:
 {categories_text}
-{history_block}
-USER QUERY: "{state.query}"
 
-Respond in this EXACT format:
+STEP 2 — Identify the business segment:
+{segments_text}
+
+{history_block}USER QUERY: "{state.query}"
+
+Respond in this EXACT format (4 lines):
 INTENT: [category]
+SEGMENT: [segment]
 CONFIDENCE: [0.0 to 1.0]
 REASON: [brief explanation]
 
-Rules:
-- Mark as "ambiguous" ONLY if query is genuinely vague (e.g. "tampilkan data" with no context)
-- Queries asking for totals, sums, averages, rankings → "aggregation" (high confidence)
-- Queries asking for trends, per-period breakdowns → "complex_analytics"
-- Queries with time filters (bulan, tanggal, "bulan ini", "hari ini") → "filtered_query" or "aggregation"
-- CRITICAL RULE: ANY query that STARTS WITH or CONTAINS "kenapa" or "mengapa" (WHY questions) MUST be "root_cause_analysis" — this overrides ALL other classifications. Even if the query also involves comparison or aggregation, "kenapa/mengapa" makes it root_cause_analysis.
-- Also root_cause_analysis: "apa penyebab", "investigasi", "analisis mendalam", "apa yang menyebabkan", "apa yang membuat", "penyebab penurunan", "penyebab kenaikan", "kenapa naik/turun/lebih rendah/lebih tinggi"
-- Queries containing "ranking", "peringkat", "siapa terbaik", "siapa terburuk", "top N", "bottom N", "paling tinggi dari semua", "paling rendah dari semua", "partner mana yang anomali", "siapa yang mengalami lonjakan" → "ranking_analysis"
-- Queries containing "rekomendasi", "saran", "apa yang harus dilakukan", "perlu perhatian", "yang perlu diperbaiki", "fokus ke mana", "prioritas" → "recommendation"
-- Consider both Indonesian and English queries
-- Do NOT mark as "ambiguous" if the query has a clear analytical intent, even with complex wording
-- Use conversation context to resolve follow-up queries (e.g. "sekarang breakdown per channel")
+INTENT RULES:
+- "ambiguous" ONLY if query is genuinely vague (e.g. "tampilkan data" with no context)
+- Totals, sums, averages → "aggregation"
+- Trends, per-period breakdowns → "complex_analytics"
+- "kenapa/mengapa/apa penyebab/investigasi/analisis mendalam" → ALWAYS "root_cause_analysis"
+- "ranking/peringkat/top N/bottom N/siapa terbaik/siapa terburuk/anomali dari semua" → "ranking_analysis"
+- "rekomendasi/saran/apa yang harus dilakukan/perlu perhatian/prioritas" → "recommendation"
+- OUT OF SCOPE — classify as "out_of_scope" if query asks for:
+  • Forecasting/proyeksi akurat bulan depan atau lebih (bukan proyeksi pace bulan berjalan)
+  • Komparasi 3+ bulan historis ("3 bulan terakhir", "tren kuartal", "YoY")
+  • User behavior: repeat frequency, cohort, retention, lifetime value
+  • Revenue margin atau biaya per produk
+  • Pola failure per jam
+  • Apakah satu channel menggantikan channel lain (substitusi channel)
+- Do NOT mark ambiguous if query has clear analytical intent
+
+SEGMENT RULES:
+- "transactions" if query is about overall volume, revenue, SR, ARPU, user count, daily/weekly/period trends
+- "products" if query mentions specific products, product names, portfolio, produk, paket, pulsa, konten
+- "partners" if query mentions partners (gopay, dana, ovo, linkaja, telkomsel) or ekosistem partner
+- "channels" if query mentions channel, saluran, UMB, MyTelkomsel, WEC
+- "general" for cross-segment, root cause across dimensions, or unclear segment
+
+EXAMPLES — kasus batas yang sering salah diklasifikasi (gunakan sebagai referensi):
+
+[1] Terlihat seperti recommendation → sebenarnya root_cause_analysis
+QUERY: "Apa yang perlu kita waspadai dari penurunan volume transaksi QRIS tanggal 30 Juni?"
+INTENT: root_cause_analysis
+SEGMENT: partners
+CONFIDENCE: 0.90
+REASON: "Perlu diwaspadai" terdengar seperti recommendation, tapi query meminta investigasi penyebab anomali spesifik — bukan saran tindakan. Tes: apakah LLM diminta menjelaskan MENGAPA sesuatu terjadi, atau menyarankan APA yang harus dilakukan? Di sini = mengapa → root_cause_analysis.
+
+[2] Menyebut "kenapa" → tetap ranking_analysis
+QUERY: "Tampilkan ranking semua partner dari SR tertinggi ke terendah — kenapa DANA selalu di posisi terbawah?"
+INTENT: ranking_analysis
+SEGMENT: partners
+CONFIDENCE: 0.85
+REASON: Inti permintaan adalah leaderboard diurutkan berdasarkan SR. "Kenapa DANA di bawah" adalah pertanyaan tentang posisi relatif dalam ranking, bukan investigasi event penurunan. Pembeda kunci: "kenapa DANA TURUN bulan ini?" (root_cause — event spesifik) vs "kenapa DANA SELALU rendah?" (konteks ranking — posisi relatif).
+
+[3] Ambiguous genuine — perlu klarifikasi
+QUERY: "Lihat performa produk bulan ini"
+INTENT: ambiguous
+SEGMENT: products
+CONFIDENCE: 0.35
+REASON: "Performa" tidak spesifik — bisa volume, SR, revenue, atau ranking. Tidak ada metrik atau dimensi yang bisa menghasilkan SQL yang tepat tanpa asumsi. Perlu klarifikasi: "performa berdasarkan metrik apa?"
+
+[4] Out-of-scope (forecasting masa depan)
+QUERY: "Proyeksikan success rate Telkomsel untuk bulan Juli berdasarkan tren Juni 2026"
+INTENT: out_of_scope
+SEGMENT: transactions
+CONFIDENCE: 0.95
+REASON: Membutuhkan model forecasting untuk periode masa depan. Pipeline hanya menyediakan proyeksi pace sederhana bulan berjalan (rata-rata harian × sisa hari), bukan prediksi bulan depan yang akurat.
+
+[5] Complex analytics biasa — bukan root_cause, bukan ranking
+QUERY: "Tampilkan tren harian volume transaksi dan success rate per partner sepanjang Juni 2026"
+INTENT: complex_analytics
+SEGMENT: partners
+CONFIDENCE: 0.95
+REASON: Membutuhkan grouping multi-dimensi (per hari × per partner) dengan dua metrik sekaligus — tipikal complex_analytics. Tidak ada kata "kenapa/mengapa", tidak ada leaderboard, tidak ada permintaan saran.
 
 Your response:"""
 
@@ -188,15 +314,18 @@ Your response:"""
         return "\n".join(lines)
 
     def _parse_response(self, response: str) -> dict[str, str | float]:
-        """Parse LLM response into intent dict."""
+        """Parse LLM response into intent dict with segment and optional out_of_scope_message."""
         intent_str = "ambiguous"
+        segment    = "general"
         confidence = 0.0
-        reason = ""
+        reason     = ""
 
         for line in response.strip().split("\n"):
             line = line.strip()
             if line.startswith("INTENT:"):
                 intent_str = line.replace("INTENT:", "").strip().lower()
+            elif line.startswith("SEGMENT:"):
+                segment = line.replace("SEGMENT:", "").strip().lower()
             elif line.startswith("CONFIDENCE:"):
                 try:
                     confidence = float(line.replace("CONFIDENCE:", "").strip())
@@ -207,14 +336,39 @@ Your response:"""
 
         if intent_str not in INTENT_CATEGORIES:
             intent_str = "ambiguous"
+        if segment not in SEGMENT_CATEGORIES:
+            segment = "general"
 
-        if confidence < 0.5:
+        if confidence < 0.5 and intent_str not in ("out_of_scope",):
             intent_str = "ambiguous"
             reason = reason or f"Low confidence ({confidence:.2f})"
 
-        return {
-            "category": intent_str,
-            "confidence": confidence,
-            "reason": reason,
+        result: dict = {
+            "category":     intent_str,
+            "segment":      segment,
+            "confidence":   confidence,
+            "reason":       reason,
             "sql_strategy": INTENT_SQL_STRATEGY[intent_str],
         }
+
+        if intent_str == "out_of_scope":
+            result["out_of_scope_message"] = self._pick_oos_message(reason)
+
+        return result
+
+    def _pick_oos_message(self, reason: str) -> str:
+        """Select the most relevant out-of-scope redirect message based on the reason."""
+        r = reason.lower()
+        if any(w in r for w in ("forecast", "proyeksi", "prediksi", "bulan depan")):
+            return _OUT_OF_SCOPE_MESSAGES["forecasting"]
+        if any(w in r for w in ("3 bulan", "kuartal", "yoy", "multi-periode", "historis")):
+            return _OUT_OF_SCOPE_MESSAGES["multi_period"]
+        if any(w in r for w in ("repeat", "cohort", "retention", "lifetime", "frekuensi user")):
+            return _OUT_OF_SCOPE_MESSAGES["user_behavior"]
+        if any(w in r for w in ("margin", "biaya per produk", "revenue margin")):
+            return _OUT_OF_SCOPE_MESSAGES["revenue_margin"]
+        if any(w in r for w in ("failure per jam", "pola failure")):
+            return _OUT_OF_SCOPE_MESSAGES["failure_pattern"]
+        if any(w in r for w in ("substitusi", "channel lain", "beralih")):
+            return _OUT_OF_SCOPE_MESSAGES["substitution"]
+        return _OUT_OF_SCOPE_MESSAGES["default"]

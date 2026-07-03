@@ -13,7 +13,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agents.intent_classifier import INTENT_CATEGORIES, IntentClassifier
+from src.agents.intent_classifier import (
+    INTENT_CATEGORIES,
+    IntentClassifier,
+    _is_root_cause_override,
+)
 from src.models.agent_state import AgentState
 
 
@@ -187,3 +191,49 @@ class TestMetrics:
         assert metrics["total_calls"] == 1
         assert metrics["successful_calls"] == 1
         assert metrics["failed_calls"] == 0
+
+
+# ========================================
+# Test: Root-cause override refinement
+# ========================================
+
+class TestRootCauseOverride:
+    """Verify the refined _is_root_cause_override() logic.
+
+    Rule: kenapa/mengapa alone no longer triggers the override.
+    Override fires only when paired with a change/time signal AND no persistent-pattern word.
+    """
+
+    def test_event_query_triggers_override(self, classifier):
+        """'kenapa GoPay turun kemarin' — change word + time word → override to root_cause_analysis."""
+        state = AgentState(query="kenapa GoPay turun kemarin", database="financial_db")
+        # LLM says ranking_analysis; override must force root_cause_analysis
+        mock_response = (
+            "INTENT: ranking_analysis\nSEGMENT: partners\n"
+            "CONFIDENCE: 0.85\nREASON: ranking query"
+        )
+        with patch.object(classifier, "_call_llm", return_value=mock_response):
+            state = classifier.run(state)
+
+        assert state.intent["category"] == "root_cause_analysis", (
+            "Event query with change + time word must be overridden to root_cause_analysis"
+        )
+        # Helper function agrees
+        assert _is_root_cause_override("kenapa GoPay turun kemarin") is True
+
+    def test_persistent_pattern_suppresses_override(self, classifier):
+        """'kenapa DANA selalu rendah' — persistent-pattern word → override suppressed, ranking_analysis preserved."""
+        state = AgentState(query="kenapa DANA selalu rendah", database="financial_db")
+        # LLM says ranking_analysis; override must NOT fire
+        mock_response = (
+            "INTENT: ranking_analysis\nSEGMENT: partners\n"
+            "CONFIDENCE: 0.85\nREASON: ranking context — persistent low position"
+        )
+        with patch.object(classifier, "_call_llm", return_value=mock_response):
+            state = classifier.run(state)
+
+        assert state.intent["category"] == "ranking_analysis", (
+            "Persistent-pattern query must not be overridden — ranking_analysis should be preserved"
+        )
+        # Helper function agrees
+        assert _is_root_cause_override("kenapa DANA selalu rendah") is False
