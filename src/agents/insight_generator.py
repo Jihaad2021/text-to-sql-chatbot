@@ -35,10 +35,10 @@ from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.thresholds import render_thresholds_block
 
-# Chart.js-producing visual_block types — used to count expected chart configs
-# for index-based anchor enrichment. Other types (kpi_grid, anomaly_callout,
-# data_table, ranking_table) do not produce entries in chart_configs.
-_CHARTJS_VISUAL_TYPES = {"line_chart", "bar_chart", "donut_chart"}
+# Chart.js-producing visual_block types — used to route per-block builders.
+# Non-chart types (kpi_grid, anomaly_callout, data_table, ranking_table) are
+# excluded from chart_configs entirely.
+_CHARTJS_VISUAL_TYPES = {"line_chart", "bar_chart", "donut_chart", "diverging_bar_chart"}
 
 
 class InsightGenerator(LLMBaseAgent):
@@ -473,6 +473,11 @@ SYNTHESIS RULES:
         '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
         '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#6366f1',
     ]
+    # Match style.css --pos / --danger so diverging bar colours are consistent
+    # with SEHAT (green) / KRITIS (red) verdict badges used elsewhere in the UI.
+    _COLOR_POS = '#0E8A55'
+    _COLOR_NEG = '#E4002B'
+
     _TIME_KEYWORDS = {'date', 'month', 'week', 'year', 'day', 'hour',
                       'tanggal', 'bulan', 'minggu', 'tahun', 'jam', 'period', 'waktu'}
     _MAX_CHART_ROWS = 50
@@ -560,48 +565,162 @@ SYNTHESIS RULES:
 
         return configs
 
+    def _build_donut_chart(self, state: AgentState) -> dict | None:
+        """Build a Chart.js doughnut config from query_result.
+
+        Selects the first *share_pct / *pct / *kontribusi column as values,
+        first text column as segment labels.
+        """
+        data = state.query_result
+        if not data:
+            return None
+
+        def _to_num(v: object) -> float | None:
+            if isinstance(v, bool): return None
+            if isinstance(v, (int, float)): return float(v)
+            if isinstance(v, str):
+                try: return float(v.replace(',', '').replace(' ', ''))
+                except ValueError: return None
+            try: return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError): return None
+
+        cols     = list(data[0].keys())
+        num_cols = [c for c in cols if _to_num(data[0].get(c)) is not None]
+        txt_cols = [c for c in cols if c not in num_cols]
+
+        _SHARE_KW = ('share_pct', 'share', 'kontribusi', 'pct', 'percent', 'proportion', 'distribusi')
+        val_col = next(
+            (c for c in num_cols if any(kw in c.lower() for kw in _SHARE_KW)),
+            num_cols[0] if num_cols else None,
+        )
+        if val_col is None:
+            return None
+
+        # Drop zero-share rows: they'd render as invisible slices.
+        # They still appear in the narrative and data_table.
+        data = [row for row in data if _to_num(row.get(val_col)) not in (None, 0.0)]
+        if not data:
+            return None
+
+        label_col = txt_cols[0] if txt_cols else None
+        labels    = [str(row.get(label_col, i)) for i, row in enumerate(data)] if label_col \
+                    else [str(i + 1) for i in range(len(data))]
+        values    = [_to_num(row.get(val_col)) for row in data]
+
+        return {
+            'type':      'doughnut',
+            'labels':    labels,
+            'datasets':  [{
+                'label':           val_col.replace('_', ' ').title(),
+                'data':            values,
+                'backgroundColor': self._CHART_COLORS[:len(data)],
+            }],
+            'title':     val_col.replace('_', ' ').title(),
+            'dual_axis': False,
+        }
+
+    def _build_diverging_bar_chart(self, state: AgentState) -> dict | None:
+        """Build a horizontal Chart.js bar config with green/red per-bar colors.
+
+        Selects the first *pct_change / *_mom / *growth_pct column as values.
+        Positive values get _COLOR_POS (SEHAT green), negative get _COLOR_NEG (KRITIS red),
+        matching the verdict badge colours in style.css.
+        index_axis='y' signals renderer.js to render horizontal bars.
+        """
+        data = state.query_result
+        if not data:
+            return None
+
+        def _to_num(v: object) -> float | None:
+            if isinstance(v, bool): return None
+            if isinstance(v, (int, float)): return float(v)
+            if isinstance(v, str):
+                try: return float(v.replace(',', '').replace(' ', ''))
+                except ValueError: return None
+            try: return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError): return None
+
+        cols     = list(data[0].keys())
+        num_cols = [c for c in cols if _to_num(data[0].get(c)) is not None]
+        txt_cols = [c for c in cols if c not in num_cols]
+
+        _PCT_KW = ('pct_change', 'pct_growth', 'pct_diff', '_mom', 'growth_pct', 'change_pct', 'perubahan_pct')
+        val_col = next(
+            (c for c in num_cols if any(kw in c.lower() for kw in _PCT_KW)),
+            num_cols[0] if num_cols else None,
+        )
+        if val_col is None:
+            return None
+
+        label_col     = txt_cols[0] if txt_cols else None
+        labels        = [str(row.get(label_col, i)) for i, row in enumerate(data)] if label_col \
+                        else [str(i + 1) for i in range(len(data))]
+        values        = [_to_num(row.get(val_col)) for row in data]
+        bg_colors     = [self._COLOR_POS + '99' if (v or 0) >= 0 else self._COLOR_NEG + '99' for v in values]
+        border_colors = [self._COLOR_POS        if (v or 0) >= 0 else self._COLOR_NEG        for v in values]
+
+        return {
+            'type':       'bar',
+            'labels':     labels,
+            'datasets':   [{
+                'label':           val_col.replace('_', ' ').title(),
+                'data':            values,
+                'backgroundColor': bg_colors,
+                'borderColor':     border_colors,
+                'borderWidth':     1,
+            }],
+            'title':      val_col.replace('_', ' ').title(),
+            'dual_axis':  False,
+            'index_axis': 'y',
+        }
+
+    def _build_chart_for_type(self, vblock_type: str, state: AgentState) -> dict | None:
+        """Route a single visual_block type to its chart config builder."""
+        if vblock_type in ('line_chart', 'bar_chart'):
+            configs = self._build_chart_configs(state)
+            return configs[0] if configs else None
+        if vblock_type == 'donut_chart':
+            return self._build_donut_chart(state)
+        if vblock_type == 'diverging_bar_chart':
+            return self._build_diverging_bar_chart(state)
+        return None
+
     def _build_chart_configs_with_anchors(self, state: AgentState, plan: dict) -> list[dict]:
         """
-        Build chart configs and enrich them with anchor_after + purpose from visual_blocks.
+        Build chart configs per visual_block using type-specific builders.
 
-        Strategy: index-based matching. Assumes _build_chart_configs() produces charts in
-        the same positional order as the chart-producing visual_blocks (line_chart, bar_chart,
-        doughnut). Non-chart types (kpi_grid, anomaly_callout, data_table, ranking_table)
-        are excluded from the count.
+        Each chart-producing visual_block gets exactly one config via _build_chart_for_type().
+        Non-chart types and unknown types are skipped. If a builder returns None (insufficient
+        data), the block is skipped with a warning.
 
-        Mismatch behaviour: if len(raw_configs) != len(chart_vblocks), log a warning and
-        return raw_configs unchanged — charts still render at their old fixed positions,
-        no crash.
+        Fallback: if state.layout_plan is None (ResponsePlanner did not run), delegates to
+        _build_chart_configs() — the legacy positional path — to preserve backward compatibility.
         """
-        raw_configs = self._build_chart_configs(state)
-        if not raw_configs:
-            return []
+        if state.layout_plan is None:
+            return self._build_chart_configs(state)
 
         visual_blocks = plan.get("visual_blocks", [])
-        # TODO(Prompt 4): add diverging_bar_chart to _CHARTJS_VISUAL_TYPES once its
-        # chart config builder is implemented; until then it falls through to the warning.
+        if not visual_blocks:
+            return []
+
         _KNOWN_NON_CHART = {"kpi_grid", "anomaly_callout", "data_table", "ranking_table"}
-        chart_vblocks = []
-        for b in visual_blocks:
-            btype = b.get("type", "")
-            if btype in _CHARTJS_VISUAL_TYPES:
-                chart_vblocks.append(b)
-            elif btype not in _KNOWN_NON_CHART:
-                self.log(f"visual_block type '{btype}' not in _CHARTJS_VISUAL_TYPES — skipped in chart matching", level="warning")
-
-        if len(raw_configs) != len(chart_vblocks):
-            self.log(
-                f"chart_configs/visual_blocks count mismatch "
-                f"({len(raw_configs)} built vs {len(chart_vblocks)} planned) — "
-                "skipping anchor enrichment; charts rendered at default positions",
-                level="warning",
-            )
-            return raw_configs
-
-        return [
-            {**cfg, "anchor_after": vb["anchor_after"], "purpose": vb["purpose"]}
-            for cfg, vb in zip(raw_configs, chart_vblocks)
-        ]
+        configs: list[dict] = []
+        for vb in visual_blocks:
+            btype = vb.get("type", "")
+            if btype not in _CHARTJS_VISUAL_TYPES:
+                if btype not in _KNOWN_NON_CHART:
+                    self.log(f"visual_block type '{btype}' not in _CHARTJS_VISUAL_TYPES — skipped", level="warning")
+                continue
+            cfg = self._build_chart_for_type(btype, state)
+            if cfg is None:
+                self.log(f"_build_chart_for_type('{btype}') returned None — insufficient data", level="warning")
+                continue
+            configs.append({
+                **cfg,
+                "anchor_after": vb.get("anchor_after"),
+                "purpose":      vb.get("purpose"),
+            })
+        return configs
 
     def _parse_insight_sections(self, text: str) -> dict[str, str] | None:
         """

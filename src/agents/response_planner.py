@@ -142,6 +142,7 @@ class ResponsePlanner(LLMBaseAgent):
             prompt = self._build_prompt(state)
             raw    = self._call_llm(prompt, max_tokens=700, temperature=0)
             plan   = self._parse_plan(raw)
+            plan   = self._enforce_chart_rules(state, plan)
             plan["needs_visual"] = self._compute_needs_visual(state, plan)
             state.layout_plan = plan
             self.log(
@@ -522,6 +523,36 @@ OTHER RULES
             return False
 
         return True
+
+    def _enforce_chart_rules(self, state: AgentState, plan: dict) -> dict:
+        """
+        Deterministic post-parse guard: enforce numeric chart-selection rules
+        that the LLM might violate regardless of prompt compliance.
+
+        Rule enforced:
+          donut_chart with distinct_entity_count > 6 → downgrade to bar_chart.
+
+        distinct_entity_count == row_count (a known approximation). The guard is
+        conservative: it only fires when row_count exceeds 6, which is always wrong
+        for a donut regardless of the true entity count.
+        """
+        if state.is_multi_step or not state.query_result:
+            return plan
+
+        entity_count = self._build_data_shape(state).get("distinct_entity_count", 0)
+
+        updated: list[dict] = []
+        for b in plan.get("visual_blocks", []):
+            if b["type"] == "donut_chart" and entity_count > 6:
+                self.log(
+                    f"donut_chart → bar_chart (distinct_entity_count={entity_count} > 6)",
+                    level="warning",
+                )
+                b = {**b, "type": "bar_chart"}
+            updated.append(b)
+
+        plan["visual_blocks"] = updated
+        return plan
 
     # ─────────────────────────────────────────────────────────────
     # DEFAULT PLAN
