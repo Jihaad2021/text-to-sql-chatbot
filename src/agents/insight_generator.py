@@ -78,9 +78,12 @@ class InsightGenerator(LLMBaseAgent):
         try:
             prompt = self._build_prompt(state)
             intent = getattr(state, "intent", None)
+            intent_category = (
+                intent.get("category", "") if isinstance(intent, dict) else (intent or "")
+            )
             use_thinking = (
                 self.provider == "anthropic"
-                and intent in self._THINKING_INTENTS
+                and intent_category in self._THINKING_INTENTS
             )
             insights = self._call_llm(
                 prompt, max_tokens=1500, temperature=0.3, use_thinking=use_thinking
@@ -92,7 +95,7 @@ class InsightGenerator(LLMBaseAgent):
             state.insights = insights
             state.insights_sections = self._parse_insight_sections(insights)
             if use_thinking:
-                self.log(f"Extended thinking used for intent: {intent}")
+                self.log(f"Extended thinking used for intent: {intent_category}")
             sections_found = len(state.insights_sections) if state.insights_sections else 0
             self.log(f"Insights generated ({len(insights)} chars, {sections_found} section(s) parsed)")
 

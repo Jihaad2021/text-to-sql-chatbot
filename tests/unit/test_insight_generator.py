@@ -20,8 +20,16 @@ from src.utils.exceptions import InsightGenerationError
 
 @pytest.fixture
 def generator():
-    """Initialize InsightGenerator with mocked Anthropic client."""
+    """Initialize InsightGenerator with mocked OpenAI client."""
     with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+        return InsightGenerator()
+
+
+@pytest.fixture
+def anthropic_generator():
+    """InsightGenerator wired to Anthropic provider — needed to test use_thinking path."""
+    with patch.object(InsightGenerator, "_init_client",
+                      return_value=("anthropic", MagicMock(), "claude-sonnet-4-6")):
         return InsightGenerator()
 
 
@@ -168,3 +176,43 @@ class TestAgentState:
         metrics = generator.get_metrics()
         assert metrics["total_calls"] == 1
         assert metrics["successful_calls"] == 1
+
+
+# ========================================
+# Test: Extended thinking gate
+# ========================================
+
+class TestExtendedThinking:
+    """Verify use_thinking is derived from intent category string, not the dict itself."""
+
+    def test_use_thinking_true_for_root_cause_with_anthropic(self, anthropic_generator, state_with_results):
+        """Anthropic provider + root_cause_analysis intent → use_thinking=True passed to _call_llm."""
+        state_with_results.intent = {
+            "category": "root_cause_analysis",
+            "confidence": 0.92,
+            "reason": "causal investigation query",
+            "sql_strategy": "analytical",
+        }
+        with patch.object(anthropic_generator, "_call_llm", return_value="insight") as mock_llm:
+            anthropic_generator.run(state_with_results)
+
+        _, kwargs = mock_llm.call_args
+        assert kwargs.get("use_thinking") is True, (
+            "root_cause_analysis with Anthropic provider must trigger extended thinking"
+        )
+
+    def test_use_thinking_false_for_simple_select_with_anthropic(self, anthropic_generator, state_with_results):
+        """Anthropic provider + simple_select intent → use_thinking=False (not in _THINKING_INTENTS)."""
+        state_with_results.intent = {
+            "category": "simple_select",
+            "confidence": 0.95,
+            "reason": "basic retrieval",
+            "sql_strategy": "simple",
+        }
+        with patch.object(anthropic_generator, "_call_llm", return_value="insight") as mock_llm:
+            anthropic_generator.run(state_with_results)
+
+        _, kwargs = mock_llm.call_args
+        assert kwargs.get("use_thinking") is False, (
+            "simple_select must not trigger extended thinking"
+        )
