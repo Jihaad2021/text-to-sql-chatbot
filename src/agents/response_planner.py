@@ -143,6 +143,7 @@ class ResponsePlanner(LLMBaseAgent):
             raw    = self._call_llm(prompt, max_tokens=700, temperature=0)
             plan   = self._parse_plan(raw)
             plan   = self._enforce_chart_rules(state, plan)
+            plan   = self._apply_anomaly_flag(state, plan)
             plan["needs_visual"] = self._compute_needs_visual(state, plan)
             state.layout_plan = plan
             self.log(
@@ -483,6 +484,23 @@ OTHER RULES
             _PURPOSE_RENDER_ORDER.get(b["purpose"], 1),
         ))
 
+        # Dedup: remove exact (type, anchor_after, purpose) duplicates that LLMs occasionally
+        # emit, e.g. two data_table blocks anchored to the same section.
+        seen_block_keys: set[tuple] = set()
+        deduped: list[dict] = []
+        for b in clean_blocks:
+            key = (b["type"], b["anchor_after"], b["purpose"])
+            if key in seen_block_keys:
+                self.log(
+                    f"Duplicate visual_block removed: type={b['type']!r} "
+                    f"anchor={b['anchor_after']!r} purpose={b['purpose']!r}",
+                    level="warning",
+                )
+                continue
+            seen_block_keys.add(key)
+            deduped.append(b)
+        clean_blocks = deduped
+
         plan["visual_blocks"] = clean_blocks
 
         # ── needs_visual — LLM hint; overridden by _compute_needs_visual() after parse ──
@@ -585,6 +603,31 @@ OTHER RULES
             updated.append(b)
 
         plan["visual_blocks"] = updated
+        return plan
+
+    def _apply_anomaly_flag(self, state: AgentState, plan: dict) -> dict:
+        """Auto-set anomaly_flag=True when detect_anomaly returned anomalous entities.
+
+        _parse_plan() sets anomaly_flag only when the LLM emits an anomaly_callout block,
+        which it rarely does. This guard ensures InsightGenerator receives anomaly_flag=True
+        whenever the data actually warrants it, regardless of LLM chart selection.
+
+        Only fires when anomaly_flag is currently False (does not override an existing True).
+        """
+        if plan.get("anomaly_flag"):
+            return plan  # already set via anomaly_callout block in _parse_plan
+
+        for tr in state.tool_results:
+            if tr.tool_name != "detect_anomaly":
+                continue
+            if any(row.get("is_anomaly") for row in tr.data):
+                plan["anomaly_flag"] = True
+                self.log(
+                    "anomaly_flag auto-set: detect_anomaly tool returned is_anomaly=true row(s)",
+                    level="warning",
+                )
+                return plan
+
         return plan
 
     # ─────────────────────────────────────────────────────────────
