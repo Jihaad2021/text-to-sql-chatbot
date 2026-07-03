@@ -332,11 +332,18 @@ CHART SELECTION — check rules in order, take first match:
      WHEN: has_time_dimension=true
 
   3. diverging_bar_chart
-     WHEN: is_multi_step=true
-           AND steps[0].columns == steps[1].columns (identical column names)
-           AND steps[0].row_count == steps[1].row_count
-     (Side-by-side period comparison detected. InsightGenerator computes % change later;
-     ResponsePlanner only needs to recognise the structural pattern.)
+     TWO trigger paths — fire on the FIRST that matches:
+       A. is_multi_step=true
+          AND steps[0].columns == steps[1].columns (identical column names)
+          AND steps[0].row_count == steps[1].row_count
+          (Identical-schema step pair = side-by-side period comparison. InsightGenerator
+          computes % change; ResponsePlanner only needs to detect the structural pattern.)
+       B. has_pct_change_column=true (single-step DATA_SHAPE)
+          OR any steps[N].has_pct_change_column=true (multi-step/tool-results DATA_SHAPE)
+          AND has_time_dimension=false
+          (Pre-computed ± deltas from compare_periods or detect_anomaly are already in the
+          data — use diverging bar to show positive/negative directions explicitly.
+          SKIP if has_time_dimension=true; a line_chart handles time-series better.)
 
   4. bar_chart
      WHEN: has_share_column=true AND distinct_entity_count > 6
@@ -533,29 +540,48 @@ OTHER RULES
 
     def _enforce_chart_rules(self, state: AgentState, plan: dict) -> dict:
         """
-        Deterministic post-parse guard: enforce numeric chart-selection rules
-        that the LLM might violate regardless of prompt compliance.
+        Deterministic post-parse guard: enforce chart-selection rules the LLM
+        might violate regardless of prompt compliance. Rules run in order so
+        later rules see already-upgraded types (donut→bar→diverging_bar is valid).
 
-        Rule enforced:
-          donut_chart with distinct_entity_count > 6 → downgrade to bar_chart.
-
-        distinct_entity_count == row_count (a known approximation). The guard is
-        conservative: it only fires when row_count exceeds 6, which is always wrong
-        for a donut regardless of the true entity count.
+        Rules enforced:
+          1. donut_chart + entity_count > 6          → downgrade to bar_chart.
+          2. bar_chart + has_pct_change + no time    → upgrade to diverging_bar_chart.
+             Covers both single-step and tool_results (compare_periods / detect_anomaly)
+             where ± deltas are already in the data and need explicit sign direction.
         """
         if state.is_multi_step or not state.query_result:
             return plan
 
-        entity_count = self._build_data_shape(state).get("distinct_entity_count", 0)
+        shape        = self._build_data_shape(state)
+        entity_count = shape.get("distinct_entity_count", 0)
+
+        # Detect pct_change and time signals across single-step and tool_results shapes
+        has_pct_change = shape.get("has_pct_change_column", False) or any(
+            s.get("has_pct_change_column", False) for s in shape.get("steps", [])
+        )
+        has_time = shape.get("has_time_dimension", False) or any(
+            s.get("has_time_dimension", False) for s in shape.get("steps", [])
+        )
 
         updated: list[dict] = []
         for b in plan.get("visual_blocks", []):
+            # Rule 1: donut with too many entities → bar
             if b["type"] == "donut_chart" and entity_count > 6:
                 self.log(
                     f"donut_chart → bar_chart (distinct_entity_count={entity_count} > 6)",
                     level="warning",
                 )
                 b = {**b, "type": "bar_chart"}
+
+            # Rule 2: bar with pre-computed ± deltas → diverging_bar (skip if time-series)
+            if b["type"] == "bar_chart" and has_pct_change and not has_time:
+                self.log(
+                    "bar_chart → diverging_bar_chart (has_pct_change_column=true, no time dimension)",
+                    level="warning",
+                )
+                b = {**b, "type": "diverging_bar_chart"}
+
             updated.append(b)
 
         plan["visual_blocks"] = updated
