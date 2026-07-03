@@ -85,6 +85,10 @@ class InsightGenerator(LLMBaseAgent):
             insights = self._call_llm(
                 prompt, max_tokens=1500, temperature=0.3, use_thinking=use_thinking
             )
+            # Guard: if ResponsePlanner asked for brief, strip any extra sections
+            # the LLM added beyond the direct answer (defense-in-depth after context trim).
+            if plan.get("response_length") == "brief":
+                insights = self._truncate_brief_sections(insights)
             state.insights = insights
             state.insights_sections = self._parse_insight_sections(insights)
             if use_thinking:
@@ -138,8 +142,18 @@ class InsightGenerator(LLMBaseAgent):
         else:
             results_text = "No results returned"
 
+        response_length = (state.layout_plan or {}).get("response_length", "standard")
+        has_context     = bool(state.context_snapshot)
+        # For brief: strip partner/product/channel breakdown so the LLM isn't tempted to
+        # pull that data into extra sections beyond the direct answer.
+        _ctx = (
+            self._trim_context_for_brief(state.context_snapshot)
+            if response_length == "brief" and state.context_snapshot
+            else state.context_snapshot
+        )
+
         history_block  = self._build_history_block(state.conversation_history)
-        context_block  = f"\n{state.context_snapshot}\n" if state.context_snapshot else ""
+        context_block  = f"\n{_ctx}\n" if _ctx else ""
         layout_block   = self._build_layout_block(state.layout_plan)
         # Use segment from IntentClassifier if available, fallback to keyword detection
         segment        = (
@@ -150,21 +164,13 @@ class InsightGenerator(LLMBaseAgent):
         segment_guide             = self._build_segment_guide(segment)
         business_thresholds_block = render_thresholds_block()
 
+        elaboration_block = self._build_single_elaboration(response_length, has_context)
+
         return f"""You are a data analyst for Telkomsel's digital payment platform. Generate insights in conversational Indonesian.
 {context_block}{history_block}
 USER QUESTION: "{state.query}"
 
-ELABORASI WAJIB — Jawaban harus minimal 4–5 kalimat. Jangan berhenti di satu fakta.
-Bahkan ketika RESULTS hanya berisi satu angka, WAJIB elaborasi menggunakan CONTEXT SNAPSHOT di atas.
-Jawab poin-poin berikut menggunakan struktur markdown (## sub-judul, **bold** angka):
-
-1. JAWAB LANGSUNG: sebutkan angkanya dengan format yang benar.
-2. KOMPARASI: bandingkan angka ini dengan data di CONTEXT SNAPSHOT (baseline harian, bulan berjalan, rata-rata). Hitung selisih atau persentase perubahan jika bisa. Angka dari CONTEXT SNAPSHOT boleh digunakan — itu data valid.
-3. POSISI: apakah angka ini tinggi, rendah, atau normal untuk konteks bisnis ini? Gunakan BUSINESS THRESHOLDS di bawah.
-4. IMPLIKASI: apa yang angka ini berarti — ada yang perlu diperhatikan? Tren apa yang terlihat?
-5. KONTEKS TAMBAHAN: sebutkan satu hal lain yang relevan (kontributor terbesar, anomali, periode parsial, dll) jika ada di data atau context.
-
-DILARANG mengarang angka yang tidak ada di RESULTS maupun CONTEXT SNAPSHOT.
+{elaboration_block}
 
 SQL EXECUTED:
 {state.validated_sql}
@@ -260,15 +266,15 @@ If no results (0 rows):
         layout_block              = self._build_layout_block(state.layout_plan)
         business_thresholds_block = render_thresholds_block()
 
+        response_length   = (state.layout_plan or {}).get("response_length", "standard")
+        has_context       = bool(state.context_snapshot)
+        elaboration_block = self._build_multi_elaboration(response_length, has_context)
+
         return f"""You are a data analyst for Telkomsel's digital payment platform.
 {context_block}{history_block}
 USER ORIGINAL QUESTION: "{state.query}"
 
-ELABORASI PERTANYAAN — setelah menjawab pertanyaan utama, tambahkan konteks analitik yang relevan dari hasil langkah-langkah di bawah:
-- Bandingkan antar grup/periode jika ada dua step yang merepresentasikan dua sisi
-- Sebutkan kontributor dominan dan outlier yang signifikan
-- Berikan implikasi bisnis singkat: apakah kondisi ini perlu perhatian atau sudah normal?
-Gunakan threshold bisnis di bawah untuk kontekstualisasi. DILARANG mengarang angka.
+{elaboration_block}
 
 ANALYSIS STEPS EXECUTED:
 
@@ -323,6 +329,97 @@ SYNTHESIS RULES:
 6. Panjang jawaban proporsional dengan data — tidak perlu dipotong jika ada temuan penting
 
 {layout_block}Your insights in Indonesian:"""
+
+    def _truncate_brief_sections(self, text: str) -> str:
+        """Post-processing guard for brief responses.
+
+        If the LLM added any <!-- SECTION:sN --> markers despite the brief
+        instruction, truncate everything from the first marker onward.
+        The direct answer always appears before any section marker.
+        """
+        import re
+        m = re.search(r'<!-- SECTION:\w+ -->', text)
+        if m is None:
+            return text  # already compliant
+        truncated = text[:m.start()].rstrip()
+        all_markers = re.findall(r'<!-- SECTION:\w+ -->', text)
+        self.log(
+            f"brief guard: truncated {len(all_markers)} extra section(s) added by LLM",
+            level="warning",
+        )
+        return truncated
+
+    def _trim_context_for_brief(self, ctx: str) -> str:
+        """Strip partner/product/channel detail from context_snapshot for brief prompts.
+
+        Keeps only the first 3 blank-line-separated blocks:
+        header → monthly overview → MoM section.
+        Appending a note so the LLM knows the snapshot is intentionally short.
+        """
+        blank_count = 0
+        lines: list[str] = []
+        for line in ctx.splitlines():
+            if line.strip() == "":
+                blank_count += 1
+                if blank_count >= 3:
+                    lines.append("[detail partner/produk/channel dihilangkan — query brief]")
+                    break
+            lines.append(line)
+        return "\n".join(lines)
+
+    def _build_single_elaboration(self, response_length: str, has_context: bool) -> str:
+        """Return the elaboration instruction block for single-step prompts."""
+        _std = (
+            "ELABORASI WAJIB — Jawaban harus minimal 4–5 kalimat. Jangan berhenti di satu fakta.\n"
+            "Bahkan ketika RESULTS hanya berisi satu angka, WAJIB elaborasi menggunakan CONTEXT SNAPSHOT di atas.\n"
+            "Jawab poin-poin berikut menggunakan struktur markdown (## sub-judul, **bold** angka):\n\n"
+            "1. JAWAB LANGSUNG: sebutkan angkanya dengan format yang benar.\n"
+            "2. KOMPARASI: bandingkan angka ini dengan data di CONTEXT SNAPSHOT (baseline harian, bulan berjalan, rata-rata). "
+            "Hitung selisih atau persentase perubahan jika bisa. Angka dari CONTEXT SNAPSHOT boleh digunakan — itu data valid.\n"
+            "3. POSISI: apakah angka ini tinggi, rendah, atau normal untuk konteks bisnis ini? Gunakan BUSINESS THRESHOLDS di bawah.\n"
+            "4. IMPLIKASI: apa yang angka ini berarti — ada yang perlu diperhatikan? Tren apa yang terlihat?\n"
+            "5. KONTEKS TAMBAHAN: sebutkan satu hal lain yang relevan (kontributor terbesar, anomali, periode parsial, dll) "
+            "jika ada di data atau context.\n"
+            "DILARANG mengarang angka yang tidak ada di RESULTS maupun CONTEXT SNAPSHOT."
+        )
+        if response_length == "brief":
+            return (
+                "PANJANG JAWABAN (brief): jawab dalam 1–2 kalimat — angka utama dan verdict SEHAT/PERHATIAN/KRITIS. "
+                "Tidak perlu elaborasi, komparasi, atau konteks tambahan.\n"
+                "DILARANG mengarang angka yang tidak ada di RESULTS maupun CONTEXT SNAPSHOT."
+            )
+        if response_length == "detailed" and has_context:
+            return (
+                _std + "\n"
+                "6. KONTEKS HISTORIS: mengacu pada CONTEXT SNAPSHOT, jelaskan bagaimana kondisi ini dibandingkan "
+                "dengan pola historis yang lebih luas — tren multi-bulan, perubahan baseline, atau posisi relatif "
+                "terhadap periode sebelumnya."
+            )
+        return _std  # standard, or detailed without context snapshot
+
+    def _build_multi_elaboration(self, response_length: str, has_context: bool) -> str:
+        """Return the elaboration instruction block for multi-step prompts."""
+        _std = (
+            "ELABORASI PERTANYAAN — setelah menjawab pertanyaan utama, tambahkan konteks analitik yang relevan "
+            "dari hasil langkah-langkah di bawah:\n"
+            "- Bandingkan antar grup/periode jika ada dua step yang merepresentasikan dua sisi\n"
+            "- Sebutkan kontributor dominan dan outlier yang signifikan\n"
+            "- Berikan implikasi bisnis singkat: apakah kondisi ini perlu perhatian atau sudah normal?\n"
+            "Gunakan threshold bisnis di bawah untuk kontekstualisasi. DILARANG mengarang angka."
+        )
+        if response_length == "brief":
+            return (
+                "PANJANG JAWABAN (brief): jawab dalam 1–2 kalimat — bandingkan kedua periode/grup dengan angka "
+                "konkret dan verdict SEHAT/PERHATIAN/KRITIS. Tidak perlu elaborasi tambahan.\n"
+                "DILARANG mengarang angka yang tidak ada di step results di atas."
+            )
+        if response_length == "detailed" and has_context:
+            return (
+                _std + "\n"
+                "- Tambahkan konteks historis: mengacu pada CONTEXT SNAPSHOT, jelaskan bagaimana temuan ini "
+                "dibandingkan dengan pola historis multi-bulan atau baseline yang tersedia."
+            )
+        return _std  # standard, or detailed without context snapshot
 
     def _build_layout_block(self, plan: dict | None) -> str:
         """Convert layout_plan into prompt instructions for structured output."""
