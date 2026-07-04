@@ -930,9 +930,69 @@ FORMAT OUTPUT:
             return max(vals) if vals else 0.0
 
         configs: list[dict] = []
-        metric_groups = [numeric_cols[i:i+2] for i in range(0, min(len(numeric_cols), 4), 2)]
 
-        for group in metric_groups[:2]:
+        # ── Semantic suffix-based grouping ────────────────────────────────
+        # Tools like detect_anomaly and compare_periods use a consistent naming
+        # convention ({metric}_target, {metric}_baseline_avg, {metric}_pct_change).
+        # Grouping by suffix produces semantically coherent charts instead of
+        # the accidental cross-category pairs caused by blind positional slicing
+        # (e.g. the old code paired trx_pct_change with rev_target because they
+        # happened to sit at indices 2 and 3).
+        #
+        # Priority order (most actionable first):
+        #   1. *_pct_change  → primary chart  (all pct_change cols in ONE chart)
+        #   2. *_target      → secondary chart (prefer over baseline)
+        #   3. *_baseline_avg → secondary chart (if no target group)
+        # Columns not placed in any chart are logged explicitly so production
+        # monitoring can detect unexpected schema changes.
+        #
+        # Fallback: when NO column matches any suffix, use the original positional
+        # pairing for non-tool data (get_trend, get_summary, plain SQL results).
+        _SUFFIX_MAP: dict[str, str] = {
+            'pct_change':   '_pct_change',
+            'target':       '_target',
+            'baseline_avg': '_baseline_avg',
+        }
+        _sfx_groups: dict[str, list[str]] = {k: [] for k in _SUFFIX_MAP}
+        for _c in numeric_cols:
+            for _key, _sfx in _SUFFIX_MAP.items():
+                if _c.endswith(_sfx):
+                    _sfx_groups[_key].append(_c)
+                    break
+
+        _has_suffix = any(_sfx_groups.values())
+        if _has_suffix:
+            chart_groups: list[list[str]] = []
+            _charted: set[str] = set()
+            # Priority 1: all *_pct_change columns → one chart
+            if _sfx_groups['pct_change']:
+                chart_groups.append(_sfx_groups['pct_change'])
+                _charted.update(_sfx_groups['pct_change'])
+            # Priority 2: *_target preferred over *_baseline_avg
+            if len(chart_groups) < 2:
+                _secondary = _sfx_groups['target'] or _sfx_groups['baseline_avg']
+                if _secondary:
+                    chart_groups.append(_secondary)
+                    _charted.update(_secondary)
+            # Warn about every numeric column not represented in any chart
+            _not_charted = [c for c in numeric_cols if c not in _charted]
+            if _not_charted:
+                self.log(
+                    f"Columns not represented in any chart (semantic groups filled 2 charts): {_not_charted}",
+                    level="warning",
+                )
+        else:
+            # No suffix patterns found — fall back to original positional pairing.
+            chart_groups = [numeric_cols[i:i+2] for i in range(0, min(len(numeric_cols), 4), 2)]
+            _n_fallback_charted = min(len(numeric_cols), 4)
+            if len(numeric_cols) > _n_fallback_charted:
+                _not_charted_fb = numeric_cols[_n_fallback_charted:]
+                self.log(
+                    f"Columns not represented in any chart (positional fallback, cap 4): {_not_charted_fb}",
+                    level="warning",
+                )
+
+        for group in chart_groups[:2]:
             if is_time:
                 chart_type = 'line'
             elif len(data) <= 6 and len(group) == 1:
