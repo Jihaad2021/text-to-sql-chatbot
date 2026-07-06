@@ -53,7 +53,7 @@ def _format_date_id(date_str: str) -> str:
 # Chart.js-producing visual_block types — used to route per-block builders.
 # Non-chart types (kpi_grid, anomaly_callout, data_table, ranking_table) are
 # excluded from chart_configs entirely.
-_CHARTJS_VISUAL_TYPES = {"line_chart", "bar_chart", "donut_chart", "diverging_bar_chart"}
+_CHARTJS_VISUAL_TYPES = {"line_chart", "bar_chart", "donut_chart", "diverging_bar_chart", "grouped_bar_chart"}
 
 # Recommendation rules block — injected BEFORE SQL/RESULTS so the LLM processes
 # the threshold-first ordering instruction before forming a volume-based approach.
@@ -218,6 +218,11 @@ class InsightGenerator(LLMBaseAgent):
                 f"Data terbaru yang tersedia adalah sampai **{latest_fmt}**. "
                 f"Belum ada data untuk periode yang diminta."
             )
+            # Defense-in-depth: clear any data that AnalyticsAgent or SQL pipeline may have
+            # written to state before the guard fired, so the UI never renders a data table
+            # alongside the guard message (hasData=False → _buildFlatBody skips table).
+            state.query_result = []
+            state.row_count = 0
             self.log(
                 f"Skipped LLM — query_out_of_range=True, latest={state.out_of_range_latest}",
                 level="warning",
@@ -245,6 +250,23 @@ class InsightGenerator(LLMBaseAgent):
                 insights = self._truncate_brief_sections(insights)
             state.insights = insights
             state.insights_sections = self._parse_insight_sections(insights)
+
+            # FIX 5 monitoring: warn when insight may use user's raw query number
+            # instead of actual row_count from tool results.
+            if state.tool_results:
+                for _tr in state.tool_results:
+                    if _tr.tool_name == "get_distribution" and getattr(_tr, "actual_entity_count", 0) > 0:
+                        _req_match = re.search(r'\b(\d{2,5})\b', state.query or "")
+                        if _req_match:
+                            _req_n = int(_req_match.group(1))
+                            if _req_n != _tr.row_count and str(_req_n) in insights:
+                                self.log(
+                                    f"Insight may use user's query number ({_req_n}) "
+                                    f"instead of actual row_count ({_tr.row_count}); "
+                                    f"actual_entity_count={_tr.actual_entity_count}",
+                                    level="warning",
+                                )
+
             if use_thinking:
                 self.log(f"Extended thinking used for intent: {intent_category}")
             sections_found = len(state.insights_sections) if state.insights_sections else 0
@@ -402,7 +424,25 @@ METODOLOGI ANALISIS — ikuti urutan ini:
                 preview = json.dumps(tr.data[:15], indent=2, default=str)
                 lines.append(f"TOOL {i} — {tr.tool_name}: {tr.description}")
                 lines.append(f"SQL: {tr.sql_or_params}")
-                lines.append(f"Results ({tr.row_count} rows):")
+                actual = getattr(tr, "actual_entity_count", 0)
+                count_note = f", actual_entity_count={actual}" if actual > 0 else ""
+                lines.append(f"Results ({tr.row_count} rows{count_note}):")
+                # Partial-display flag: fewer rows shown than entities available.
+                if actual > tr.row_count:
+                    lines.append(
+                        f"⚠️ PARTIAL DISPLAY: Hanya {tr.row_count} dari {actual} entitas yang "
+                        f"tersedia ditampilkan. Insight WAJIB menyebutkan ini secara eksplisit, "
+                        f"contoh: 'ditampilkan {tr.row_count} dari {actual} produk teratas'."
+                    )
+                # Cumulative share: computed deterministically from returned rows.
+                cum_trx = getattr(tr, "cumulative_trx_share_pct", 0.0)
+                cum_rev = getattr(tr, "cumulative_rev_share_pct", 0.0)
+                dim = getattr(tr, "dimension", "") or "entitas"
+                if cum_trx > 0 or cum_rev > 0:
+                    lines.append(
+                        f"CUMULATIVE SHARE (dihitung dari {tr.row_count} baris di atas): "
+                        f"trx_share={cum_trx}%, rev_share={cum_rev}%"
+                    )
                 lines.append(preview)
                 lines.append("")
         return "\n".join(lines)
@@ -430,6 +470,43 @@ METODOLOGI ANALISIS — ikuti urutan ini:
             else None
         ) or self._detect_segment(state.query)
         segment_guide = self._build_segment_guide(segment)
+
+        # Build mandatory-findings block: covers both partial-display AND cumulative share.
+        # Both findings must appear in the insight when present; they are complementary,
+        # not mutually exclusive — show "20 dari 882" AND "20 ini = X% total".
+        partial_display_block = ""
+        for _tr in (state.tool_results or []):
+            _actual   = getattr(_tr, "actual_entity_count", 0)
+            _cum_trx  = getattr(_tr, "cumulative_trx_share_pct", 0.0)
+            _cum_rev  = getattr(_tr, "cumulative_rev_share_pct", 0.0)
+            _dim      = getattr(_tr, "dimension", "") or "entitas"
+            _row      = _tr.row_count
+            _has_partial  = _actual > _row
+            _has_cum_share = _cum_trx > 0 or _cum_rev > 0
+
+            if not (_has_partial or _has_cum_share):
+                continue
+
+            mandatory_lines = [
+                "⚠️ MANDATORY FINDINGS — WAJIB muncul di insight, angka TIDAK BOLEH diubah:\n",
+            ]
+            if _has_partial:
+                mandatory_lines.append(
+                    f"  [PARTIAL] Dari {_actual} {_dim} yang tersedia di database, "
+                    f"ditampilkan {_row} teratas. "
+                    f"Sebutkan: \"ditampilkan {_row} dari {_actual} {_dim}\".\n"
+                )
+            if _has_cum_share:
+                mandatory_lines.append(
+                    f"  [KONSENTRASI] {_row} {_dim} teratas ini merepresentasikan "
+                    f"{_cum_trx}% dari total transaksi dan {_cum_rev}% dari total revenue. "
+                    f"Sebutkan angka ini verbatim.\n"
+                )
+            mandatory_lines.append(
+                "  Kedua temuan di atas HARUS muncul di paragraf pertama atau kedua insight.\n\n"
+            )
+            partial_display_block = "".join(mandatory_lines)
+            break
 
         return f"""You are a data analyst for Telkomsel's digital payment platform.
 {context_block}{history_block}
@@ -465,6 +542,8 @@ DATA INTEGRITY — ANTI-HALLUCINATION (wajib diikuti):
 - DILARANG mengarang atau menginterpolasi angka spesifik
 - Setiap klaim kausal HARUS didukung angka konkret dari tool result
 - Jika ada outlier >50% dari rata-rata, sorot secara eksplisit
+- ENTITY COUNT RULE: DILARANG mengklaim jumlah entitas dari angka yang disebut user (contoh: user minta "top 1000 produk" → JANGAN tulis "1000 produk"). WAJIB gunakan row_count aktual yang tertulis di header "Results (N rows)" di atas. Jika actual_entity_count tersedia, boleh tambahkan konteks: "menampilkan N dari M entitas".
+- PARTIAL DISPLAY RULE: Jika ada pesan "⚠️ PARTIAL DISPLAY" di tool results, insight WAJIB menyebutkan secara eksplisit bahwa hanya sebagian yang ditampilkan. DILARANG menulis seolah-olah semua entitas sudah tercakup.
 
 FORMAT OUTPUT — gunakan markdown untuk struktur yang jelas:
 - Mulai dengan jawaban langsung atas pertanyaan utama (penyebab utama / verdict)
@@ -474,7 +553,7 @@ FORMAT OUTPUT — gunakan markdown untuk struktur yang jelas:
 - JANGAN menyertakan blok kode SQL, backticks triple (```), atau teks teknis
 - Bahasa Indonesia
 
-SYNTHESIS RULES:
+{partial_display_block}SYNTHESIS RULES:
 1. Lead with the direct causal answer to the question
 2. Quote key numbers from each relevant tool result with correct formatting
 3. Cross-reference findings across tools to build a causal chain
@@ -952,6 +1031,7 @@ FORMAT OUTPUT:
             'pct_change':   '_pct_change',
             'target':       '_target',
             'baseline_avg': '_baseline_avg',
+            'share_pct':    '_share_pct',   # get_distribution schema: derivative share%, 0-100 scale
         }
         _sfx_groups: dict[str, list[str]] = {k: [] for k in _SUFFIX_MAP}
         for _c in numeric_cols:
@@ -964,16 +1044,32 @@ FORMAT OUTPUT:
         if _has_suffix:
             chart_groups: list[list[str]] = []
             _charted: set[str] = set()
-            # Priority 1: all *_pct_change columns → one chart
+            # Priority 1: *_pct_change → primary chart (compare_periods / detect_anomaly)
             if _sfx_groups['pct_change']:
                 chart_groups.append(_sfx_groups['pct_change'])
                 _charted.update(_sfx_groups['pct_change'])
-            # Priority 2: *_target preferred over *_baseline_avg
+            # Priority 2: *_share_pct → primary chart when no *_pct_change present.
+            # get_distribution emits trx_share_pct / rev_share_pct alongside total_trx /
+            # total_revenue.  Grouping the share cols together keeps them on a single
+            # 0-100% Y-axis and avoids accidental dual-axis pairing with the absolute cols.
+            if not _sfx_groups['pct_change'] and _sfx_groups['share_pct'] and len(chart_groups) < 2:
+                chart_groups.append(_sfx_groups['share_pct'])
+                _charted.update(_sfx_groups['share_pct'])
+            # Priority 3: *_target preferred over *_baseline_avg (detect_anomaly secondary)
             if len(chart_groups) < 2:
                 _secondary = _sfx_groups['target'] or _sfx_groups['baseline_avg']
                 if _secondary:
                     chart_groups.append(_secondary)
                     _charted.update(_secondary)
+            # Priority 4: unmatched absolute columns → fill remaining slot.
+            # ONLY when *_share_pct was charted (get_distribution schema): after share_pct
+            # takes slot 1, total_trx / total_revenue take slot 2.
+            # Guard is required: for detect_anomaly/compare_periods the unmatched _a/_b cols
+            # are raw period values handled by the grouped_bar_chart path — don't grab them.
+            _unmatched = [c for c in numeric_cols if c not in _charted]
+            if len(chart_groups) < 2 and _unmatched and _sfx_groups['share_pct']:
+                chart_groups.append(_unmatched[:2])
+                _charted.update(_unmatched[:2])
             # Warn about every numeric column not represented in any chart
             _not_charted = [c for c in numeric_cols if c not in _charted]
             if _not_charted:
@@ -1042,21 +1138,32 @@ FORMAT OUTPUT:
                     ds['yAxisID'] = 'y' if y_col == dual_primary_col else 'y1'
                 datasets.append(ds)
 
+            # Explicit pct flags for the renderer's axis formatter (FIX 1).
+            # Prevents the y1 tick callback from blindly appending '%' to revenue values.
+            if use_dual and dual_primary_col:
+                _y_col  = dual_primary_col
+                _y1_col = next((c for c in group if c != dual_primary_col), None)
+            else:
+                _y_col  = group[0] if group else None
+                _y1_col = None
             configs.append({
                 'type':      chart_type,
                 'labels':    labels,
                 'datasets':  datasets,
                 'title':     ' & '.join(c.replace('_', ' ').title() for c in group),
                 'dual_axis': use_dual,
+                'y_is_pct':  _is_pct_col(_y_col) if _y_col else False,
+                'y1_is_pct': _is_pct_col(_y1_col) if _y1_col else False,
             })
 
         return configs
 
-    def _build_donut_chart(self, state: AgentState) -> dict | None:
+    def _build_donut_chart(self, state: AgentState, col_idx: int = 0) -> dict | None:
         """Build a Chart.js doughnut config from query_result.
 
-        Selects the first *share_pct / *pct / *kontribusi column as values,
-        first text column as segment labels.
+        Selects the col_idx-th *share_pct / *pct / *kontribusi column as values,
+        first text column as segment labels.  col_idx > 0 is used for multi-donut
+        layouts (e.g. trx_share_pct donut and rev_share_pct donut separately).
         """
         data = state.query_result
         if not data:
@@ -1076,10 +1183,12 @@ FORMAT OUTPUT:
         txt_cols = [c for c in cols if c not in num_cols]
 
         _SHARE_KW = ('share_pct', 'share', 'kontribusi', 'pct', 'percent', 'proportion', 'distribusi')
-        val_col = next(
-            (c for c in num_cols if any(kw in c.lower() for kw in _SHARE_KW)),
-            num_cols[0] if num_cols else None,
-        )
+        _share_cols = [c for c in num_cols if any(kw in c.lower() for kw in _SHARE_KW)]
+        if _share_cols:
+            # Pick the col_idx-th share col (capped to last if idx exceeds count)
+            val_col = _share_cols[min(col_idx, len(_share_cols) - 1)]
+        else:
+            val_col = num_cols[0] if num_cols else None
         if val_col is None:
             return None
 
@@ -1094,16 +1203,37 @@ FORMAT OUTPUT:
                     else [str(i + 1) for i in range(len(data))]
         values    = [_to_num(row.get(val_col)) for row in data]
 
+        # ── Center value (design ref 2f: donat + nilai tengah) ──────────────
+        # share_pct columns always total 100% by definition — no need to sum.
+        # Raw absolute value columns: sum all slices and abbreviate.
+        _is_share_col = any(kw in val_col.lower() for kw in _SHARE_KW)
+        if _is_share_col:
+            center_value = "100%"
+        else:
+            def _fmt_abbr(n: float) -> str:
+                a = abs(n)
+                if a >= 1e12: return f"{n / 1e12:.1f}T"
+                if a >= 1e9:  return f"{n / 1e9:.1f}M"
+                if a >= 1e6:  return f"{n / 1e6:.1f}jt"
+                if a >= 1e3:  return f"{n / 1e3:.0f}k"
+                return f"{n:.0f}"
+            _REVENUE_KW = ('revenue', 'pendapatan', 'net_gap', 'fee', 'anggaran', 'biaya')
+            rp = "Rp" if any(kw in val_col.lower() for kw in _REVENUE_KW) else ""
+            total = sum(v for v in values if v is not None)
+            center_value = rp + _fmt_abbr(total)
+
         return {
-            'type':      'doughnut',
-            'labels':    labels,
-            'datasets':  [{
+            'type':         'doughnut',
+            'labels':       labels,
+            'datasets':     [{
                 'label':           val_col.replace('_', ' ').title(),
                 'data':            values,
                 'backgroundColor': self._CHART_COLORS[:len(data)],
             }],
-            'title':     val_col.replace('_', ' ').title(),
-            'dual_axis': False,
+            'title':        val_col.replace('_', ' ').title(),
+            'dual_axis':    False,
+            'center_value': center_value,
+            'center_label': 'TOTAL',
         }
 
     def _build_diverging_bar_chart(self, state: AgentState) -> dict | None:
@@ -1170,6 +1300,108 @@ FORMAT OUTPUT:
             'index_axis': 'y',
         }
 
+    def _build_grouped_bar_chart(self, state: AgentState) -> dict | None:
+        """Build a Chart.js grouped bar config showing two periods side-by-side per entity.
+
+        Finds *_a / *_b column pairs in state.query_result. Selects the first pair
+        by column order (stable: matches compare_periods schema order trx_a → rev_a → sr_a).
+        Additional pairs beyond the first are logged as not-charted.
+
+        Output: Chart.js type='bar' with two datasets ('Periode A', 'Periode B').
+        Chart.js renders multiple datasets as side-by-side grouped bars by default
+        (no stacked:true, no indexAxis override needed).
+        """
+        data = state.query_result
+        if not data or len(data) < 2:
+            return None
+
+        def _to_num(v: object) -> float | None:
+            if isinstance(v, bool): return None
+            if isinstance(v, (int, float)): return float(v)
+            if isinstance(v, str):
+                try: return float(v.replace(',', '').replace(' ', ''))
+                except ValueError: return None
+            try: return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError): return None
+
+        cols     = list(data[0].keys())
+        txt_cols = [c for c in cols if _to_num(data[0].get(c)) is None]
+        num_cols = [c for c in cols if _to_num(data[0].get(c)) is not None]
+
+        # Find *_a / *_b pairs preserving original column order for stable selection.
+        # Iterating num_cols in order ensures trx_a/trx_b comes before rev_a/rev_b
+        # in compare_periods results, giving the most-transaction-count chart priority.
+        pairs: list[tuple[str, str, str]] = []  # (prefix, col_a, col_b)
+        seen_prefixes: set[str] = set()
+        for c in num_cols:
+            if not c.endswith('_a'):
+                continue
+            prefix = c[:-2]
+            if prefix in seen_prefixes:
+                continue
+            col_b = prefix + '_b'
+            if col_b in num_cols:
+                pairs.append((prefix, c, col_b))
+                seen_prefixes.add(prefix)
+
+        if not pairs:
+            return None
+
+        # One chart per block — log any pairs that don't fit
+        if len(pairs) > 1:
+            dropped = [f"{p[1]}/{p[2]}" for p in pairs[1:]]
+            self.log(
+                f"grouped_bar_chart: showing first pair only ({pairs[0][1]}/{pairs[0][2]}); "
+                f"additional *_a/*_b pairs not represented in this chart: {dropped}",
+                level="warning",
+            )
+
+        prefix, col_a, col_b = pairs[0]
+        entity_col = txt_cols[0] if txt_cols else None
+        labels = (
+            [str(row.get(entity_col, i)) for i, row in enumerate(data)]
+            if entity_col
+            else [str(i + 1) for i in range(len(data))]
+        )
+
+        if len(data) > self._MAX_CHART_ROWS:
+            self.log(
+                f"grouped_bar_chart: capped at {self._MAX_CHART_ROWS} entities",
+                level="warning",
+            )
+            data   = data[:self._MAX_CHART_ROWS]
+            labels = labels[:self._MAX_CHART_ROWS]
+
+        values_a = [_to_num(row.get(col_a)) for row in data]
+        values_b = [_to_num(row.get(col_b)) for row in data]
+
+        color_a = self._CHART_COLORS[0]   # blue  — Periode A
+        color_b = self._CHART_COLORS[1]   # green — Periode B
+        title   = f"{prefix.replace('_', ' ').title()} — Periode A vs B"
+
+        return {
+            'type':     'bar',
+            'labels':   labels,
+            'datasets': [
+                {
+                    'label':           'Periode A',
+                    'data':            values_a,
+                    'backgroundColor': color_a + '99',
+                    'borderColor':     color_a,
+                    'borderWidth':     1,
+                },
+                {
+                    'label':           'Periode B',
+                    'data':            values_b,
+                    'backgroundColor': color_b + '99',
+                    'borderColor':     color_b,
+                    'borderWidth':     1,
+                },
+            ],
+            'title':     title,
+            'dual_axis': False,
+        }
+
     def _build_chart_for_type(self, vblock_type: str, state: AgentState) -> dict | None:
         """Route a single visual_block type to its chart config builder."""
         if vblock_type in ('line_chart', 'bar_chart'):
@@ -1179,6 +1411,8 @@ FORMAT OUTPUT:
             return self._build_donut_chart(state)
         if vblock_type == 'diverging_bar_chart':
             return self._build_diverging_bar_chart(state)
+        if vblock_type == 'grouped_bar_chart':
+            return self._build_grouped_bar_chart(state)
         return None
 
     def _build_chart_configs_with_anchors(self, state: AgentState, plan: dict) -> list[dict]:
@@ -1200,6 +1434,19 @@ FORMAT OUTPUT:
             return []
 
         _KNOWN_NON_CHART = {"kpi_grid", "anomaly_callout", "data_table", "ranking_table"}
+        _BAR_LINE_TYPES  = {"bar_chart", "line_chart"}
+
+        # Pre-build bar/line configs once.  Multiple bar_chart visual_blocks receive
+        # consecutive configs (configs[0], configs[1], …) so the second block gets the
+        # *_share_pct chart while the first gets the absolute chart — not both configs[0].
+        _bar_line_built: bool = False
+        _bar_line_configs: list[dict] = []
+        _bar_line_idx: int = 0
+
+        # donut_chart blocks increment this counter so each consecutive donut block
+        # picks the next share_pct column (col 0 = trx_share_pct, col 1 = rev_share_pct).
+        _donut_col_idx: int = 0
+
         configs: list[dict] = []
         for vb in visual_blocks:
             btype = vb.get("type", "")
@@ -1207,7 +1454,26 @@ FORMAT OUTPUT:
                 if btype not in _KNOWN_NON_CHART:
                     self.log(f"visual_block type '{btype}' not in _CHARTJS_VISUAL_TYPES — skipped", level="warning")
                 continue
-            cfg = self._build_chart_for_type(btype, state)
+
+            if btype in _BAR_LINE_TYPES:
+                if not _bar_line_built:
+                    _bar_line_configs = self._build_chart_configs(state)
+                    _bar_line_built = True
+                if _bar_line_idx < len(_bar_line_configs):
+                    cfg: dict | None = _bar_line_configs[_bar_line_idx]
+                else:
+                    self.log(
+                        f"No bar/line config at index {_bar_line_idx} — only {len(_bar_line_configs)} built",
+                        level="warning",
+                    )
+                    cfg = None
+                _bar_line_idx += 1
+            elif btype == "donut_chart":
+                cfg = self._build_donut_chart(state, col_idx=_donut_col_idx)
+                _donut_col_idx += 1
+            else:
+                cfg = self._build_chart_for_type(btype, state)
+
             if cfg is None:
                 self.log(f"_build_chart_for_type('{btype}') returned None — insufficient data", level="warning")
                 continue

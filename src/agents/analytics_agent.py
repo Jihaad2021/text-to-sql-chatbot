@@ -17,6 +17,7 @@ Writes to state:
 """
 
 import json
+from datetime import date
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -30,10 +31,27 @@ from src.utils.thresholds import render_thresholds_block as _render_thresholds
 
 _MAX_TOOL_ITERATIONS = 8
 
-_SYSTEM_PROMPT = f"""Kamu adalah analis data senior untuk platform pembayaran digital Telkomsel.
+_MONTH_ID = [
+    "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+]
+
+_THRESHOLDS_BLOCK = _render_thresholds()
+
+
+def _data_range_line(data_end_date: date | None) -> str:
+    """Build a human-readable data range line from data_end_date."""
+    if data_end_date is None:
+        return "Data tersedia: Maret 2026 – Juni 2026."
+    end_str = f"{_MONTH_ID[data_end_date.month]} {data_end_date.year}"
+    return f"Data tersedia: Maret 2026 – {end_str} (s.d. {data_end_date.isoformat()})."
+
+
+def _build_system_prompt(data_end_date: date | None) -> str:
+    return f"""Kamu adalah analis data senior untuk platform pembayaran digital Telkomsel.
 Gunakan tools yang tersedia untuk menjawab pertanyaan analitik secara sistematis.
 
-Data tersedia: Maret 2026 – Juni 2026.
+{_data_range_line(data_end_date)}
 Partner: QRIS, Dana, GoPay, OVO, Finnet, ShopeePay, LinkAja, Indomaret, Telkomsel Wallet.
 Channel: i1, a0, b0, b3, f0, f4, f5, ig.
 
@@ -57,7 +75,7 @@ Strategi investigasi setelah tool pertama:
 3. Drill down dengan get_distribution untuk tahu kontributor utama jika perlu
 4. Berhenti memanggil tool jika pertanyaan sudah terjawab — jangan over-investigate
 
-{_render_thresholds()}
+{_THRESHOLDS_BLOCK}
 
 PERIODE PARSIAL — sebutkan jika bulan sedang berjalan:
 - Jika data periode yang dianalisis belum bulan penuh (misalnya Juni 2026 baru 20 hari),
@@ -107,9 +125,9 @@ class AnalyticsAgent(LLMBaseAgent):
                 message=f"No engine available for database '{state.database}'",
             )
 
-        system_prompt = _SYSTEM_PROMPT
+        system_prompt = _build_system_prompt(state.data_end_date)
         if state.context_snapshot:
-            system_prompt = f"{_SYSTEM_PROMPT}\n\n{state.context_snapshot}"
+            system_prompt = f"{system_prompt}\n\n{state.context_snapshot}"
 
         if self.provider == "anthropic":
             return self._run_anthropic(state, db_engine, system_prompt)
@@ -192,6 +210,10 @@ class AnalyticsAgent(LLMBaseAgent):
                         row_count=result["row_count"],
                         sql_or_params=result["sql"],
                         description=result.get("description", ""),
+                        actual_entity_count=result.get("actual_entity_count", 0),
+                        cumulative_trx_share_pct=result.get("cumulative_trx_share_pct", 0.0),
+                        cumulative_rev_share_pct=result.get("cumulative_rev_share_pct", 0.0),
+                        dimension=result.get("dimension", ""),
                     ))
                     # Keep last tool's data in query_result for backward compat consumers
                     state.query_result = result["data"]
@@ -276,6 +298,10 @@ class AnalyticsAgent(LLMBaseAgent):
                         row_count=result["row_count"],
                         sql_or_params=result["sql"],
                         description=result.get("description", ""),
+                        actual_entity_count=result.get("actual_entity_count", 0),
+                        cumulative_trx_share_pct=result.get("cumulative_trx_share_pct", 0.0),
+                        cumulative_rev_share_pct=result.get("cumulative_rev_share_pct", 0.0),
+                        dimension=result.get("dimension", ""),
                     ))
                     # Keep last tool's data in query_result for backward compat consumers
                     state.query_result = result["data"]

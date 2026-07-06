@@ -10,7 +10,7 @@ Example:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 
@@ -50,6 +50,10 @@ class ToolCallResult:
     row_count: int
     sql_or_params: str      # SQL executed, or JSON-serialised call args for reference
     description: str        # one-line summary from analytics_tools (e.g. "Compare partner May vs Apr")
+    actual_entity_count: int = 0       # total distinct entities in DB for this period (get_distribution only)
+    cumulative_trx_share_pct: float = 0.0   # sum of trx_share_pct across all returned rows
+    cumulative_rev_share_pct: float = 0.0   # sum of rev_share_pct across all returned rows
+    dimension: str = ""                     # e.g. "partner", "product", "channel" (get_distribution only)
 
 
 @dataclass
@@ -113,6 +117,17 @@ class AgentState:
 
     # Pre-computed context injected by pipeline at request time
     context_snapshot: str = ""
+
+    # MAX(date) from daily_master — injected by pipeline at startup, never None in prod
+    data_end_date: date | None = None
+
+    # Set by QueryRewriter when the resolved period starts after data_end_date.
+    # InsightGenerator skips LLM and returns a template message when True.
+    query_out_of_range: bool = False
+    out_of_range_latest: str | None = None  # YYYY-MM-DD of latest available date
+
+    # Set by pipeline when recommendation intent can be answered from conversation history
+    recommendation_from_history: bool = False
 
     # Chart visualization config (built by InsightGenerator)
     chart_config: dict | None = None

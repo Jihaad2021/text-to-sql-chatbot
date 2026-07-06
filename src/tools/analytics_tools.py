@@ -286,14 +286,46 @@ def get_distribution(
     period_start: str,
     period_end: str,
     dimension: str = "partner",
+    top_n: int = 30,
 ) -> dict:
     """Distribusi kontribusi (%) setiap entitas terhadap total."""
+    # Display cap: at most 20 rows regardless of what the user requested.
+    # This cap is the strictest bound; user can always request fewer (e.g. "top 5" → 5).
+    # LIMIT is passed as a bound parameter (not string-interpolated) for safety.
+    _DISPLAY_CAP = 20
+    _top_n = max(1, min(int(top_n), _DISPLAY_CAP))
+
     if dimension == "channel":
         table, group_col = "channel_payment", "channel"
     elif dimension == "product":
         table, group_col = "product_summary", "product_name"
     else:
         table, group_col = "daily_master", "partner_group"
+
+    # For product dimension, normalize NULL SQL, string 'NULL', and empty string into
+    # one unified label so they don't consume multiple ranking slots.
+    # partner_group and channel have no known NULL variants (confirmed via DB check).
+    if dimension == "product":
+        entity_expr = (
+            f"COALESCE(NULLIF(NULLIF({group_col}, 'NULL'), ''), '[Tidak Teridentifikasi]')"
+        )
+    else:
+        entity_expr = group_col
+
+    # Pre-flight: count distinct entities AFTER normalization so actual_entity_count
+    # reflects merged groups (e.g. NULL + 'NULL' → 1 entity, not 2).
+    count_sql = (
+        f"SELECT COUNT(DISTINCT {entity_expr}) AS entity_count"
+        f" FROM {table}"
+        f" WHERE date >= '{period_start}' AND date <= '{period_end}'"
+    )
+    try:
+        with db_engine.connect() as conn:
+            actual_entity_count = int(conn.execute(text(count_sql)).scalar() or 0)
+    except Exception:
+        actual_entity_count = 0
+
+    _top_n_final = min(_top_n, actual_entity_count) if actual_entity_count > 0 else _top_n
 
     sql = f"""
 WITH totals AS (
@@ -302,7 +334,7 @@ WITH totals AS (
     WHERE date >= '{period_start}' AND date <= '{period_end}'
 )
 SELECT
-    {group_col}                                                                  AS entity,
+    {entity_expr}                                                                 AS entity,
     SUM(total_trx)                                                               AS total_trx,
     ROUND(SUM(total_trx)::numeric / NULLIF(t.grand_trx::numeric, 0) * 100, 2)   AS trx_share_pct,
     SUM(total_revenue)                                                           AS total_revenue,
@@ -310,13 +342,27 @@ SELECT
 FROM {table}
 CROSS JOIN totals t
 WHERE date >= '{period_start}' AND date <= '{period_end}'
-GROUP BY {group_col}, t.grand_trx, t.grand_rev
+GROUP BY {entity_expr}, t.grand_trx, t.grand_rev
 ORDER BY total_trx DESC
-LIMIT 30
+LIMIT :top_n
 """.strip()
 
-    desc = f"Distribution by {dimension} {period_start}→{period_end}"
-    return _run(db_engine, sql, desc)
+    desc = f"Distribution by {dimension} {period_start}→{period_end} top {_top_n_final}"
+    result = _run(db_engine, sql, desc, params={"top_n": _top_n_final})
+    result["actual_entity_count"] = actual_entity_count
+    result["dimension"] = dimension
+
+    # Compute cumulative share from returned rows (share_pct columns are already
+    # calculated against the full-period grand total, so summing them gives the
+    # correct concentration figure for the displayed subset).
+    data = result.get("data") or []
+    result["cumulative_trx_share_pct"] = round(
+        sum(float(r.get("trx_share_pct") or 0) for r in data), 2
+    )
+    result["cumulative_rev_share_pct"] = round(
+        sum(float(r.get("rev_share_pct") or 0) for r in data), 2
+    )
+    return result
 
 
 def get_hourly_pattern(
@@ -339,12 +385,17 @@ ORDER BY hour
 
 # ── internal helper ──────────────────────────────────────────────────────────
 
-def _run(db_engine: Engine, sql: str, description: str) -> dict:
+def _run(db_engine: Engine, sql: str, description: str, params: dict | None = None) -> dict:
     """Execute SQL and return standard result dict."""
     with db_engine.connect() as conn:
-        result = conn.execute(text(sql))
+        result = conn.execute(text(sql), params or {})
         columns = list(result.keys())
         rows = [dict(zip(columns, row)) for row in result.fetchall()]
+
+    # PostgreSQL SUM/AVG aggregates on an empty set return 1 row with all-NULL values.
+    # Normalise this to an empty list so callers see row_count=0, not row_count=1 with NULLs.
+    if len(rows) == 1 and all(v is None for v in rows[0].values()):
+        rows = []
 
     return {
         "data":        rows,
