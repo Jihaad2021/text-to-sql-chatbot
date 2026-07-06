@@ -320,6 +320,7 @@
         "id",
         "date",
         "partner",
+        "partner_group",
         "total_trx",
         "success_trx",
         "failed_trx",
@@ -428,8 +429,10 @@
       "columns": [
         "id",
         "date",
+        "month",
         "unique_users",
-        "daily_unique_users"
+        "unique_users_monthly",
+        "unique_users_daily"
       ],
       "id": "financial_db.public.daily_unique_users"
     },

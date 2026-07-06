@@ -129,7 +129,11 @@ schemas:
             type: "date"
           - name: "partner"
             description: |
-              The partner column holds the name of the business partner involved in transactions and is used in queries to filter results based on specific partners (mitra), serving as a foreign key (FK) to link to partner details in related tables.
+              Sub-channel detail column — values include gopay_paybill, gopay_wec, dana_wec, linkaja_basic, etc. DO NOT use this column for partner-level GROUP BY or ranking queries — it will produce 25 fragmented rows mixing brands and sub-channels. Use partner_group instead for any partner analysis.
+            type: "text"
+          - name: "partner_group"
+            description: |
+              PREFERRED column for all partner analysis (mitra). Consolidated brand name that groups all sub-channels: gopay, dana, ovo, qris, finnet, linkaja, shopeepay, indomaret, telkomsel_wallet (9 values). Always GROUP BY partner_group when the question asks about partner performance, ranking, share, MoM, or comparison. Only use the partner column when the question specifically asks about sub-channels (paybill, wec, basic variants).
             type: "text"
           - name: "total_trx"
             description: |
@@ -167,13 +171,21 @@ schemas:
             description: |
               The date (tanggal) column holds the specific date for each record and is used to filter and group daily unique user counts, serving as a primary key (PK) for the table.
             type: "date"
+          - name: "month"
+            description: |
+              The month column holds the first date of the month (e.g. 2026-06-01) and is used to group daily records into monthly periods for monthly user analysis.
+            type: "date"
           - name: "unique_users"
             description: |
-              The unique_users column holds the count of distinct users for a given day and is used in queries to aggregate user activity metrics, serving as a key metric (metrik) in the daily_unique_users table.
+              The unique_users column holds the count of distinct users for that day and is used in queries to aggregate daily user activity metrics (pengguna unik harian).
             type: "bigint"
-          - name: "daily_unique_users"
+          - name: "unique_users_monthly"
             description: |
-              The daily_unique_users column holds the count of unique users for each day and is used in queries to aggregate user activity metrics (metrik) by date, serving as a key metric for analyzing user engagement.
+              The unique_users_monthly column holds the cumulative count of unique users from the start of the month up to the given date and is used for monthly user engagement analysis (pengguna unik bulanan kumulatif).
+            type: "bigint"
+          - name: "unique_users_daily"
+            description: |
+              The unique_users_daily column holds the rolling daily unique user count and is used in queries to track day-over-day changes in user activity (pengguna harian).
             type: "bigint"
       - table: "financial_internal"
         description: |
