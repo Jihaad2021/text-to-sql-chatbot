@@ -114,7 +114,7 @@ INTENT_SQL_STRATEGY = {
     "complex_analytics":   "Use subqueries, CTEs, or window functions if needed",
     "root_cause_analysis": "Adaptive investigation across multiple dimensions (time, product, channel, partner)",
     "ranking_analysis":    "Use RANK() / ROW_NUMBER() window functions or ORDER BY + LIMIT; compare all entities to find top/bottom performers and outliers",
-    "recommendation":      "Use analytics tools to gather evidence across multiple dimensions (summary, anomaly, trend) before suggesting actions",
+    "recommendation":      "Generate ONE simple aggregation query: SELECT partner_group, SUM(total_trx) AS total_trx, SUM(total_revenue) AS total_revenue, ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx),0))*100,2) AS success_rate_pct FROM daily_master WHERE date BETWEEN [start] AND [end] GROUP BY partner_group ORDER BY total_trx DESC LIMIT 20. NO CTE, NO comparison, NO anomaly detection. InsightGenerator will synthesise recommendations from this summary.",
     "out_of_scope":        "No SQL needed — return redirect message explaining the data limitation",
     "ambiguous":           "Cannot generate SQL - needs clarification",
 }

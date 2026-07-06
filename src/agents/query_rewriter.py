@@ -9,15 +9,18 @@ query is preserved and the pipeline continues unchanged.
 
 Reads from state:
     - state.query
+    - state.data_end_date
 
 Writes to state:
-    - state.query          (rewritten if needed, unchanged otherwise)
-    - state.original_query (always set to the pre-rewrite question)
-    - state.rewrite_notes  (summary of what changed, or None)
+    - state.query              (rewritten if needed, unchanged otherwise)
+    - state.original_query     (always set to the pre-rewrite question)
+    - state.rewrite_notes      (summary of what changed, or None)
+    - state.query_out_of_range (True if resolved period_start > data_end_date)
+    - state.out_of_range_latest (YYYY-MM-DD of latest available date, when out-of-range)
 """
 
 import json
-from datetime import date
+from datetime import date, datetime
 
 from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
@@ -74,7 +77,10 @@ Kamu adalah preprocessor pertanyaan untuk chatbot analytics data keuangan Telkom
 
 Database: financial_db
 Tabel tersedia: {tables}
-Entitas kunci: product_name, partner (gopay/ovo/dana/shopeepay/linkaja/qris/indomaret/tsel_wallet/finnet), channel (a0/b3/f0/f4/f5/i1/ig), date
+Entitas kunci:
+- partner: gopay, ovo, dana, shopeepay, linkaja, qris, indomaret, tsel_wallet, finnet
+- channel codes: i1=MyTelkomsel App, f0/f4/f5=UMB, b0/b3/a0=WEC, ig=MyTelkomsel Basic
+- metrik: SR/success rate → kolom success_rate_pct, MoM → perbandingan bulan ini vs bulan lalu, ARPU → total_revenue/unique_users
 Tanggal hari ini: {today}. Semua data ada di tahun 2026.
 {history_block}
 Tugas: tulis ulang pertanyaan berikut agar lebih presisi untuk SQL generation.
@@ -93,15 +99,32 @@ Terapkan HANYA aturan yang relevan:
 
 4. PERIOD WAKTU HILANG — Jika pertanyaan jelas bersifat time-series tetapi tidak menyebut periode → tambahkan "(gunakan rentang data yang tersedia)".
 
+5. NAMA CHANNEL HUMAN-READABLE — Jika user menyebut nama channel dalam bentuk manusia, ganti dengan kode database:
+   "MyTelkomsel App" atau "aplikasi mytelkomsel" → channel = 'i1'
+   "UMB" → channel IN ('f0','f4','f5')
+   "WEC" → channel IN ('b0','b3','a0')
+   "MyTelkomsel Basic" atau "basic" → channel = 'ig'
+
+6. PARTNER GROUP — Jika pertanyaan menyebut partner (gopay, dana, finnet, dll.), performa partner, ranking partner, atau perbandingan partner: tambahkan di awal rewritten query: "Gunakan kolom partner_group (bukan partner) di daily_master."
+   Pengecualian: jika user eksplisit menyebut sub-channel seperti paybill, wec, basic → pakai kolom partner.
+
 Aturan tambahan:
 - Gunakan bahasa yang sama dengan pertanyaan asli (Indonesia atau Inggris).
 - Perubahan minimal — jangan tambahkan informasi yang tidak diimplikasikan pertanyaan.
 - Jika pertanyaan sudah jelas dan spesifik, kembalikan apa adanya dengan was_rewritten: false.
 
+Selain rewrite, identifikasi TANGGAL AWAL PERIODE yang diminta user:
+- "bulan ini" → hari pertama bulan dari {today} (e.g. "2026-07-01")
+- "bulan lalu" → hari pertama bulan sebelumnya
+- nama bulan spesifik → hari pertama bulan itu (e.g. "juni 2026" → "2026-06-01")
+- "tahun ini" / "YTD" → "2026-01-01"
+- "kuartal ini" → hari pertama kuartal berjalan
+- pertanyaan tanpa periode waktu / tidak relevan → null
+
 Balas HANYA dengan JSON valid tanpa markdown:
-{{"rewritten": "...", "changes": ["perubahan 1", ...], "was_rewritten": true}}
+{{"rewritten": "...", "changes": ["perubahan 1", ...], "was_rewritten": true, "period_start": "YYYY-MM-DD"}}
 atau:
-{{"rewritten": "...", "changes": [], "was_rewritten": false}}
+{{"rewritten": "...", "changes": [], "was_rewritten": false, "period_start": null}}
 
 Pertanyaan:
 {query}"""
@@ -148,6 +171,24 @@ class QueryRewriter(LLMBaseAgent):
             else:
                 state.rewrite_notes = None
                 self.log(f"No rewrite needed: {state.query[:80]!r}")
+
+            # ── Out-of-range guard ────────────────────────────────────
+            period_start_str = result.get("period_start")
+            if period_start_str and state.data_end_date:
+                try:
+                    period_start = datetime.strptime(
+                        period_start_str, "%Y-%m-%d"
+                    ).date()
+                    if period_start > state.data_end_date:
+                        state.query_out_of_range = True
+                        state.out_of_range_latest = state.data_end_date.isoformat()
+                        self.log(
+                            f"Out-of-range: period_start={period_start_str} > "
+                            f"data_end_date={state.data_end_date}",
+                            level="warning",
+                        )
+                except ValueError:
+                    pass  # malformed date from LLM — skip guard silently
 
         except Exception as exc:
             # Non-fatal: log warning and continue with original query

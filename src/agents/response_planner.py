@@ -89,6 +89,7 @@ _CHEAP_MODELS: dict[str, str] = {
 
 _VALID_VISUAL_TYPES = {
     "line_chart", "bar_chart", "diverging_bar_chart", "donut_chart",
+    "grouped_bar_chart",
     "kpi_grid", "anomaly_callout", "data_table", "ranking_table",
 }
 
@@ -237,6 +238,13 @@ class ResponsePlanner(LLMBaseAgent):
         has_pct    = any(kw in c for c in cols_lower for kw in self._PCT_CHANGE_KEYWORDS)
         has_share  = any(kw in c for c in cols_lower for kw in self._SHARE_KEYWORDS)
 
+        # Detect *_a / *_b column pairs (compare_periods two-period pattern).
+        # A pair is valid when the same prefix exists for both suffixes, e.g.
+        # trx_a + trx_b → prefix "trx" is in both sets.
+        _a_prefixes = {c[:-2] for c in cols_lower if c.endswith('_a')}
+        _b_prefixes = {c[:-2] for c in cols_lower if c.endswith('_b')}
+        has_ab_pairs = bool(_a_prefixes & _b_prefixes)
+
         # Refine has_time when actual row data is available: a time column with only one
         # distinct value is a point filter (e.g. WHERE date = '2026-06-30'), NOT a real
         # time series.  Only treat it as a time dimension when ≥2 distinct values exist.
@@ -255,6 +263,7 @@ class ResponsePlanner(LLMBaseAgent):
             "has_time_dimension":     has_time,
             "has_pct_change_column":  has_pct,
             "has_share_column":       has_share,
+            "has_ab_pair_columns":    has_ab_pairs,
             "distinct_entity_count":  row_count,
         }
         if label is not None:
@@ -306,8 +315,9 @@ DATA_SHAPE field guide (use these to choose visual_blocks type):
   row_count             — total rows returned; use for needs_visual rule (false if < 2)
   columns               — list of column names in the result
   has_time_dimension    — true when a date/period/month column is present → prefer line_chart
-  has_pct_change_column — true when a *_pct_change column exists → prefer bar_chart for comparison
+  has_pct_change_column — true when a *_pct_change column exists → prefer diverging_bar_chart for comparison
   has_share_column      — true when a *_share_pct / distribution column exists → prefer donut_chart (≤6 rows) or bar_chart
+  has_ab_pair_columns   — true when *_a AND *_b column pairs exist (e.g. trx_a/trx_b, rev_a/rev_b) → emit grouped_bar_chart as a SECOND chart alongside diverging_bar_chart
   distinct_entity_count — number of rows = number of categories; ≤6 → donut_chart eligible (guarded by has_time_dimension=false, see Rule 1), >6 → bar_chart
 
 Return ONLY valid JSON — no explanation, no markdown fences:
@@ -323,7 +333,7 @@ Return ONLY valid JSON — no explanation, no markdown fences:
       "purpose":      "leading_answer"
     }},
     {{
-      "type":         "line_chart"|"bar_chart"|"diverging_bar_chart"|"donut_chart"|"kpi_grid"|"anomaly_callout"|"ranking_table",
+      "type":         "line_chart"|"bar_chart"|"diverging_bar_chart"|"donut_chart"|"grouped_bar_chart"|"kpi_grid"|"anomaly_callout"|"ranking_table",
       "anchor_after": "s1"|"s2"|"s3"|"s4",
       "purpose":      "supporting_evidence"
     }},
@@ -365,8 +375,8 @@ CHART SELECTION — check rules in order, take first match:
   2. line_chart
      WHEN: has_time_dimension=true
 
-  3. diverging_bar_chart
-     TWO trigger paths — fire on the FIRST that matches:
+  3. diverging_bar_chart  +  grouped_bar_chart  (may co-exist)
+     diverging_bar_chart — TWO trigger paths — fire on the FIRST that matches:
        A. is_multi_step=true
           AND steps[0].columns == steps[1].columns (identical column names)
           AND steps[0].row_count == steps[1].row_count
@@ -378,6 +388,13 @@ CHART SELECTION — check rules in order, take first match:
           (Pre-computed ± deltas from compare_periods or detect_anomaly are already in the
           data — use diverging bar to show positive/negative directions explicitly.
           SKIP if has_time_dimension=true; a line_chart handles time-series better.)
+     grouped_bar_chart — ALWAYS emit alongside diverging_bar_chart when:
+          has_ab_pair_columns=true (columns like trx_a/trx_b from compare_periods)
+          purpose="supporting_evidence", anchor_after="s1"
+          (Shows absolute values for two periods side-by-side per entity — answers
+          "how much was it each period" while diverging_bar answers "how much did it change".)
+          NOTE: the deterministic _enforce_chart_rules() adds this automatically even if
+          you omit it, but emit it explicitly when has_ab_pair_columns=true.
 
   4. bar_chart
      WHEN: has_share_column=true AND distinct_entity_count > 6
@@ -629,15 +646,26 @@ OTHER RULES
         if state.is_multi_step or not has_any_data:
             return plan
 
-        shape        = self._build_data_shape(state)
-        entity_count = shape.get("distinct_entity_count", 0)
+        shape = self._build_data_shape(state)
 
-        # Detect pct_change and time signals across single-step and tool_results shapes
+        # entity_count: for tool_results path the value is nested inside steps[0],
+        # not at the top level — extract from steps when top-level is missing (FIX 3).
+        entity_count = shape.get("distinct_entity_count") or (
+            shape["steps"][0].get("distinct_entity_count", 0) if shape.get("steps") else 0
+        )
+
+        # Detect pct_change, time, and ab_pair signals across single-step and tool_results shapes
         has_pct_change = shape.get("has_pct_change_column", False) or any(
             s.get("has_pct_change_column", False) for s in shape.get("steps", [])
         )
         has_time = shape.get("has_time_dimension", False) or any(
             s.get("has_time_dimension", False) for s in shape.get("steps", [])
+        )
+        has_ab_pairs = shape.get("has_ab_pair_columns", False) or any(
+            s.get("has_ab_pair_columns", False) for s in shape.get("steps", [])
+        )
+        has_share_col = shape.get("has_share_column", False) or any(
+            s.get("has_share_column", False) for s in shape.get("steps", [])
         )
 
         updated: list[dict] = []
@@ -659,6 +687,65 @@ OTHER RULES
                 b = {**b, "type": "diverging_bar_chart"}
 
             updated.append(b)
+
+        # Rule 3: data has *_a/*_b column pairs (compare_periods pattern) → ensure a
+        # grouped_bar_chart block is present so absolute period values are charted.
+        # This is injected deterministically regardless of what the LLM emitted — the LLM
+        # prompt also knows about this type but may omit it; this guard is the backstop.
+        if has_ab_pairs and not any(b["type"] == "grouped_bar_chart" for b in updated):
+            sections = plan.get("narrative_sections", [])
+            anchor = sections[0]["id"] if sections else "s1"
+            updated.append({
+                "type":         "grouped_bar_chart",
+                "anchor_after": anchor,
+                "purpose":      "supporting_evidence",
+            })
+            self.log(
+                "grouped_bar_chart injected: data contains *_a/*_b column pairs (compare_periods schema)",
+                level="warning",
+            )
+
+        # Rule 4: share distribution with ≤6 entities → replace bar_chart with donut blocks.
+        # Inject one donut_chart visual block per *_share_pct column so InsightGenerator
+        # produces a separate donut for trx_share_pct and rev_share_pct.
+        if has_share_col and 0 < entity_count <= 6 and not has_time and not has_pct_change:
+            _cols_list = shape.get("columns") or (
+                shape["steps"][0].get("columns", []) if shape.get("steps") else []
+            )
+            _n_share_pct = len([c for c in _cols_list if c.endswith("_share_pct")])
+            _n_donuts = min(max(1, _n_share_pct), 2)
+            _donut_injected = False
+            _rule4_updated: list[dict] = []
+            for _b in updated:
+                if _b["type"] in ("bar_chart", "diverging_bar_chart") and not _donut_injected:
+                    for _ in range(_n_donuts):
+                        _rule4_updated.append({**_b, "type": "donut_chart"})
+                    _donut_injected = True
+                    self.log(
+                        f"bar_chart → {_n_donuts}× donut_chart "
+                        f"(entity_count={entity_count} ≤ 6, _share_pct cols={_n_share_pct})",
+                        level="warning",
+                    )
+                else:
+                    _rule4_updated.append(_b)
+            updated = _rule4_updated
+
+        # Rule 5: pure distribution data with >10 entities → enforce data_table, remove charts.
+        # Applies only to share/distribution data (no pct_change, no time, no ab_pairs).
+        # Avoids accidental removal for compare_periods (has_pct_change) or trend (has_time).
+        _CHART_BLOCK_TYPES = {"bar_chart", "line_chart", "donut_chart", "diverging_bar_chart", "grouped_bar_chart"}
+        if entity_count > 10 and has_share_col and not has_time and not has_pct_change and not has_ab_pairs:
+            if any(b["type"] in _CHART_BLOCK_TYPES for b in updated):
+                self.log(
+                    f"entity_count={entity_count} > 10, distribution data → removing chart blocks, enforcing data_table",
+                    level="warning",
+                )
+                non_chart = [b for b in updated if b["type"] not in _CHART_BLOCK_TYPES]
+                if not any(b["type"] == "data_table" for b in non_chart):
+                    sections = plan.get("narrative_sections", [])
+                    anchor = sections[0]["id"] if sections else "s1"
+                    non_chart.append({"type": "data_table", "anchor_after": anchor, "purpose": "data"})
+                updated = non_chart
 
         plan["visual_blocks"] = updated
         return plan
