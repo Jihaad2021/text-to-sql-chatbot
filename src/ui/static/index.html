@@ -3,134 +3,457 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Financial Analytics — Text-to-SQL</title>
+  <title>Settlement AI — Telkomsel</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
   <script src="/ui/chart.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/ui/style.css?v=5" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/ui/style.css?v=17" />
 
   <script>
     tailwind.config = {
       theme: {
         extend: {
-          fontFamily: {
-            sans: ['Inter', 'system-ui', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
-          }
+          fontFamily: { sans: ['Plus Jakarta Sans', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'] }
         }
       }
     }
   </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden">
+<body style="margin:0;padding:0;height:100vh;overflow:hidden;background:var(--bg);font-family:var(--font-ui);color:var(--text);-webkit-font-smoothing:antialiased;">
 
-  <!-- ── Header ───────────────────────────────────────────── -->
-  <header class="bg-slate-900 text-white px-5 py-3 flex items-center justify-between shrink-0 border-b border-slate-800">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
-        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-        </svg>
-      </div>
-      <div>
-        <p class="font-semibold text-sm leading-none">Financial Analytics</p>
-        <p class="text-xs text-slate-400 mt-0.5">Text-to-SQL · Telkomsel · financial_db</p>
+<!-- ── Root: sidebar + main-wrapper side by side ──────────── -->
+<div style="height:100vh;display:flex;overflow:hidden;">
+
+  <!-- ══════════════════════════════════════
+       SIDEBAR (always visible)
+  ══════════════════════════════════════════ -->
+  <aside style="width:260px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;background:var(--sidebar);border-right:1px solid var(--border);">
+
+    <!-- Brand -->
+    <div style="padding:16px 16px 12px;border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:32px;height:32px;background:linear-gradient(155deg,var(--accent),#A00020);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 15L9 8L13 12L20 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <p style="font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--text);margin:0;line-height:1.2;">Settlement AI</p>
+          <p style="font-size:10px;color:var(--text-faint);margin:0;letter-spacing:0.04em;text-transform:uppercase;">Telkomsel Business</p>
+        </div>
       </div>
     </div>
-    <div class="flex items-center gap-2">
-      <div id="health-dot" class="w-2 h-2 rounded-full bg-slate-600 animate-pulse"></div>
-      <span id="health-text" class="text-xs text-slate-400">Menghubungkan...</span>
+
+    <!-- New analysis button -->
+    <div style="padding:12px 12px 8px;">
+      <button id="new-chat-btn" class="sidebar-new-btn">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        Analisis Baru
+      </button>
     </div>
-  </header>
 
-  <!-- ── Body ─────────────────────────────────────────────── -->
-  <div class="flex flex-1 overflow-hidden">
+    <!-- Search -->
+    <div style="padding:0 12px 8px;">
+      <div style="display:flex;align-items:center;gap:7px;background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;padding:7px 10px;">
+        <svg width="13" height="13" fill="none" stroke="var(--text-faint)" viewBox="0 0 24 24" stroke-width="2" style="flex-shrink:0;"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
+        <input id="search-input" placeholder="Cari riwayat…" oninput="filterHistory(this.value)"
+          style="border:none;outline:none;background:transparent;font-size:12px;color:var(--text);width:100%;font-family:var(--font-ui);" />
+      </div>
+    </div>
 
-    <!-- Sidebar -->
-    <aside class="w-56 bg-white border-r border-slate-200 flex flex-col shrink-0">
-      <div class="p-3">
-        <button id="new-chat-btn"
-          class="w-full flex items-center justify-center gap-2 py-2 px-3
-            bg-blue-600 hover:bg-blue-700 active:bg-blue-800
-            text-white text-sm font-medium rounded-lg transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          Chat Baru
+    <!-- Session list (grouped) -->
+    <div id="history-scroll" style="flex:1;overflow-y:auto;padding:0 8px;">
+      <div id="history-list">
+        <p id="history-empty" style="font-size:12px;color:var(--text-faint);padding:6px 8px;margin:0;">Belum ada percakapan</p>
+      </div>
+    </div>
+
+    <!-- User profile (settings trigger) -->
+    <div style="padding:10px 12px;border-top:1px solid var(--border);">
+      <button id="user-profile-btn" style="width:100%;display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;border:none;background:none;cursor:pointer;font-family:var(--font-ui);transition:background 0.12s;text-align:left;" onmouseenter="this.style.background='var(--surface-alt)'" onmouseleave="this.style.background='none'">
+        <div style="width:32px;height:32px;border-radius:50%;background:#F0884B;color:#fff;font-family:var(--font-display);font-weight:600;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">JA</div>
+        <div style="flex:1;min-width:0;">
+          <p style="font-size:13px;font-weight:600;color:var(--text);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Jihaad Arief</p>
+          <p style="font-size:11px;color:var(--text-faint);margin:0;">Finance &amp; Revenue Assurance</p>
+        </div>
+      </button>
+    </div>
+
+  </aside>
+
+
+  <!-- ══════════════════════════════════════
+       MAIN WRAPPER (settings overlay lives here)
+  ══════════════════════════════════════════ -->
+  <div id="main-wrapper" style="flex:1;position:relative;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- ══════════════════════════════════════
+         SETTINGS PANEL (absolute, covers main-wrapper only)
+    ══════════════════════════════════════════ -->
+    <div id="settings-panel" style="position:absolute;inset:0;z-index:30;background:#FCFBFA;flex-direction:column;display:none;">
+
+      <!-- Settings header -->
+      <div style="flex:none;height:52px;display:flex;align-items:center;gap:16px;padding:0 28px;border-bottom:1px solid #EBE8E3;background:#FCFBFA;">
+        <button id="settings-back-btn" style="display:flex;align-items:center;gap:5px;font-size:13px;color:#9B9693;background:none;border:none;cursor:pointer;font-family:inherit;transition:color 0.15s;padding:0;" onmouseenter="this.style.color='#2A2724'" onmouseleave="this.style.color='#9B9693'">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+          Kembali
+        </button>
+        <span style="font-size:14px;font-weight:600;color:#2A2724;">Pengaturan Akun</span>
+      </div>
+
+      <!-- Settings body -->
+      <div style="flex:1;display:flex;min-height:0;">
+
+        <!-- Sub-nav -->
+        <nav style="width:220px;flex-shrink:0;border-right:1px solid #EBE8E3;background:#FAF8F6;padding:10px 8px;overflow-y:auto;">
+          <button class="snav-btn snav-active" data-page="profile">
+            <svg class="snav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+            Profil &amp; akun
+          </button>
+          <button class="snav-btn" data-page="general">
+            <svg class="snav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+            Pengaturan
+          </button>
+          <button class="snav-btn" data-page="preferences">
+            <svg class="snav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path stroke-linecap="round" d="M17.5 14v6M14.5 17h6"/></svg>
+            Preferensi analisis
+          </button>
+          <button class="snav-btn" data-page="team">
+            <svg class="snav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+            Kelola tim &amp; akses
+          </button>
+          <button class="snav-btn" data-page="language">
+            <svg class="snav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>
+            Bahasa
+          </button>
+          <button class="snav-btn" data-page="help">
+            <svg class="snav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
+            Bantuan &amp; dukungan
+          </button>
+          <button class="snav-btn" data-page="security">
+            <svg class="snav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Keamanan &amp; privasi
+          </button>
+        </nav>
+
+        <!-- Settings content -->
+        <div style="flex:1;overflow-y:auto;padding:36px 44px 52px;">
+
+          <!-- Profil & akun -->
+          <div id="spage-profile" class="spage">
+            <p class="spage-title">Profil &amp; akun</p>
+            <p style="font-size:13px;color:#9B9693;margin:-14px 0 24px;">Kelola identitas dan informasi kontak Anda.</p>
+
+            <div style="display:flex;align-items:center;gap:16px;margin-bottom:28px;">
+              <div style="width:56px;height:56px;border-radius:50%;background:#F0884B;display:flex;align-items:center;justify-content:center;color:white;font-size:20px;font-weight:700;">JA</div>
+              <div style="flex:1;">
+                <p style="font-size:15px;font-weight:600;color:#2A2724;margin:0 0 2px;">Jihaad Arief</p>
+                <p style="font-size:12px;color:#9B9693;margin:0;">Senior Analyst · Revenue Assurance</p>
+              </div>
+              <button style="padding:6px 14px;font-size:12px;border:1px solid #EBE8E3;border-radius:8px;background:white;color:#2A2724;cursor:pointer;font-family:inherit;">Ubah foto</button>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 28px;">
+              <div>
+                <label class="sfield-label">Nama lengkap</label>
+                <input class="sfield-input" type="text" value="Jihaad Arief" />
+              </div>
+              <div>
+                <label class="sfield-label">Email kantor</label>
+                <input class="sfield-input" type="email" value="jihaad.arief@nti.co.id" />
+              </div>
+              <div>
+                <label class="sfield-label">Jabatan</label>
+                <input class="sfield-input" type="text" placeholder="Senior Analyst" />
+              </div>
+              <div>
+                <label class="sfield-label">Departemen</label>
+                <input class="sfield-input" type="text" placeholder="Finance &amp; Revenue Assurance" />
+              </div>
+              <div>
+                <label class="sfield-label">ID Karyawan</label>
+                <input class="sfield-input" type="text" placeholder="NTI-04821" style="opacity:0.6;" readonly />
+              </div>
+              <div>
+                <label class="sfield-label">Nomor telepon</label>
+                <input class="sfield-input" type="tel" placeholder="+62 811-XXXX-XXXX" />
+              </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:26px;">
+              <button class="spage-save-btn">Simpan perubahan</button>
+              <button style="padding:9px 18px;font-size:13px;border:1px solid #EBE8E3;border-radius:10px;background:white;color:#2A2724;cursor:pointer;font-family:inherit;">Batal</button>
+            </div>
+          </div>
+
+          <!-- Pengaturan -->
+          <div id="spage-general" class="spage" style="display:none;">
+            <p class="spage-title">Pengaturan</p>
+            <p style="font-size:13px;color:#9B9693;margin:-14px 0 24px;">Notifikasi, regional, dan tampilan aplikasi.</p>
+
+            <p class="ssection-title">NOTIFIKASI</p>
+            <div class="stoggle-row">
+              <div>
+                <p class="stoggle-name">Email anomali</p>
+                <p class="stoggle-desc">Kirim email saat anomali material terdeteksi</p>
+              </div>
+              <label class="toggle-sw"><input type="checkbox" checked /><span class="toggle-track"></span></label>
+            </div>
+            <div class="stoggle-row">
+              <div>
+                <p class="stoggle-name">Ringkasan harian</p>
+                <p class="stoggle-desc">Laporan settlement harian pukul 07:00 WIB</p>
+              </div>
+              <label class="toggle-sw"><input type="checkbox" checked /><span class="toggle-track"></span></label>
+            </div>
+            <div class="stoggle-row" style="border-bottom:none;">
+              <div>
+                <p class="stoggle-name">Peringatan ambang materialitas</p>
+                <p class="stoggle-desc">Notifikasi saat nilai melebihi ambang batas</p>
+              </div>
+              <label class="toggle-sw"><input type="checkbox" /><span class="toggle-track"></span></label>
+            </div>
+
+            <p class="ssection-title" style="margin-top:24px;">REGIONAL</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 28px;max-width:480px;">
+              <div><label class="sfield-label">Zona waktu</label><input class="sfield-input" value="WIB (GMT+7)" readonly style="opacity:0.7;" /></div>
+              <div><label class="sfield-label">Mata uang</label><input class="sfield-input" value="Rupiah (IDR)" readonly style="opacity:0.7;" /></div>
+              <div><label class="sfield-label">Format angka</label><input class="sfield-input" value="1.234,56" readonly style="opacity:0.7;" /></div>
+              <div><label class="sfield-label">Mode pajak</label><input class="sfield-input" value="Nonaktif" readonly style="opacity:0.7;" /></div>
+            </div>
+          </div>
+
+          <!-- Preferensi analisis -->
+          <div id="spage-preferences" class="spage" style="display:none;">
+            <p class="spage-title">Preferensi analisis</p>
+            <p style="font-size:13px;color:#9B9693;margin:-14px 0 24px;">Atur perilaku default mesin analisis Settlement.</p>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 28px;max-width:500px;">
+              <div>
+                <label class="sfield-label">Periode default</label>
+                <select class="sfield-input" style="cursor:pointer;"><option>Bulan berjalan</option><option>Kuartal berjalan</option><option>Tahun berjalan</option></select>
+              </div>
+              <div>
+                <label class="sfield-label">Ambang materialitas</label>
+                <input class="sfield-input" type="text" value="Rp 1,0 M" />
+              </div>
+              <div>
+                <label class="sfield-label">Tingkat kepercayaan anomali</label>
+                <input class="sfield-input" type="text" value="95%" />
+              </div>
+              <div>
+                <label class="sfield-label">Format desimal</label>
+                <input class="sfield-input" type="text" value="2 angka di belakang koma" readonly style="opacity:0.7;" />
+              </div>
+            </div>
+
+            <div class="stoggle-row" style="margin-top:20px;max-width:500px;">
+              <div>
+                <p class="stoggle-name">Rekonsiliasi otomatis saat unggah</p>
+                <p class="stoggle-desc">Jalankan rekonsiliasi langsung saat file settlement diunggah</p>
+              </div>
+              <label class="toggle-sw"><input type="checkbox" checked /><span class="toggle-track"></span></label>
+            </div>
+
+            <p class="ssection-title" style="margin-top:20px;">MITRA PRIORITAS</p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+              <span style="padding:6px 14px;background:#FFF0F2;border:1px solid #FFCDD5;border-radius:20px;font-size:12px;color:#E4002B;font-weight:500;">Indosat ×</span>
+              <span style="padding:6px 14px;background:#FFF0F2;border:1px solid #FFCDD5;border-radius:20px;font-size:12px;color:#E4002B;font-weight:500;">XL Axiata ×</span>
+              <span style="padding:6px 14px;background:#FFF0F2;border:1px solid #FFCDD5;border-radius:20px;font-size:12px;color:#E4002B;font-weight:500;">Smartfren ×</span>
+              <button style="padding:6px 14px;border:1px dashed #EBE8E3;border-radius:20px;font-size:12px;color:#9B9693;background:none;cursor:pointer;font-family:inherit;">+ Tambah</button>
+            </div>
+          </div>
+
+          <!-- Kelola tim & akses -->
+          <div id="spage-team" class="spage" style="display:none;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <p class="spage-title" style="margin:0;">Kelola tim &amp; akses</p>
+              <button style="padding:8px 16px;background:#E4002B;color:white;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;">+ Undang anggota</button>
+            </div>
+            <p style="font-size:13px;color:#9B9693;margin:0 0 20px;">4 anggota · Workplace Revenue Assurance</p>
+
+            <div style="border:1px solid #EBE8E3;border-radius:12px;overflow:hidden;">
+              <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                  <tr style="background:#F5F3F0;">
+                    <th style="padding:10px 16px;text-align:left;font-size:11px;font-weight:600;color:#9B9693;text-transform:uppercase;letter-spacing:0.04em;">Anggota</th>
+                    <th style="padding:10px 16px;text-align:left;font-size:11px;font-weight:600;color:#9B9693;text-transform:uppercase;letter-spacing:0.04em;">Peran</th>
+                    <th style="padding:10px 16px;text-align:left;font-size:11px;font-weight:600;color:#9B9693;text-transform:uppercase;letter-spacing:0.04em;">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="border-top:1px solid #EBE8E3;">
+                    <td style="padding:12px 16px;"><div style="display:flex;align-items:center;gap:10px;"><div style="width:32px;height:32px;border-radius:50%;background:#F0884B;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:700;">JA</div><div><p style="font-size:13px;font-weight:500;color:#2A2724;margin:0;">Jihaad Arief</p><p style="font-size:11px;color:#9B9693;margin:0;">jihaad.arief@nti.co.id</p></div></div></td>
+                    <td style="padding:12px 16px;font-size:13px;color:#2A2724;">Owner</td>
+                    <td style="padding:12px 16px;"><span style="font-size:11px;font-weight:600;color:#16A34A;background:#DCFCE7;padding:3px 10px;border-radius:20px;">Aktif</span></td>
+                  </tr>
+                  <tr style="border-top:1px solid #EBE8E3;">
+                    <td style="padding:12px 16px;"><div style="display:flex;align-items:center;gap:10px;"><div style="width:32px;height:32px;border-radius:50%;background:#6366F1;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:700;">DA</div><div><p style="font-size:13px;font-weight:500;color:#2A2724;margin:0;">Dewi Anggraini</p><p style="font-size:11px;color:#9B9693;margin:0;">d.anggraini@telkomsel.co.id</p></div></div></td>
+                    <td style="padding:12px 16px;font-size:13px;color:#2A2724;">Analyst</td>
+                    <td style="padding:12px 16px;"><span style="font-size:11px;font-weight:600;color:#16A34A;background:#DCFCE7;padding:3px 10px;border-radius:20px;">Aktif</span></td>
+                  </tr>
+                  <tr style="border-top:1px solid #EBE8E3;">
+                    <td style="padding:12px 16px;"><div style="display:flex;align-items:center;gap:10px;"><div style="width:32px;height:32px;border-radius:50%;background:#0EA5E9;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:700;">BP</div><div><p style="font-size:13px;font-weight:500;color:#2A2724;margin:0;">Bagus Prakoso</p><p style="font-size:11px;color:#9B9693;margin:0;">b.prakoso@telkomsel.co.id</p></div></div></td>
+                    <td style="padding:12px 16px;font-size:13px;color:#2A2724;">Analyst</td>
+                    <td style="padding:12px 16px;"><span style="font-size:11px;font-weight:600;color:#16A34A;background:#DCFCE7;padding:3px 10px;border-radius:20px;">Aktif</span></td>
+                  </tr>
+                  <tr style="border-top:1px solid #EBE8E3;">
+                    <td style="padding:12px 16px;"><div style="display:flex;align-items:center;gap:10px;"><div style="width:32px;height:32px;border-radius:50%;background:#9B9693;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:700;">SR</div><div><p style="font-size:13px;font-weight:500;color:#2A2724;margin:0;">Siti Rahmawati</p><p style="font-size:11px;color:#9B9693;margin:0;">s.rahmawati@telkomsel.co.id</p></div></div></td>
+                    <td style="padding:12px 16px;font-size:13px;color:#2A2724;">Viewer</td>
+                    <td style="padding:12px 16px;"><span style="font-size:11px;font-weight:600;color:#F59E0B;background:#FEF3C7;padding:3px 10px;border-radius:20px;">Diundang</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Bahasa -->
+          <div id="spage-language" class="spage" style="display:none;">
+            <p class="spage-title">Bahasa</p>
+            <p style="font-size:13px;color:#9B9693;margin:-14px 0 24px;">Pilih bahasa antarmuka aplikasi.</p>
+            <div style="display:flex;flex-direction:column;gap:8px;max-width:300px;">
+              <label style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border:1.5px solid #E4002B;border-radius:10px;background:#FFF8F8;cursor:pointer;">
+                <div style="display:flex;align-items:center;gap:10px;"><span style="font-size:20px;">🇮🇩</span><span style="font-size:14px;font-weight:500;color:#2A2724;">Bahasa Indonesia</span></div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E4002B" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              </label>
+              <label style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border:1px solid #EBE8E3;border-radius:10px;background:white;cursor:pointer;">
+                <div style="display:flex;align-items:center;gap:10px;"><span style="font-size:20px;">🇬🇧</span><span style="font-size:14px;font-weight:500;color:#2A2724;">English (US)</span></div>
+                <span style="font-size:11px;color:#9B9693;">Default</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Bantuan & dukungan -->
+          <div id="spage-help" class="spage" style="display:none;">
+            <p class="spage-title">Bantuan &amp; dukungan</p>
+            <p style="font-size:13px;color:#9B9693;margin:-14px 0 24px;">Dokumentasi, panduan, dan kontak tim dukungan.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:520px;">
+              <div style="padding:16px 18px;border:1px solid #EBE8E3;border-radius:12px;background:white;cursor:pointer;">
+                <p style="font-size:13px;font-weight:600;color:#2A2724;margin:0 0 5px;">Pusat bantuan</p>
+                <p style="font-size:12px;color:#9B9693;margin:0;line-height:1.5;">Panduan penggunaan Settlement AI &amp; FAQ rekonsiliasi</p>
+              </div>
+              <div style="padding:16px 18px;border:1px solid #EBE8E3;border-radius:12px;background:white;cursor:pointer;">
+                <p style="font-size:13px;font-weight:600;color:#2A2724;margin:0 0 5px;">Dokumentasi data</p>
+                <p style="font-size:12px;color:#9B9693;margin:0;line-height:1.5;">Skema file settlement &amp; definisi kolom CDR</p>
+              </div>
+              <div style="padding:16px 18px;border:1px solid #EBE8E3;border-radius:12px;background:white;cursor:pointer;">
+                <p style="font-size:13px;font-weight:600;color:#2A2724;margin:0 0 5px;">Hubungi dukungan</p>
+                <p style="font-size:12px;color:#9B9693;margin:0;line-height:1.5;">support@telkomsel.co.id · 24/7</p>
+              </div>
+              <div style="padding:16px 18px;border:1px solid #EBE8E3;border-radius:12px;background:white;">
+                <p style="font-size:13px;font-weight:600;color:#2A2724;margin:0 0 5px;">Status layanan</p>
+                <p style="font-size:12px;color:#9B9693;margin:0;"><span style="color:#16A34A;">●</span> Semua sistem beroperasi normal</p>
+              </div>
+            </div>
+            <p style="font-size:12px;color:#9B9693;margin-top:28px;">Versi aplikasi &nbsp; <strong style="color:#2A2724;">Settlement AI v3.0</strong></p>
+          </div>
+
+          <!-- Keamanan & privasi -->
+          <div id="spage-security" class="spage" style="display:none;">
+            <p class="spage-title">Keamanan &amp; privasi data</p>
+            <p style="font-size:13px;color:#9B9693;margin:-14px 0 24px;">Autentikasi, sesi aktif, dan keamanan data.</p>
+
+            <div class="stoggle-row" style="max-width:500px;">
+              <div>
+                <p class="stoggle-name">Autentikasi dua faktor (2FA)</p>
+                <p class="stoggle-desc">Terakhir dikonfigurasi: Maret 2026</p>
+              </div>
+              <span style="font-size:11px;font-weight:600;color:#16A34A;background:#DCFCE7;padding:4px 10px;border-radius:20px;">Aktif</span>
+            </div>
+            <div class="stoggle-row" style="max-width:500px;border-bottom:none;">
+              <div>
+                <p class="stoggle-name">Retensi data settlement</p>
+                <p class="stoggle-desc">Data disimpan sesuai kebijakan compliance</p>
+              </div>
+              <span style="font-size:13px;font-weight:500;color:#2A2724;">24 bulan</span>
+            </div>
+
+            <p class="ssection-title" style="margin-top:24px;">SESI AKTIF</p>
+            <div style="display:flex;flex-direction:column;gap:0;border:1px solid #EBE8E3;border-radius:10px;overflow:hidden;max-width:460px;">
+              <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #EBE8E3;">
+                <div><p style="font-size:13px;color:#2A2724;margin:0;">Chrome · Windows · Jakarta</p><p style="font-size:11px;color:#9B9693;margin:0;">Sekarang aktif</p></div>
+                <span style="font-size:11px;font-weight:600;color:#16A34A;">Sesi ini</span>
+              </div>
+              <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
+                <div><p style="font-size:13px;color:#2A2724;margin:0;">Safari · iPhone · Jakarta</p><p style="font-size:11px;color:#9B9693;margin:0;">2 jam yang lalu</p></div>
+                <button style="font-size:11px;color:#E4002B;background:none;border:none;cursor:pointer;font-family:inherit;font-weight:500;">Keluarkan</button>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:24px;">
+              <button style="padding:9px 18px;font-size:13px;border:1px solid #EBE8E3;border-radius:10px;background:white;color:#2A2724;cursor:pointer;font-family:inherit;">Lihat log audit</button>
+              <button style="padding:9px 18px;font-size:13px;border:1px solid #EBE8E3;border-radius:10px;background:white;color:#2A2724;cursor:pointer;font-family:inherit;">Ekspor data akun</button>
+            </div>
+          </div>
+
+        </div><!-- /settings content -->
+      </div><!-- /settings body -->
+    </div><!-- /settings-panel -->
+
+
+    <!-- ══════════════════════════════════════
+         NORMAL MAIN AREA
+    ══════════════════════════════════════════ -->
+
+    <!-- Topbar -->
+    <div id="conv-header" style="flex:none;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:var(--surface);border-bottom:1px solid var(--border);">
+      <div style="min-width:0;">
+        <p id="conv-title" style="font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--text);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px;">Settlement AI</p>
+        <div style="display:flex;align-items:center;gap:7px;margin-top:2px;">
+          <div id="health-dot" style="width:6px;height:6px;border-radius:50%;background:var(--pos);box-shadow:0 0 0 3px var(--pos-soft);"></div>
+          <span id="health-text" style="font-size:11.5px;color:var(--text-faint);font-family:var(--font-mono);">Daring</span>
+          <span id="conv-meta" style="font-size:11px;color:var(--text-faint);font-family:var(--font-mono);"></span>
+        </div>
+      </div>
+      <button style="display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border);padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer;font-family:var(--font-ui);" onmouseenter="this.style.borderColor='#C7CAD4'" onmouseleave="this.style.borderColor='var(--border)'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3V15M12 15L7 10M12 15L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 19H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        Ekspor laporan
+      </button>
+    </div>
+
+    <!-- Welcome screen -->
+    <div id="welcome" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 32px;text-align:center;overflow-y:auto;background:#FCFBFA;">
+      <div style="width:56px;height:56px;background:linear-gradient(155deg,var(--accent),#7A0A20);border-radius:16px;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M4 15L9 8L13 12L20 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h2 style="font-family:var(--font-display);font-size:19px;font-weight:600;color:var(--text);margin:0 0 8px;">Selamat datang di Settlement AI</h2>
+      <p style="font-size:13px;color:var(--text-faint);max-width:320px;line-height:1.7;margin:0 0 28px;">Tanyakan soal rekonsiliasi mitra, anomali settlement, atau tren revenue Telkomsel.</p>
+      <div style="width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px;text-align:left;">
+        <button class="suggestion-btn">Berapa total transaksi bulan April 2026?</button>
+        <button class="suggestion-btn">Top 5 partner berdasarkan revenue bulan ini?</button>
+        <button class="suggestion-btn">Anomali apa yang terjadi dengan success rate?</button>
+        <button class="suggestion-btn">Bandingkan success rate GoPay vs OVO bulan April</button>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages" style="display:none;flex:1;overflow-y:auto;padding:28px 32px;flex-direction:column;gap:22px;background:#FCFBFA;"></div>
+
+    <!-- Composer -->
+    <div style="flex:none;background:#FCFBFA;padding:12px 32px 20px;border-top:1px solid var(--border);">
+      <div id="input-wrap" style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px 8px 8px 16px;box-shadow:0 1px 2px rgba(18,20,27,.04);transition:border-color 0.15s,box-shadow 0.15s;">
+        <button style="flex-shrink:0;width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;color:var(--text-faint);border-radius:9px;transition:background 0.12s,color 0.12s;" title="Lampirkan file" onmouseenter="this.style.background='var(--surface-alt)';this.style.color='var(--text-dim)'" onmouseleave="this.style.background='none';this.style.color='var(--text-faint)'">
+          <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <textarea id="query-input" rows="1"
+          placeholder="Tanyakan analisis lanjutan. Mis: root cause anomali Indosat…"
+          style="flex:1;background:transparent;border:none;outline:none;resize:none;font-size:13px;color:var(--text);font-family:var(--font-ui);max-height:120px;padding:0;line-height:1.5;"></textarea>
+        <button style="flex-shrink:0;width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;color:var(--text-faint);border-radius:9px;transition:background 0.12s,color 0.12s;" title="Rekam suara" onmouseenter="this.style.background='var(--surface-alt)';this.style.color='var(--text-dim)'" onmouseleave="this.style.background='none';this.style.color='var(--text-faint)'">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path stroke-linecap="round" d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
+        </button>
+        <button id="submit-btn" disabled
+          style="flex-shrink:0;width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--accent);border:none;cursor:pointer;transition:filter 0.15s,opacity 0.15s;opacity:0.4;" title="Kirim">
+          <svg width="15" height="15" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/></svg>
         </button>
       </div>
+      <p style="font-size:10.5px;color:var(--text-faint);text-align:center;margin:8px 0 0;">Settlement AI dapat keliru. Verifikasi angka material terhadap sistem revenue assurance sebelum keputusan.</p>
+    </div>
 
-      <div class="px-3 flex-1 overflow-y-auto">
-        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider px-1 mb-2">Riwayat</p>
-        <div id="history-list" class="space-y-0.5">
-          <p id="history-empty" class="text-xs text-slate-400 px-1 py-1">Belum ada percakapan</p>
-        </div>
-      </div>
+  </div><!-- /main-wrapper -->
+</div><!-- /root -->
 
-      <div class="p-3 border-t border-slate-100">
-        <p class="text-xs text-slate-400 text-center">8-agent pipeline · GPT-4o</p>
-      </div>
-    </aside>
-
-    <!-- Main -->
-    <main class="flex-1 flex flex-col overflow-hidden">
-
-      <!-- Welcome -->
-      <div id="welcome" class="flex-1 flex flex-col items-center justify-center px-8 text-center overflow-y-auto py-8">
-        <div class="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-4">
-          <svg class="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-          </svg>
-        </div>
-        <h2 class="text-lg font-semibold text-slate-800 mb-1">Tanya soal data keuangan Telkomsel</h2>
-        <p class="text-sm text-slate-500 max-w-sm mb-6">
-          Ketik pertanyaan dalam Bahasa Indonesia atau Inggris. Sistem akan menghasilkan SQL dan memberikan insight.
-        </p>
-        <div class="w-full max-w-md space-y-2 text-left">
-          <button class="suggestion-btn">Berapa total transaksi bulan April 2026?</button>
-          <button class="suggestion-btn">Top 5 payment channel berdasarkan revenue bulan ini?</button>
-          <button class="suggestion-btn">Anomali apa yang terjadi dengan severity high?</button>
-          <button class="suggestion-btn">Bandingkan success rate GoPay vs OVO di bulan April</button>
-        </div>
-      </div>
-
-      <!-- Messages -->
-      <div id="messages" class="hidden flex-1 overflow-y-auto px-6 py-5 space-y-4"></div>
-
-      <!-- Input bar -->
-      <div class="bg-white border-t border-slate-200 px-5 py-3 shrink-0">
-        <div class="flex gap-2 items-end bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5
-          focus-within:bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-50 transition-all">
-          <textarea id="query-input" rows="1"
-            placeholder="Tanya sesuatu tentang data keuangan..."
-            class="flex-1 bg-transparent outline-none resize-none text-sm text-slate-800
-              placeholder-slate-400 max-h-32 py-0.5 leading-relaxed"></textarea>
-          <button id="submit-btn" disabled
-            class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors
-              bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 text-white disabled:text-slate-400">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
-        </div>
-        <p class="text-xs text-slate-400 text-center mt-1.5">
-          Enter untuk kirim &nbsp;·&nbsp; Shift+Enter untuk baris baru
-        </p>
-      </div>
-
-    </main>
-  </div>
-
-  <script type="module" src="/ui/app.js?v=5"></script>
+<script type="module" src="/ui/app.js?v=17"></script>
 </body>
 </html>

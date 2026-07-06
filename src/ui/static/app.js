@@ -10,7 +10,7 @@ import {
   appendErrorMessage,
   appendClarificationMessage,
   removeElement,
-} from '/ui/renderer.js?v=18'
+} from '/ui/renderer.js?v=19'
 
 // ── Config ────────────────────────────────────────────────────
 const API = window.location.origin

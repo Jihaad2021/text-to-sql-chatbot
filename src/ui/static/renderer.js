@@ -1,5 +1,5 @@
 /**
- * renderer.js — DOM rendering for Settlement AI chat interface. v8
+ * renderer.js — DOM rendering for Settlement AI chat interface. v9
  * Telkomsel warm beige design: KPI cards, horizontal bars, insight callout, table, quick replies.
  */
 
@@ -478,7 +478,7 @@ function _initChart(container, gid, config) {
       y1: {
         type: 'linear', position: 'right',
         grid: { drawOnChartArea: false },
-        ticks: { callback: v => v + '%' },
+        ticks: { callback: v => config.y1_is_pct ? v + '%' : _shortNum(v) },
         min: 0,
       },
     }
@@ -498,10 +498,36 @@ function _initChart(container, gid, config) {
     }
   }
 
+  // Per-instance center-text plugin for doughnut charts (design ref 2f).
+  // Uses closure over `config` — no global Chart.register needed.
+  const _centerPlugin = (isDoughnut && config.center_value) ? {
+    id: 'doughnutCenter',
+    afterDraw(chart) {
+      const cv = config.center_value
+      const cl = (config.center_label || 'TOTAL').toUpperCase()
+      if (!cv || !chart.chartArea) return
+      const { left, right, top, bottom } = chart.chartArea
+      const cx = (left + right) / 2
+      const cy = (top + bottom) / 2
+      const ctx = chart.ctx
+      ctx.save()
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.font = "700 21px 'IBM Plex Mono', monospace"
+      ctx.fillStyle = '#1C1B1A'
+      ctx.fillText(cv, cx, cy - 10)
+      ctx.font = "600 10px 'Plus Jakarta Sans', sans-serif"
+      ctx.fillStyle = '#8B867E'
+      ctx.fillText(cl, cx, cy + 11)
+      ctx.restore()
+    },
+  } : null
+
   try {
     canvas._chartInstance = new Chart(canvas, {
       type: config.type,
       data: { labels: config.labels, datasets: config.datasets },
+      plugins: _centerPlugin ? [_centerPlugin] : [],
       options: {
         ...(isDivergingBar ? { indexAxis: 'y' } : {}),
         responsive: true, maintainAspectRatio: false,
