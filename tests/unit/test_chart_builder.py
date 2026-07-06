@@ -9,6 +9,8 @@ Covers:
   3. Fallback path: plain SQL / get_trend (no suffix matches) → original
      positional pairing, behavior unchanged from pre-fix.
   4. Warning log is explicit — names the exact dropped columns.
+  5. get_distribution schema (_share_pct suffix group): share cols → chart 1
+     (single-axis 0-100%), absolute cols → chart 2 (not dual-axis mixed).
 """
 
 from unittest.mock import MagicMock, call, patch
@@ -193,6 +195,97 @@ _PARTNER_DATA = [
 ]
 
 
+# ── _build_grouped_bar_chart: compare_periods *_a/*_b pairs ──────────────────
+
+_COMPARE_FULL_DATA = [
+    {
+        "entity": "qris", "trx_a": 14_000, "trx_b": 12_000, "trx_pct_change": 16.67,
+        "rev_a": 15e9, "rev_b": 13e9, "rev_pct_change": 15.38,
+        "sr_a": 99.5, "sr_b": 99.2, "sr_pct_change": 0.30,
+    },
+    {
+        "entity": "gopay", "trx_a": 4_000, "trx_b": 4_500, "trx_pct_change": -11.11,
+        "rev_a": 4e9, "rev_b": 4.5e9, "rev_pct_change": -11.11,
+        "sr_a": 98.1, "sr_b": 98.5, "sr_pct_change": -0.40,
+    },
+    {
+        "entity": "ovo", "trx_a": 2_100, "trx_b": 2_400, "trx_pct_change": -12.50,
+        "rev_a": 2.1e9, "rev_b": 2.4e9, "rev_pct_change": -12.50,
+        "sr_a": 97.3, "sr_b": 98.0, "sr_pct_change": -0.70,
+    },
+]
+
+
+class TestGroupedBarChartBuilder:
+    """_build_grouped_bar_chart: correct pair selection, dataset structure, logging."""
+
+    def test_returns_dict_not_none(self, ig):
+        """Must return a config, not None, for compare_periods data."""
+        cfg = ig._build_grouped_bar_chart(_state(_COMPARE_FULL_DATA))
+        assert cfg is not None, "Expected a chart config for compare_periods data"
+
+    def test_chart_type_is_bar(self, ig):
+        """grouped_bar_chart must use Chart.js type='bar' (grouped, not stacked)."""
+        cfg = ig._build_grouped_bar_chart(_state(_COMPARE_FULL_DATA))
+        assert cfg["type"] == "bar", f"Expected 'bar', got '{cfg['type']}'"
+
+    def test_two_datasets_periode_a_and_b(self, ig):
+        """Must produce exactly 2 datasets labelled 'Periode A' and 'Periode B'."""
+        cfg = ig._build_grouped_bar_chart(_state(_COMPARE_FULL_DATA))
+        labels = [ds["label"] for ds in cfg["datasets"]]
+        assert labels == ["Periode A", "Periode B"], f"Got dataset labels: {labels}"
+
+    def test_first_pair_by_column_order_is_trx(self, ig):
+        """trx_a/trx_b appear first in column order → chart title must reference 'Trx'."""
+        cfg = ig._build_grouped_bar_chart(_state(_COMPARE_FULL_DATA))
+        assert "Trx" in cfg["title"], (
+            f"Expected 'Trx' in title (first column-order pair). Got: '{cfg['title']}'"
+        )
+
+    def test_dataset_values_match_source_data(self, ig):
+        """Periode A dataset must contain trx_a values in entity order."""
+        cfg = ig._build_grouped_bar_chart(_state(_COMPARE_FULL_DATA))
+        ds_a = next(ds for ds in cfg["datasets"] if ds["label"] == "Periode A")
+        assert ds_a["data"] == [14_000.0, 4_000.0, 2_100.0], (
+            f"Periode A values don't match trx_a column: {ds_a['data']}"
+        )
+
+    def test_labels_are_entity_names(self, ig):
+        """X-axis labels must be entity names, not numeric indices."""
+        cfg = ig._build_grouped_bar_chart(_state(_COMPARE_FULL_DATA))
+        assert cfg["labels"] == ["qris", "gopay", "ovo"], (
+            f"Expected entity names as labels. Got: {cfg['labels']}"
+        )
+
+    def test_additional_pairs_logged_as_warning(self, ig):
+        """rev_a/rev_b and sr_a/sr_b beyond the first pair must be logged."""
+        log_calls: list[tuple] = []
+        ig.log = lambda msg, level="info": log_calls.append((level, msg))  # type: ignore[method-assign]
+        ig._build_grouped_bar_chart(_state(_COMPARE_FULL_DATA))
+        warnings = [msg for lvl, msg in log_calls if lvl == "warning"]
+        assert any("rev_a" in w and "not represented" in w for w in warnings), (
+            f"Expected warning about rev_a/rev_b not charted. Got: {warnings}"
+        )
+
+    def test_returns_none_for_no_ab_pairs(self, ig):
+        """Data without *_a/*_b pairs must return None."""
+        cfg = ig._build_grouped_bar_chart(_state(_DETECT_DATA))
+        assert cfg is None, "detect_anomaly data has no _a/_b pairs — must return None"
+
+    def test_returns_none_for_single_row(self, ig):
+        """Single-row data must return None (nothing to group-compare)."""
+        single = [_COMPARE_FULL_DATA[0]]
+        cfg = ig._build_grouped_bar_chart(_state(single))
+        assert cfg is None, "Single row must return None"
+
+    def test_no_dual_axis(self, ig):
+        """Grouped bar chart must NOT use dual axis (same metric, same scale)."""
+        cfg = ig._build_grouped_bar_chart(_state(_COMPARE_FULL_DATA))
+        assert cfg.get("dual_axis") is False, (
+            f"grouped_bar_chart must have dual_axis=False. Got: {cfg.get('dual_axis')}"
+        )
+
+
 class TestPositionalFallback:
     """When no _pct_change/_target/_baseline_avg columns exist, use old positional pairing."""
 
@@ -214,4 +307,195 @@ class TestPositionalFallback:
         configs = ig._build_chart_configs(_state(_TREND_DATA))
         assert configs[0]["type"] == "line", (
             f"Time-dimension data must produce line chart. Got: {configs[0]['type']}"
+        )
+
+
+# ── _build_donut_chart: center-value (design ref 2f) ────────────────────────
+
+_DONUT_SHARE_DATA = [
+    {"partner": "qris",  "share_pct": 55.3},
+    {"partner": "dana",  "share_pct": 24.1},
+    {"partner": "gopay", "share_pct": 12.7},
+    {"partner": "ovo",   "share_pct":  7.9},
+]
+
+_DONUT_RAW_TRX_DATA = [
+    {"partner": "qris",  "total_trx": 14_000_000},
+    {"partner": "dana",  "total_trx":  6_300_000},
+    {"partner": "gopay", "total_trx":  4_100_000},
+    {"partner": "ovo",   "total_trx":  2_400_000},
+]
+
+_DONUT_RAW_REV_DATA = [
+    {"partner": "qris",  "total_revenue": 635_000_000_000},
+    {"partner": "dana",  "total_revenue": 198_000_000_000},
+    {"partner": "gopay", "total_revenue": 142_000_000_000},
+]
+
+
+class TestDonutCenterValue:
+    """_build_donut_chart must populate center_value and center_label (design ref 2f)."""
+
+    def test_share_pct_center_is_100_percent(self, ig):
+        """share_pct columns always total 100% — center_value must be '100%'."""
+        cfg = ig._build_donut_chart(_state(_DONUT_SHARE_DATA))
+        assert cfg is not None
+        assert cfg.get("center_value") == "100%", (
+            f"share_pct donut must show '100%' center. Got: '{cfg.get('center_value')}'"
+        )
+
+    def test_share_pct_center_label_is_total(self, ig):
+        cfg = ig._build_donut_chart(_state(_DONUT_SHARE_DATA))
+        assert cfg.get("center_label") == "TOTAL", (
+            f"Expected center_label='TOTAL'. Got: '{cfg.get('center_label')}'"
+        )
+
+    def test_raw_trx_center_is_sum_abbreviated(self, ig):
+        """Raw absolute values: center_value = sum of all slices, abbreviated (e.g. '26.8M')."""
+        cfg = ig._build_donut_chart(_state(_DONUT_RAW_TRX_DATA))
+        assert cfg is not None
+        cv = cfg.get("center_value", "")
+        assert cv.endswith("M") or cv.endswith("jt") or cv.endswith("k") or cv.isdigit(), (
+            f"Raw trx center_value should be abbreviated. Got: '{cv}'"
+        )
+        # total = 26_800_000 → "26.8M"
+        assert "26" in cv or "27" in cv, (
+            f"Sum of trx slices is 26.8M — expected '26' or '27' in center. Got: '{cv}'"
+        )
+
+    def test_raw_revenue_gets_rp_prefix(self, ig):
+        """Revenue column name triggers 'Rp' prefix on center_value."""
+        cfg = ig._build_donut_chart(_state(_DONUT_RAW_REV_DATA))
+        assert cfg is not None
+        cv = cfg.get("center_value", "")
+        assert cv.startswith("Rp"), (
+            f"Revenue column must produce Rp-prefixed center_value. Got: '{cv}'"
+        )
+
+    def test_raw_trx_no_rp_prefix(self, ig):
+        """Non-revenue column (total_trx) must NOT have Rp prefix."""
+        cfg = ig._build_donut_chart(_state(_DONUT_RAW_TRX_DATA))
+        cv = cfg.get("center_value", "")
+        assert not cv.startswith("Rp"), (
+            f"trx column must NOT have Rp prefix. Got: '{cv}'"
+        )
+
+    def test_center_value_present_on_share_donut(self, ig):
+        """center_value key must exist in returned dict (not missing/None)."""
+        cfg = ig._build_donut_chart(_state(_DONUT_SHARE_DATA))
+        assert "center_value" in cfg
+        assert cfg["center_value"] is not None
+
+    def test_center_label_always_present(self, ig):
+        """center_label must be set regardless of column type."""
+        for data in (_DONUT_SHARE_DATA, _DONUT_RAW_TRX_DATA):
+            cfg = ig._build_donut_chart(_state(data))
+            assert cfg.get("center_label") == "TOTAL", (
+                f"center_label must always be 'TOTAL'. Got: '{cfg.get('center_label')}'"
+            )
+
+
+# ── _share_pct suffix grouping (Fix A) — get_distribution schema ─────────────
+
+_DISTRIBUTION_DATA = [
+    {
+        "entity": "qris",  "total_trx": 14_843_101, "trx_share_pct": 53.43,
+        "total_revenue": 634_960_372_700.0, "rev_share_pct": 53.63,
+    },
+    {
+        "entity": "dana",  "total_trx":  6_322_881, "trx_share_pct": 22.76,
+        "total_revenue": 198_380_152_802.0, "rev_share_pct": 16.75,
+    },
+    {
+        "entity": "finnet", "total_trx": 2_454_675, "trx_share_pct":  8.84,
+        "total_revenue": 180_632_792_740.0, "rev_share_pct": 15.26,
+    },
+    {
+        "entity": "gopay", "total_trx":  1_848_321, "trx_share_pct":  6.65,
+        "total_revenue":  72_541_284_600.0, "rev_share_pct":  6.13,
+    },
+    {
+        "entity": "shopeepay", "total_trx": 1_588_492, "trx_share_pct": 5.72,
+        "total_revenue":  41_920_800_000.0, "rev_share_pct":  3.54,
+    },
+    {
+        "entity": "ovo",   "total_trx":  427_080, "trx_share_pct":  1.54,
+        "total_revenue":  14_108_640_000.0, "rev_share_pct":  1.19,
+    },
+    {
+        "entity": "linkaja", "total_trx": 323_190, "trx_share_pct": 1.16,
+        "total_revenue":  10_665_270_000.0, "rev_share_pct":  0.90,
+    },
+    {
+        "entity": "telkomsel_wallet", "total_trx": 11_630, "trx_share_pct": 0.04,
+        "total_revenue":     386_600_000.0, "rev_share_pct":  0.03,
+    },
+    {
+        "entity": "indomaret", "total_trx": 9_820, "trx_share_pct": 0.04,
+        "total_revenue":     264_540_000.0, "rev_share_pct":  0.02,
+    },
+]
+
+
+class TestSharePctSuffixGrouping:
+    """get_distribution schema: *_share_pct cols → chart 1 (single-axis 0-100%),
+    absolute cols → chart 2 (separate chart, not dual-axis campur)."""
+
+    def test_two_chart_configs_produced(self, ig):
+        """Must produce exactly 2 chart configs: one share, one absolute."""
+        configs = ig._build_chart_configs(_state(_DISTRIBUTION_DATA))
+        assert len(configs) == 2, (
+            f"Expected 2 chart configs (share + absolute). Got {len(configs)}"
+        )
+
+    def test_first_chart_contains_only_share_pct_cols(self, ig):
+        """Chart 1 datasets must be trx_share_pct and rev_share_pct — no absolute cols."""
+        configs = ig._build_chart_configs(_state(_DISTRIBUTION_DATA))
+        labels_c1 = [ds["label"] for ds in configs[0]["datasets"]]
+        assert "Trx Share Pct" in labels_c1, f"Expected Trx Share Pct in chart 1. Got: {labels_c1}"
+        assert "Rev Share Pct" in labels_c1, f"Expected Rev Share Pct in chart 1. Got: {labels_c1}"
+        assert "Total Trx"     not in labels_c1, f"Absolute col must NOT be in share chart: {labels_c1}"
+        assert "Total Revenue"  not in labels_c1, f"Absolute col must NOT be in share chart: {labels_c1}"
+
+    def test_first_chart_has_no_dual_axis(self, ig):
+        """Share_pct columns share the same 0-100% scale — dual_axis must be False."""
+        configs = ig._build_chart_configs(_state(_DISTRIBUTION_DATA))
+        assert configs[0].get("dual_axis") is False, (
+            f"Share_pct chart must have dual_axis=False (same 0-100% scale). "
+            f"Got: {configs[0].get('dual_axis')}"
+        )
+
+    def test_second_chart_contains_only_absolute_cols(self, ig):
+        """Chart 2 datasets must be total_trx and total_revenue — no share_pct cols."""
+        configs = ig._build_chart_configs(_state(_DISTRIBUTION_DATA))
+        labels_c2 = [ds["label"] for ds in configs[1]["datasets"]]
+        assert "Total Trx"     in labels_c2, f"Expected Total Trx in chart 2. Got: {labels_c2}"
+        assert "Total Revenue"  in labels_c2, f"Expected Total Revenue in chart 2. Got: {labels_c2}"
+        assert "Trx Share Pct" not in labels_c2, f"Share col must NOT be in absolute chart: {labels_c2}"
+        assert "Rev Share Pct" not in labels_c2, f"Share col must NOT be in absolute chart: {labels_c2}"
+
+    def test_share_pct_values_are_percentage_scale(self, ig):
+        """Share_pct chart values must be in 0-100 range (not millions/billions)."""
+        configs = ig._build_chart_configs(_state(_DISTRIBUTION_DATA))
+        for ds in configs[0]["datasets"]:
+            max_val = max(abs(v or 0) for v in ds["data"])
+            assert max_val <= 100, (
+                f"Share chart dataset '{ds['label']}' has value {max_val} > 100 — "
+                f"must be percentage scale"
+            )
+
+    def test_detect_anomaly_unaffected_by_share_pct_fix(self, ig):
+        """detect_anomaly schema has no *_share_pct — pct_change must still be chart 1."""
+        configs = ig._build_chart_configs(_state(_DETECT_DATA))
+        labels_c1 = [ds["label"] for ds in configs[0]["datasets"]]
+        assert "Trx Pct Change" in labels_c1, (
+            f"detect_anomaly: pct_change must still be chart 1. Got: {labels_c1}"
+        )
+
+    def test_compare_periods_unaffected_by_share_pct_fix(self, ig):
+        """compare_periods schema has no *_share_pct — pct_change must still be chart 1."""
+        configs = ig._build_chart_configs(_state(_COMPARE_DATA))
+        labels_c1 = [ds["label"] for ds in configs[0]["datasets"]]
+        assert "Trx Pct Change" in labels_c1, (
+            f"compare_periods: pct_change must still be chart 1. Got: {labels_c1}"
         )

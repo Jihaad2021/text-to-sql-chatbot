@@ -557,3 +557,125 @@ class TestB2AnalyticsPathGuardRegression:
         assert vb_types == ["bar_chart"], (
             f"With no data anywhere, guard must skip all rules (bar_chart must survive). Got: {vb_types}"
         )
+
+
+# ────────────────────────────────────────────────────────────────────────
+# TEST — compare_periods generates grouped_bar_chart + diverging_bar_chart
+# ────────────────────────────────────────────────────────────────────────
+
+_COMPARE_FULL = [
+    {
+        "entity": "qris",  "trx_a": 14_000, "trx_b": 12_000, "trx_pct_change": 16.67,
+        "rev_a": 15e9, "rev_b": 13e9, "rev_pct_change": 15.38,
+        "sr_a": 99.5,  "sr_b": 99.2,  "sr_pct_change": 0.30,
+    },
+    {
+        "entity": "gopay", "trx_a": 4_000,  "trx_b": 4_500,  "trx_pct_change": -11.11,
+        "rev_a": 4e9,  "rev_b": 4.5e9, "rev_pct_change": -11.11,
+        "sr_a": 98.1,  "sr_b": 98.5,  "sr_pct_change": -0.40,
+    },
+    {
+        "entity": "ovo",   "trx_a": 2_100,  "trx_b": 2_400,  "trx_pct_change": -12.50,
+        "rev_a": 2.1e9, "rev_b": 2.4e9, "rev_pct_change": -12.50,
+        "sr_a": 97.3,  "sr_b": 98.0,  "sr_pct_change": -0.70,
+    },
+]
+
+
+class TestGroupedBarEnforce:
+    """Rule 3 in _enforce_chart_rules: compare_periods data must produce BOTH
+    grouped_bar_chart (absolute values) and diverging_bar_chart (pct_change),
+    not just one or the other.
+    """
+
+    def _state_with_tool_results(self) -> AgentState:
+        state = AgentState(
+            query="bandingkan QRIS GoPay OVO bulan ini vs bulan lalu",
+            database="financial_db",
+        )
+        state.intent = {"category": "comparison", "segment": "partners", "confidence": 0.9, "reason": ""}
+        state.is_multi_step = False
+        state.tool_results = [
+            ToolCallResult(
+                tool_name="compare_periods",
+                data=_COMPARE_FULL,
+                row_count=len(_COMPARE_FULL),
+                sql_or_params='{"period_a": "2026-05", "period_b": "2026-06"}',
+                description="Compare May vs June for QRIS/GoPay/OVO",
+            )
+        ]
+        state.query_result = []   # empty until AnalyticsAgent backward-compat copy
+        state.row_count = 0
+        return state
+
+    def test_two_visual_blocks_produced(self, planner):
+        """LLM emits only diverging_bar_chart → Rule 3 must inject grouped_bar_chart,
+        resulting in exactly 2 chart-type visual_blocks."""
+        state = self._state_with_tool_results()
+        # LLM returns only the pct_change chart (typical partial LLM output)
+        mock_json = _make_plan_json([
+            {"type": "diverging_bar_chart", "anchor_after": None, "purpose": "leading_answer"},
+        ])
+        with patch.object(planner, "_call_llm", return_value=mock_json):
+            state = planner.run(state)
+
+        chart_blocks = [
+            b for b in state.layout_plan["visual_blocks"]
+            if b["type"] not in {"data_table", "ranking_table", "kpi_grid", "anomaly_callout"}
+        ]
+        vb_types = [b["type"] for b in chart_blocks]
+        assert "diverging_bar_chart" in vb_types, (
+            f"diverging_bar_chart must be present (pct_change data). Got: {vb_types}"
+        )
+        assert "grouped_bar_chart" in vb_types, (
+            f"grouped_bar_chart must be injected by Rule 3 (*_a/*_b pairs). Got: {vb_types}"
+        )
+        assert len(chart_blocks) == 2, (
+            f"Exactly 2 chart blocks expected (diverging + grouped). Got {len(chart_blocks)}: {vb_types}"
+        )
+
+    def test_grouped_bar_purpose_is_supporting_evidence(self, planner):
+        """grouped_bar_chart must be supporting_evidence (not leading_answer)."""
+        state = self._state_with_tool_results()
+        mock_json = _make_plan_json([
+            {"type": "diverging_bar_chart", "anchor_after": None, "purpose": "leading_answer"},
+        ])
+        with patch.object(planner, "_call_llm", return_value=mock_json):
+            state = planner.run(state)
+
+        grouped = next(
+            (b for b in state.layout_plan["visual_blocks"] if b["type"] == "grouped_bar_chart"),
+            None,
+        )
+        assert grouped is not None, "grouped_bar_chart block not found"
+        assert grouped["purpose"] == "supporting_evidence", (
+            f"grouped_bar_chart must have purpose='supporting_evidence'. Got: '{grouped['purpose']}'"
+        )
+
+    def test_no_duplicate_grouped_bar(self, planner):
+        """If LLM already emits grouped_bar_chart, Rule 3 must not add a second one."""
+        state = self._state_with_tool_results()
+        mock_json = _make_plan_json([
+            {"type": "diverging_bar_chart", "anchor_after": None,  "purpose": "leading_answer"},
+            {"type": "grouped_bar_chart",   "anchor_after": "s1",  "purpose": "supporting_evidence"},
+        ])
+        with patch.object(planner, "_call_llm", return_value=mock_json):
+            state = planner.run(state)
+
+        grouped_count = sum(
+            1 for b in state.layout_plan["visual_blocks"] if b["type"] == "grouped_bar_chart"
+        )
+        assert grouped_count == 1, (
+            f"Rule 3 must not add a duplicate — expected 1 grouped_bar_chart, got {grouped_count}"
+        )
+
+    def test_has_ab_pair_columns_signal_detected(self, planner):
+        """_shape_for_cols must detect has_ab_pair_columns=True for compare_periods data."""
+        state = self._state_with_tool_results()
+        shape = planner._build_data_shape(state)
+        # Multi-step path returns steps list
+        steps = shape.get("steps", [])
+        assert steps, "Expected steps from tool_results path"
+        assert any(s.get("has_ab_pair_columns") for s in steps), (
+            f"has_ab_pair_columns must be True for compare_periods columns. Steps: {steps}"
+        )
