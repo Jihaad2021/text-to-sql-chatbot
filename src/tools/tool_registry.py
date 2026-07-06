@@ -133,7 +133,9 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "get_distribution",
             "description": (
                 "Lihat kontribusi (%) setiap partner, channel, atau produk terhadap total. "
-                "Gunakan untuk menjawab 'siapa yang paling berkontribusi'."
+                "Gunakan untuk menjawab 'siapa yang paling berkontribusi' atau 'top N entitas'. "
+                "Gunakan top_n untuk membatasi jumlah entitas yang ditampilkan (misal top_n=5 "
+                "untuk 'top 5'). Default top_n=30 jika user tidak menyebut angka spesifik."
             ),
             "parameters": {
                 "type": "object",
@@ -144,6 +146,15 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "enum": ["partner", "channel", "product"],
                         "description": "Dimensi distribusi.",
+                    },
+                    "top_n": {
+                        "type": "integer",
+                        "description": (
+                            "Jumlah entitas teratas yang ditampilkan. "
+                            "Isi jika user menyebut angka eksplisit (misal 'top 5' → 5, 'top 10' → 10). "
+                            "Biarkan default (30) jika tidak ada angka spesifik dari user."
+                        ),
+                        "default": 30,
                     },
                 },
                 "required": ["period_start", "period_end"],

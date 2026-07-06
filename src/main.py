@@ -138,6 +138,8 @@ class QueryResponse(BaseModel):
     is_multi_step: bool = False
     step_results: Optional[List[Dict[str, Any]]] = None
     chart_config: Optional[Dict[str, Any]] = None
+    chart_configs: List[Dict[str, Any]] = []
+    layout_plan: Optional[Dict[str, Any]] = None
     conversation_history: List[Dict[str, Any]] = []
     tool_calls: Optional[List[Dict[str, Any]]] = None
     intent: Optional[Dict[str, Any]] = None
@@ -269,6 +271,7 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
             "sql_summary": (state.validated_sql or "")[:300],
             "row_count": state.row_count,
             "is_multi_step": state.is_multi_step,
+            "intent_category": (state.intent or {}).get("category", "") if isinstance(state.intent, dict) else "",
         }]
 
         if state.step_results:
@@ -295,6 +298,8 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
             is_multi_step=state.is_multi_step,
             step_results=serialized_steps,
             chart_config=state.chart_config,
+            chart_configs=state.chart_configs,
+            layout_plan=state.layout_plan,
             conversation_history=updated_history,
             tool_calls=state.tool_calls or None,
             intent=state.intent,
@@ -317,7 +322,13 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
         # Return 422 with a user-facing Indonesian explanation instead of a raw 500
         logger.warning(
             "query execution error",
-            extra={"request_id": request_id, "agent": e.agent_name, "error": e.message},
+            extra={
+                "request_id": request_id,
+                "agent":      e.agent_name,
+                "error":      e.message,
+                "failed_sql": (getattr(state, "sql", None) or "")[:500],
+                "query":      body.question[:200],
+            },
         )
         # Try to give a more specific hint based on what the user asked
         question_lower = body.question.lower()
