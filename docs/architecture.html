@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arsitektur Chatbot Text-to-SQL — Telkomsel</title>
+<style>
+  :root {
+    --bg: #f4f6fa;
+    --white: #ffffff;
+    --border: #dde1ea;
+    --border2: #c8cdd8;
+    --text: #1e2433;
+    --muted: #6b7280;
+    --muted2: #9ca3af;
+    --blue: #2563eb;
+    --blue-light: #eff6ff;
+    --blue-border: #bfdbfe;
+    --green: #059669;
+    --green-light: #ecfdf5;
+    --green-border: #a7f3d0;
+    --amber: #d97706;
+    --amber-light: #fffbeb;
+    --amber-border: #fde68a;
+    --red: #dc2626;
+    --red-light: #fef2f2;
+    --red-border: #fecaca;
+    --purple: #7c3aed;
+    --purple-light: #f5f3ff;
+    --purple-border: #ddd6fe;
+    --code-bg: #f8fafc;
+    --code-border: #e2e8f0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', -apple-system, system-ui, sans-serif; font-size: 14px; line-height: 1.65; }
+
+  /* ── Page ── */
+  .page { max-width: 1100px; margin: 0 auto; padding: 40px 28px 80px; }
+
+  /* ── Header ── */
+  header { text-align: center; padding: 40px 0 32px; border-bottom: 2px solid var(--border); margin-bottom: 44px; }
+  header h1 { font-size: 1.75rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; margin-bottom: 6px; }
+  header h1 span { color: var(--blue); }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header .meta { margin-top: 10px; font-size: 11px; color: var(--muted2); }
+
+  /* ── Section heading ── */
+  .section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--muted2); margin-bottom: 14px; }
+
+  /* ── Pipeline Flowchart ── */
+  #pipeline-wrap { background: var(--white); border: 1px solid var(--border); border-radius: 14px; padding: 36px 28px 28px; margin-bottom: 44px; box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow-x: auto; }
+  .flow-svg { display: block; min-width: 820px; width: 100%; max-width: 1000px; margin: 0 auto; }
+
+  /* ── Agent Sections ── */
+  .section { background: var(--white); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.04); overflow: hidden; }
+  .section-head { display: flex; align-items: center; gap: 14px; padding: 14px 20px; cursor: pointer; user-select: none; transition: background .15s; }
+  .section-head:hover { background: var(--bg); }
+  .section-num { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; flex-shrink: 0; }
+  .section-titles { flex: 1; }
+  .section-titles h2 { font-size: 14px; font-weight: 600; color: var(--text); }
+  .section-titles small { font-size: 11px; color: var(--muted2); }
+  .badge { padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .b-llm   { background: var(--blue-light);   color: var(--blue);   border: 1px solid var(--blue-border); }
+  .b-rag   { background: var(--green-light);  color: var(--green);  border: 1px solid var(--green-border); }
+  .b-hybrid{ background: var(--amber-light);  color: var(--amber);  border: 1px solid var(--amber-border); }
+  .b-tool  { background: var(--purple-light); color: var(--purple); border: 1px solid var(--purple-border); }
+  .b-exec  { background: var(--red-light);    color: var(--red);    border: 1px solid var(--red-border); }
+  .chevron { font-size: 11px; color: var(--muted2); transition: transform .18s; }
+  .section.open .chevron { transform: rotate(90deg); }
+  .section-body { display: none; padding: 20px 24px 24px; border-top: 1px solid var(--border); }
+  .section.open .section-body { display: block; }
+
+  /* IO grid */
+  .io-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+  .io-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .io-box h4 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 8px; }
+  .io-box ul { list-style: none; }
+  .io-box li { font-size: 12px; color: var(--text); padding: 2px 0; }
+  .io-box li::before { content: "→ "; color: var(--blue); }
+  .io-box.write li::before { color: var(--green); content: "← "; }
+
+  .desc { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+
+  /* Callout boxes */
+  .info-box { background: var(--blue-light); border: 1px solid var(--blue-border); border-left: 3px solid var(--blue); border-radius: 8px; padding: 11px 14px; font-size: 12px; color: #1e40af; margin-bottom: 14px; }
+  .warn-box { background: var(--amber-light); border: 1px solid var(--amber-border); border-left: 3px solid var(--amber); border-radius: 8px; padding: 11px 14px; font-size: 12px; color: #92400e; margin-bottom: 14px; }
+
+  /* Prompt */
+  .prompt-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .prompt-label span { flex: 1; }
+  .copy-btn { background: var(--white); border: 1px solid var(--border2); color: var(--muted); padding: 3px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; transition: all .15s; }
+  .copy-btn:hover { color: var(--blue); border-color: var(--blue); }
+  .prompt-box { background: var(--code-bg); border: 1px solid var(--code-border); border-radius: 8px; padding: 16px; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; overflow-x: auto; line-height: 1.55; color: #1e293b; max-height: 520px; overflow-y: auto; margin-bottom: 4px; }
+  .prompt-box.expanded { max-height: none; }
+  .expand-btn { display: block; width: 100%; text-align: center; background: var(--bg); border: 1px solid var(--border); border-top: none; color: var(--muted); padding: 6px; border-radius: 0 0 8px 8px; cursor: pointer; font-size: 11px; margin-bottom: 16px; transition: color .15s; }
+  .expand-btn:hover { color: var(--blue); }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 12px; }
+  th { background: var(--bg); color: var(--muted); text-align: left; padding: 8px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; border-bottom: 2px solid var(--border); }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg); }
+
+  /* Tools grid */
+  .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .tool-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .tool-card h4 { font-family: 'Consolas', monospace; color: var(--purple); font-size: 12px; margin-bottom: 5px; }
+  .tool-card p { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .tool-params li { font-size: 11px; color: var(--text); padding: 2px 0; list-style: none; }
+  .tool-params li b { color: var(--amber); }
+
+  /* Schema grid */
+  .schema-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .schema-card { background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .schema-card h4 { font-family: monospace; color: var(--blue); font-size: 13px; margin-bottom: 6px; }
+  .schema-card .cols { font-size: 11px; color: var(--muted); line-height: 1.9; }
+  .schema-card .cols b { color: var(--text); }
+  .schema-card .cols .highlight { color: var(--red); font-weight: 600; }
+
+  .divider { height: 1px; background: var(--border); margin: 40px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- HEADER -->
+<header>
+  <h1>Arsitektur <span>Text-to-SQL Chatbot</span></h1>
+  <div class="sub">Telkomsel Digital Payment Analytics · 12 Agents · Claude Sonnet · PostgreSQL · ChromaDB + BM25 + Graph</div>
+  <div class="meta">Dibuat 2026-07-02 · Diperbarui 2026-07-06 · Untuk review kualitas prompt LLM</div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PIPELINE FLOWCHART
+═══════════════════════════════════════════════════════════════ -->
+<div class="section-label">Pipeline Flow</div>
+<div id="pipeline-wrap">
+
+<!-- Legend -->
+<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:28px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+  <div style="font-size:11px;font-weight:700;color:var(--muted2);align-self:center">LEGEND:</div>
+  <div style="display:flex;align-items:center;gap:5px"><div style="width:14px;height:14px;border-radius:4px;background:var(--blue-light);border:1.5px solid var(--blue)"></div><span style="font-size:11px;color:var(--muted)">LLM Agent</span></div>
+  <div style="display:flex;align-items:center;gap:5px"><div style="width:14px;height:14px;border-radius:4px;background:var(--green-light);border:1.5px solid var(--green)"></div><span style="font-size:11px;color:var(--muted)">RAG / Non-LLM</span></div>
+  <div style="display:flex;align-items:center;gap:5px"><div style="width:14px;height:14px;border-radius:4px;background:var(--amber-light);border:1.5px solid var(--amber)"></div><span style="font-size:11px;color:var(--muted)">Hybrid (Rule+LLM)</span></div>
+  <div style="display:flex;align-items:center;gap:5px"><div style="width:14px;height:14px;border-radius:4px;background:var(--purple-light);border:1.5px solid var(--purple)"></div><span style="font-size:11px;color:var(--muted)">Tool Calling</span></div>
+  <div style="display:flex;align-items:center;gap:5px"><div style="width:14px;height:14px;border-radius:4px;background:var(--red-light);border:1.5px solid var(--red)"></div><span style="font-size:11px;color:var(--muted)">SQL Executor</span></div>
+  <div style="display:flex;align-items:center;gap:5px"><svg width="30" height="14"><line x1="0" y1="7" x2="26" y2="7" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4,2"/><polygon points="26,4 30,7 26,10" fill="#6b7280"/></svg><span style="font-size:11px;color:var(--muted)">Retry / Alt path</span></div>
+</div>
+
+<!-- SVG Flowchart -->
+<svg class="flow-svg" viewBox="0 0 920 760" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',system-ui,sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#475569"/>
+    </marker>
+    <marker id="arr-dashed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#d97706"/>
+    </marker>
+    <marker id="arr-red" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#dc2626"/>
+    </marker>
+    <marker id="arr-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#059669"/>
+    </marker>
+    <marker id="arr-purple" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#7c3aed"/>
+    </marker>
+  </defs>
+
+  <!-- ── NODE STYLES ──
+    Blue (LLM):   fill #eff6ff  stroke #2563eb
+    Green (RAG):  fill #ecfdf5  stroke #059669
+    Amber (Hybrid): fill #fffbeb stroke #d97706
+    Purple (Tool): fill #f5f3ff  stroke #7c3aed
+    Red (Exec):   fill #fef2f2  stroke #dc2626
+    Gray (decision): fill #f1f5f9 stroke #64748b
+  -->
+
+  <!-- ─── COL CENTERS ─── -->
+  <!-- Main col: x=460  Left branch x=200  Right branch x=720 -->
+
+  <!-- ─── ROW 1: QueryRewriter ─── -->
+  <rect x="340" y="20" width="240" height="46" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="460" y="39" text-anchor="middle" font-size="13" font-weight="600" fill="#1e40af">0. QueryRewriter</text>
+  <text x="460" y="56" text-anchor="middle" font-size="10" fill="#3b82f6">LLM · Normalisasi query + inject tahun</text>
+
+  <!-- arrow down 66→100 -->
+  <line x1="460" y1="66" x2="460" y2="96" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ─── ROW 2: PARALLEL SPLIT → 2 agents ─── -->
+  <!-- Split line down to two branches -->
+  <line x1="460" y1="96" x2="460" y2="108" stroke="#475569" stroke-width="1.5"/>
+  <line x1="240" y1="108" x2="680" y2="108" stroke="#475569" stroke-width="1.5"/>
+  <line x1="240" y1="108" x2="240" y2="118" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="680" y1="108" x2="680" y2="118" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+  <!-- "Parallel" label -->
+  <text x="460" y="105" text-anchor="middle" font-size="9.5" fill="#6b7280">parallel</text>
+
+  <!-- IntentClassifier (left) -->
+  <rect x="120" y="118" width="240" height="46" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="240" y="137" text-anchor="middle" font-size="13" font-weight="600" fill="#1e40af">1. IntentClassifier</text>
+  <text x="240" y="154" text-anchor="middle" font-size="10" fill="#3b82f6">LLM · 9 intent · 5 segment</text>
+
+  <!-- QueryPlanner (right) -->
+  <rect x="560" y="118" width="240" height="46" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="680" y="137" text-anchor="middle" font-size="13" font-weight="600" fill="#1e40af">2. QueryPlanner</text>
+  <text x="680" y="154" text-anchor="middle" font-size="10" fill="#3b82f6">LLM · Single / Multi-step plan</text>
+
+  <!-- merge back to center -->
+  <line x1="240" y1="164" x2="240" y2="184" stroke="#475569" stroke-width="1.5"/>
+  <line x1="680" y1="164" x2="680" y2="184" stroke="#475569" stroke-width="1.5"/>
+  <line x1="240" y1="184" x2="680" y2="184" stroke="#475569" stroke-width="1.5"/>
+  <line x1="460" y1="184" x2="460" y2="194" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="460" y="181" text-anchor="middle" font-size="9.5" fill="#6b7280">merge</text>
+
+  <!-- ─── ROW 3: Decision diamond ─── -->
+  <polygon points="460,198 530,228 460,258 390,228" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+  <text x="460" y="224" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">Intent?</text>
+  <text x="460" y="239" text-anchor="middle" font-size="10" fill="#475569">Route decision</text>
+
+  <!-- ── EXIT LEFT: needs_clarification ── -->
+  <line x1="390" y1="228" x2="310" y2="228" stroke="#dc2626" stroke-width="1.5" marker-end="url(#arr-red)"/>
+  <rect x="140" y="212" width="170" height="32" rx="6" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="225" y="226" text-anchor="middle" font-size="10.5" font-weight="600" fill="#991b1b">Ambiguous / Out-of-scope</text>
+  <text x="225" y="239" text-anchor="middle" font-size="9.5" fill="#dc2626">Return early</text>
+
+  <!-- ── EXIT RIGHT: analytics intents ── -->
+  <line x1="530" y1="228" x2="610" y2="228" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arr-purple)"/>
+  <rect x="610" y="212" width="180" height="32" rx="6" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="700" y="225" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5b21b6">Analytics Intents</text>
+  <text x="700" y="239" text-anchor="middle" font-size="9.5" fill="#7c3aed">root_cause · ranking · complex</text>
+
+  <!-- ── MAIN PATH: down ── -->
+  <line x1="460" y1="258" x2="460" y2="288" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ─── ROW 4: SchemaRetriever ─── -->
+  <rect x="340" y="288" width="240" height="46" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="460" y="307" text-anchor="middle" font-size="13" font-weight="600" fill="#065f46">3. SchemaRetriever</text>
+  <text x="460" y="324" text-anchor="middle" font-size="10" fill="#059669">RAG · ChromaDB + BM25 + Graph + RRF</text>
+
+  <line x1="460" y1="334" x2="460" y2="364" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ─── ROW 5: RetrievalEvaluator ─── -->
+  <rect x="340" y="364" width="240" height="46" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="460" y="383" text-anchor="middle" font-size="13" font-weight="600" fill="#1e40af">4. RetrievalEvaluator</text>
+  <text x="460" y="400" text-anchor="middle" font-size="10" fill="#3b82f6">LLM · Filter: ESSENTIAL / OPTIONAL / EXCLUDED</text>
+
+  <line x1="460" y1="410" x2="460" y2="440" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ─── ROW 6: SQLGenerator ─── -->
+  <rect x="340" y="440" width="240" height="46" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="460" y="459" text-anchor="middle" font-size="13" font-weight="600" fill="#1e40af">5. SQLGenerator</text>
+  <text x="460" y="476" text-anchor="middle" font-size="10" fill="#3b82f6">LLM · Few-shot + partner_group fix</text>
+
+  <line x1="460" y1="486" x2="460" y2="516" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ─── ROW 7: SQLValidator ─── -->
+  <rect x="340" y="516" width="240" height="46" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="460" y="535" text-anchor="middle" font-size="13" font-weight="600" fill="#78350f">6. SQLValidator</text>
+  <text x="460" y="552" text-anchor="middle" font-size="10" fill="#d97706">Hybrid · Syntax + Security + Whitelist + AI</text>
+
+  <line x1="460" y1="562" x2="460" y2="592" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ─── ROW 8: QueryExecutor ─── -->
+  <rect x="340" y="592" width="240" height="46" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="460" y="611" text-anchor="middle" font-size="13" font-weight="600" fill="#991b1b">7. QueryExecutor</text>
+  <text x="460" y="628" text-anchor="middle" font-size="10" fill="#dc2626">PostgreSQL · SQLAlchemy pool</text>
+
+  <!-- Retry arrow: right side of QueryExecutor → right side of SQLGenerator -->
+  <path d="M580,615 Q660,615 660,463 Q660,440 580,440" stroke="#d97706" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arr-dashed)"/>
+  <text x="690" y="530" text-anchor="middle" font-size="9.5" fill="#d97706">retry</text>
+  <text x="690" y="543" text-anchor="middle" font-size="9.5" fill="#d97706">on SQL error</text>
+  <text x="690" y="556" text-anchor="middle" font-size="9.5" fill="#d97706">(max 2×)</text>
+
+  <!-- AnalyticsAgent comes in from the right branch, joins at ContextDistiller -->
+  <!-- Analytics path line down from right -->
+  <line x1="700" y1="244" x2="700" y2="670" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <!-- AnalyticsAgent box on right -->
+  <rect x="610" y="440" width="180" height="46" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="700" y="459" text-anchor="middle" font-size="13" font-weight="600" fill="#5b21b6">11. AnalyticsAgent</text>
+  <text x="700" y="476" text-anchor="middle" font-size="10" fill="#7c3aed">Tool calling · max 8 iter</text>
+  <!-- arrow from analytics path into AnalyticsAgent -->
+  <line x1="700" y1="380" x2="700" y2="440" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-purple)"/>
+  <text x="700" y="376" text-anchor="middle" font-size="9" fill="#7c3aed">analytics</text>
+  <text x="700" y="365" text-anchor="middle" font-size="9" fill="#7c3aed">intents</text>
+
+  <!-- AnalyticsAgent arrow down to merge point -->
+  <line x1="700" y1="486" x2="700" y2="670" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="5,3"/>
+
+  <line x1="460" y1="638" x2="460" y2="670" stroke="#475569" stroke-width="1.5"/>
+  <!-- join line -->
+  <line x1="460" y1="670" x2="700" y2="670" stroke="#475569" stroke-width="1.5"/>
+  <line x1="580" y1="670" x2="580" y2="680" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ─── ROW 9: ContextDistiller ─── -->
+  <rect x="460" y="680" width="240" height="46" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="580" y="699" text-anchor="middle" font-size="13" font-weight="600" fill="#1e40af">8. ContextDistiller</text>
+  <text x="580" y="716" text-anchor="middle" font-size="10" fill="#3b82f6">LLM · Enrich context_snapshot</text>
+
+  <line x1="580" y1="726" x2="580" y2="756" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ─── Notes ─── -->
+  <text x="10" y="700" font-size="10" fill="#94a3b8">↓ Both paths</text>
+  <text x="10" y="713" font-size="10" fill="#94a3b8">converge here</text>
+</svg>
+
+<!-- Row 9–11 below SVG (extend naturally) -->
+<div style="max-width:480px;margin:0 auto;padding-top:4px">
+
+  <div style="display:flex;flex-direction:column;align-items:center;gap:0">
+    <!-- Arrow already drawn in SVG, just draw boxes below -->
+
+    <div style="width:240px;background:var(--blue-light);border:1.5px solid var(--blue);border-radius:8px;padding:10px 16px;text-align:center">
+      <div style="font-size:13px;font-weight:600;color:#1e40af">9. ResponsePlanner</div>
+      <div style="font-size:10px;color:#3b82f6;margin-top:2px">LLM (Haiku) · JSON layout plan</div>
+    </div>
+
+    <div style="width:2px;height:24px;background:#475569;position:relative">
+      <div style="position:absolute;bottom:-1px;left:-3px;border:4px solid transparent;border-top:7px solid #475569;border-bottom:none"></div>
+    </div>
+
+    <div style="width:240px;background:var(--blue-light);border:1.5px solid var(--blue);border-radius:8px;padding:10px 16px;text-align:center">
+      <div style="font-size:13px;font-weight:600;color:#1e40af">10. InsightGenerator</div>
+      <div style="font-size:10px;color:#3b82f6;margin-top:2px">LLM · Narasi bahasa Indonesia + Charts</div>
+    </div>
+
+    <div style="width:2px;height:24px;background:#475569;position:relative">
+      <div style="position:absolute;bottom:-1px;left:-3px;border:4px solid transparent;border-top:7px solid #475569;border-bottom:none"></div>
+    </div>
+
+    <div style="width:240px;background:#1e2433;border:1.5px solid #334155;border-radius:8px;padding:10px 16px;text-align:center">
+      <div style="font-size:13px;font-weight:600;color:#f8fafc">Response ke User</div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:2px">insights + chart_configs + SQL</div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end pipeline-wrap -->
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SUMMARY TABLE
+═══════════════════════════════════════════════════════════════ -->
+<div class="section-label">Ringkasan Agents</div>
+<div style="background:var(--white);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:44px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+<table>
+  <tr><th>#</th><th>Agent</th><th>Type</th><th>Model</th><th>Fungsi Utama</th></tr>
+  <tr><td>0</td><td>QueryRewriter</td><td><span class="badge b-llm">LLM</span></td><td>Claude Sonnet</td><td>Normalisasi, inject tahun, resolusi referensi kontekstual, mapping channel code</td></tr>
+  <tr><td>1</td><td>IntentClassifier</td><td><span class="badge b-llm">LLM</span></td><td>Claude Sonnet</td><td>Klasifikasi 9 intent + 5 segment bisnis. Hard override regex untuk "kenapa/mengapa"</td></tr>
+  <tr><td>2</td><td>QueryPlanner</td><td><span class="badge b-llm">LLM</span></td><td>Claude Sonnet</td><td>Single vs multi-step plan. Comparison query → tepat 2 steps</td></tr>
+  <tr><td>3</td><td>SchemaRetriever</td><td><span class="badge b-rag">RAG</span></td><td>–</td><td>ChromaDB + BM25 + Graph → RRF fusion. Tidak menggunakan LLM</td></tr>
+  <tr><td>4</td><td>RetrievalEvaluator</td><td><span class="badge b-llm">LLM</span></td><td>Claude Sonnet</td><td>Filter tabel: ESSENTIAL / OPTIONAL / EXCLUDED</td></tr>
+  <tr><td>5</td><td>SQLGenerator</td><td><span class="badge b-llm">LLM</span></td><td>Claude Sonnet</td><td>Text-to-SQL + few-shot examples + post-process partner_group fix + post-gen metric coverage check (retry jika metrik hilang dari SELECT)</td></tr>
+  <tr><td>6</td><td>SQLValidator</td><td><span class="badge b-hybrid">Hybrid</span></td><td>Claude Sonnet</td><td>4 layer: Syntax (sqlparse) → Security (regex) → Whitelist → AI logic + auto-fix</td></tr>
+  <tr><td>7</td><td>QueryExecutor</td><td><span class="badge b-exec">Executor</span></td><td>–</td><td>Eksekusi SQL PostgreSQL. Error → retry SQLGenerator (max 2×)</td></tr>
+  <tr><td>8</td><td>ContextDistiller</td><td><span class="badge b-llm">LLM</span></td><td>Claude Haiku</td><td>Enrich context_snapshot dengan temuan dinamis dari hasil query</td></tr>
+  <tr><td>9</td><td>ResponsePlanner</td><td><span class="badge b-llm">LLM</span></td><td>Claude Haiku</td><td>JSON layout plan: sections, ui_blocks, key_metrics, response_length</td></tr>
+  <tr><td>10</td><td>InsightGenerator</td><td><span class="badge b-llm">LLM</span></td><td>Claude Sonnet</td><td>Narasi insight bahasa Indonesia. Extended thinking untuk analytics intents. Mandatory findings block: [PARTIAL] disclosure + [KONSENTRASI] cumulative share dari tool_results</td></tr>
+  <tr><td>11</td><td>AnalyticsAgent</td><td><span class="badge b-tool">Tool Calling</span></td><td>Claude Sonnet</td><td>Multi-tool orchestration. Diaktifkan untuk root_cause, ranking, complex_analytics</td></tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     AGENT DETAIL SECTIONS
+═══════════════════════════════════════════════════════════════ -->
+<div class="section-label">Detail Prompt Per Agent</div>
+
+<!-- 0. QueryRewriter -->
+<div class="section" id="s0">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--blue-light);color:var(--blue)">0</div>
+    <div class="section-titles"><h2>QueryRewriter</h2><small>src/agents/query_rewriter.py</small></div>
+    <span class="badge b-llm">LLM</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Pre-processor pertanyaan. Berjalan pertama sebelum semua agent lain. Menjalankan <code>_inject_year()</code> secara deterministik (tanpa LLM) untuk menambahkan "2026" setelah nama bulan, kemudian meminta LLM melakukan 6 transformasi lainnya. Non-fatal: jika gagal, query asli tetap dipakai.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads from State</h4><ul><li>state.query</li><li>state.conversation_history</li></ul></div>
+      <div class="io-box write"><h4>Writes to State</h4><ul><li>state.query (rewritten)</li><li>state.original_query</li><li>state.rewrite_notes</li></ul></div>
+    </div>
+    <div class="prompt-label"><span>PROMPT</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box">Kamu adalah preprocessor pertanyaan untuk chatbot analytics data keuangan Telkomsel.
+
+Database: financial_db
+Tabel tersedia: anomalies, channel_payment, daily_master, daily_product_channel, daily_unique_users, daily_user_partner, financial_internal, hourly_pattern_daily, product_price_list, product_summary
+Entitas kunci:
+- partner: gopay, ovo, dana, shopeepay, linkaja, qris, indomaret, tsel_wallet, finnet
+- channel codes: i1=MyTelkomsel App, f0/f4/f5=UMB, b0/b3/a0=WEC, ig=MyTelkomsel Basic
+- metrik: SR/success rate → kolom success_rate_pct, MoM → perbandingan bulan ini vs bulan lalu, ARPU → total_revenue/unique_users
+Tanggal hari ini: {today}. Semua data ada di tahun 2026.
+
+{history_block}
+
+Tugas: tulis ulang pertanyaan berikut agar lebih presisi untuk SQL generation.
+Terapkan HANYA aturan yang relevan:
+
+0. REFERENSI KONTEKSTUAL — Jika pertanyaan menggunakan kata "ini", "itu", "tadi", "tersebut", "yang sama", atau merujuk implisit ke pertanyaan/hasil sebelumnya, gunakan KONTEKS PERCAKAPAN untuk mengganti referensi tersebut dengan entitas eksplisit.
+
+1. NAMA ENTITAS FUZZY — Jika nama produk, partner, atau entitas mungkin tidak persis sama di database, tambahkan catatan gunakan ILIKE.
+
+2. ANALISIS KORELASI / AKTIF vs TIDAK AKTIF — Jika pertanyaan membandingkan kondisi "ketika X aktif vs tidak aktif" → tambahkan: "Gunakan satu query SQL dengan CTE."
+
+3. REFERENSI VAGUE — Jika ada "produk lainnya" tanpa kriteria → jelaskan kriterianya secara eksplisit.
+
+4. PERIOD WAKTU HILANG — Jika pertanyaan bersifat time-series tetapi tidak menyebut periode → tambahkan "(gunakan rentang data yang tersedia)".
+
+5. NAMA CHANNEL HUMAN-READABLE — Ganti dengan kode database:
+   "MyTelkomsel App" → channel = 'i1'
+   "UMB" → channel IN ('f0','f4','f5')
+   "WEC" → channel IN ('b0','b3','a0')
+   "MyTelkomsel Basic" → channel = 'ig'
+
+6. PARTNER GROUP — Jika pertanyaan menyebut partner atau performa partner: tambahkan "Gunakan kolom partner_group (bukan partner) di daily_master."
+   Pengecualian: jika user eksplisit menyebut sub-channel seperti paybill, wec, basic.
+
+Aturan tambahan:
+- Gunakan bahasa yang sama dengan pertanyaan asli.
+- Perubahan minimal — jangan tambahkan informasi yang tidak diimplikasikan.
+- Jika pertanyaan sudah jelas, kembalikan apa adanya dengan was_rewritten: false.
+
+Balas HANYA dengan JSON valid tanpa markdown:
+{"rewritten": "...", "changes": ["perubahan 1", ...], "was_rewritten": true}
+
+Pertanyaan:
+{query}</div>
+  </div>
+</div>
+
+<!-- 1. IntentClassifier -->
+<div class="section" id="s1">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--blue-light);color:var(--blue)">1</div>
+    <div class="section-titles"><h2>IntentClassifier</h2><small>src/agents/intent_classifier.py · parallel dengan QueryPlanner</small></div>
+    <span class="badge b-llm">LLM</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Mengklasifikasikan query ke 9 kategori intent dan 5 segment bisnis. Hard override post-LLM: pattern regex <code>\b(kenapa|mengapa|apa penyebab|...)\b</code> memaksa kategori menjadi root_cause_analysis. Intent out_of_scope langsung mengembalikan pesan informatif tanpa SQL.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.query</li><li>state.conversation_history</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.intent {category, confidence, reason, sql_strategy, segment}</li><li>state.needs_clarification</li><li>state.clarification_reason</li></ul></div>
+    </div>
+    <div class="prompt-label"><span>PROMPT</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box">You are an intent classifier for a Telkomsel digital payment analytics chatbot.
+
+TODAY'S DATE: {today}
+Resolve relative time: "bulan ini"=current month, "minggu ini"=current week, "hari ini"=today.
+
+STEP 1 — Classify query into ONE intent category:
+  simple_select       — Basic SELECT query, no filters or aggregations
+  filtered_query      — SELECT with WHERE clause filters
+  aggregation         — Requires COUNT, SUM, AVG, MIN, MAX
+  multi_table_join    — Requires JOIN across multiple tables
+  complex_analytics   — Advanced analytics with subqueries, trends, grouping
+  root_cause_analysis — Investigative query asking why something happened, root cause of a spike/drop
+  ranking_analysis    — Queries asking for leaderboards, top/bottom N rankings, who is best/worst
+  recommendation      — Queries asking for suggestions, recommendations, or 'what should we do'
+  out_of_scope        — Requires data not available (forecasting, multi-period >2 months, user cohort, revenue margin)
+  ambiguous           — Unclear query that needs clarification
+
+STEP 2 — Identify the business segment:
+  transactions — Overall volume, revenue, SR, ARPU, users, daily/weekly trends, anomalies
+  products     — Product portfolio, product momentum, product SR, concentration
+  partners     — Partner ecosystem health, partner momentum, partner risk, efficiency
+  channels     — Channel distribution, channel health, channel concentration
+  general      — Cross-segment, root cause, or other
+
+{history_block}USER QUERY: "{query}"
+
+Respond in this EXACT format (4 lines):
+INTENT: [category]
+SEGMENT: [segment]
+CONFIDENCE: [0.0 to 1.0]
+REASON: [brief explanation]
+
+INTENT RULES:
+- "ambiguous" ONLY if query is genuinely vague (e.g. "tampilkan data" with no context)
+- "kenapa/mengapa/apa penyebab/investigasi/analisis mendalam" → ALWAYS "root_cause_analysis"
+- "ranking/peringkat/top N/bottom N/siapa terbaik/siapa terburuk" → "ranking_analysis"
+- "rekomendasi/saran/apa yang harus dilakukan/perlu perhatian" → "recommendation"
+- OUT OF SCOPE if query asks for: forecasting, komparasi 3+ bulan, cohort/retention, revenue margin, pola failure per jam, substitusi channel
+
+Your response:</div>
+  </div>
+</div>
+
+<!-- 2. QueryPlanner -->
+<div class="section" id="s2">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--blue-light);color:var(--blue)">2</div>
+    <div class="section-titles"><h2>QueryPlanner</h2><small>src/agents/query_planner.py · parallel dengan IntentClassifier</small></div>
+    <span class="badge b-llm">LLM</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Memutuskan apakah query dipecah menjadi beberapa sub-query sequential. Untuk perbandingan dua periode/entitas, selalu menghasilkan tepat 2 steps (bukan 3). InsightGenerator yang melakukan synthesis dan math. Max 3 steps. sub_query harus natural language, bukan SQL.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.query</li><li>state.conversation_history</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.execution_plan (list[ExecutionStep])</li><li>state.is_multi_step (bool)</li></ul></div>
+    </div>
+    <div class="prompt-label"><span>PROMPT</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box">You are an analytical query planner for Telkomsel's digital payment platform.
+Your job is to decide whether a user query should be answered in one SQL step or split into multiple sequential steps.
+
+DOMAIN: Telkomsel financial payment analytics — partners (GoPay, OVO, Dana, LinkAja, etc.),
+transaction counts, revenue, success rates, time periods (daily/monthly/quarterly).
+
+{history_block}
+
+SPLIT INTO MULTIPLE STEPS when:
+1. Comparison across time periods (e.g. "April vs Maret", "bulan ini vs bulan lalu")
+2. Root-cause / "kenapa" questions that need context first
+3. Rank then drill-down (e.g. "top 3 partner, lalu lihat detail per hari")
+4. Two independent metrics better answered separately then combined
+
+KEEP AS SINGLE STEP when:
+- Simple aggregation over one time period
+- Single metric query
+- Filtered lookup with no comparison
+
+COMPARISON QUERIES — STRICT RULE:
+Generate EXACTLY 2 steps. NEVER add a 3rd step to compare/analyse results.
+InsightGenerator receives both step results and will automatically compute differences, ratios, and percentages.
+
+WHAT COUNTS AS A VALID STEP — must be a standalone DB query that fetches raw data:
+  CORRECT: "Total revenue dan transaksi tanggal 29 dan 30 Mei 2026"
+  WRONG:   "Bandingkan hasil langkah 1 dengan langkah 2" → analysis, not a DB query
+  WRONG:   "Hitung kenaikan dari data sebelumnya" → math, not a DB query
+
+RULES:
+- Maximum 3 steps. sub_query MUST be natural language — NEVER SQL code.
+- Each sub_query must be self-contained and include time periods explicitly.
+- Return ONLY strict JSON — no markdown.
+
+OUTPUT FORMAT:
+{
+  "is_multi_step": false,
+  "steps": [
+    {"step_number": 1, "description": "...", "sub_query": "...", "depends_on": []}
+  ]
+}
+
+USER QUERY: "{query}"
+JSON:</div>
+  </div>
+</div>
+
+<!-- 3. SchemaRetriever -->
+<div class="section" id="s3">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--green-light);color:var(--green)">3</div>
+    <div class="section-titles"><h2>SchemaRetriever</h2><small>src/agents/schema_retriever.py · Hybrid RAG tanpa LLM</small></div>
+    <span class="badge b-rag">RAG</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Tidak menggunakan LLM. Tiga metode retrieval digabung dengan Reciprocal Rank Fusion (RRF): ChromaDB (semantic), BM25 (keyword), dan Graph (relasi foreign key). Jika komponen tidak tersedia, sistem terdegradasi secara graceful.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.query</li><li>state.database</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.retrieved_tables (list[RetrievedTable])</li><li>state.database (auto-detect)</li></ul></div>
+    </div>
+    <div class="info-box"><b>Tidak ada LLM prompt.</b> Konfigurasi tabel ada di <code>data/schemas/metadata.yaml</code> dan <code>data/schema_graph.json</code>. ChromaDB membutuhkan OPENAI_API_KEY untuk embedding.</div>
+  </div>
+</div>
+
+<!-- 4. RetrievalEvaluator -->
+<div class="section" id="s4">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--blue-light);color:var(--blue)">4</div>
+    <div class="section-titles"><h2>RetrievalEvaluator</h2><small>src/agents/retrieval_evaluator.py</small></div>
+    <span class="badge b-llm">LLM</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Filter tabel yang di-retrieve. Jika ≤2 tabel, evaluasi dilewati. Fallback: jika evaluasi menghasilkan 0 tabel, gunakan semua tabel yang di-retrieve.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.query</li><li>state.retrieved_tables</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.evaluated_tables</li></ul></div>
+    </div>
+    <div class="prompt-label"><span>PROMPT</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box">You are a database schema analyzer. Evaluate which tables are needed to answer the query.
+
+USER QUERY: "{query}"
+
+RETRIEVED TABLES:
+{tables_info}
+-- Format: Table N: db.table_name, Description, Columns, Similarity Score, Relationships
+
+Categorize each table as ESSENTIAL, OPTIONAL, or EXCLUDED.
+- ESSENTIAL: Absolutely required to answer the query
+- OPTIONAL: Provides additional context but not strictly necessary
+- EXCLUDED: Not relevant to this query
+
+Respond in this EXACT format:
+
+ESSENTIAL:
+- [db_name.table_name]: [brief reason]
+
+OPTIONAL:
+- [db_name.table_name]: [brief reason]
+
+EXCLUDED:
+- [db_name.table_name]: [brief reason]
+
+Your response:</div>
+  </div>
+</div>
+
+<!-- 5. SQLGenerator -->
+<div class="section" id="s5">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--blue-light);color:var(--blue)">5</div>
+    <div class="section-titles"><h2>SQLGenerator</h2><small>src/agents/sql_generator.py + config/few_shot_examples.yaml</small></div>
+    <span class="badge b-llm">LLM</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Menghasilkan SQL dari natural language. Menggunakan 7 dari 13 few-shot examples sebagai sinyal terkuat. Post-processing deterministik: regex mengganti <code>partner</code> → <code>partner_group</code> dalam query yang melibatkan daily_master. <b>Post-generation coverage check</b>: <code>_check_metric_coverage()</code> memverifikasi semua metrik yang disebutkan user ada di SELECT — jika ada yang hilang, inject feedback ke prompt dan retry (max 3×). Retry juga berlaku jika LLM tidak menghasilkan valid SQL.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.query</li><li>state.evaluated_tables</li><li>state.intent (strategy hint)</li><li>state.step_results (multi-step)</li><li>state.sql_error (retry context)</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.sql</li></ul></div>
+    </div>
+    <div class="warn-box"><b>Post-process deterministik:</b> <code>re.sub(r'\bpartner\b(?!_group)', 'partner_group', sql)</code> dijalankan setelah setiap LLM call. Hanya berlaku jika daily_master ada di SQL dan tidak ada tabel partner-only (channel_payment, daily_user_partner, anomalies).</div>
+    <div class="info-box"><b>Post-generation coverage check (baru):</b> <code>_check_metric_coverage(query, sql)</code> memeriksa apakah semua metrik yang disebutkan user (berdasarkan <code>_METRIC_KEYWORDS</code>) muncul di SELECT clause. Jika ada yang hilang, <code>_inject_coverage_feedback()</code> menambahkan blok <code>⚠️ COVERAGE CHECK FAILED</code> ke prompt dan loop retry dilanjutkan. Hanya trigger pada query yang menyebut ≥2 metrik berbeda.</div>
+    <div class="prompt-label"><span>PROMPT UTAMA</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box" style="max-height:480px">You are a senior PostgreSQL data engineer working with a Telkomsel financial payment database.
+Your task is to convert natural language questions into safe and correct PostgreSQL SQL queries.
+
+DATE RULES (MANDATORY — violations will cause wrong results):
+- TODAY IS: {today}
+- ALL DATA IS FROM YEAR 2026. NEVER use 2023, 2024, or 2025 in date filters.
+- "bulan ini" → {current_month_start} to {today}
+- "bulan januari/jan" → 2026-01-01 to 2026-01-31
+- "bulan februari/feb" → 2026-02-01 to 2026-02-28
+- "bulan maret/mar" → 2026-03-01 to 2026-03-31
+- "bulan april/apr" → 2026-04-01 to 2026-04-30
+- "bulan mei/may" → 2026-05-01 to 2026-05-31
+- "bulan juni/jun" → 2026-06-01 to 2026-06-30
+- When a month name is given WITHOUT a year, ALWAYS use 2026.
+
+DOMAIN NOTES:
+- PARTNER GROUPING — MANDATORY: table daily_master has TWO partner columns:
+  • partner_group → consolidated brand name (9 values: gopay, dana, ovo, qris, finnet, linkaja, shopeepay, indomaret, telkomsel_wallet)
+  • partner       → sub-channel detail (25 rows: gopay_paybill, gopay_wec, gopay_basic, dana_wec, etc.)
+  RULE: ALWAYS use partner_group when the question is about partner performance, ranking, comparison, or share.
+  WRONG:   GROUP BY partner       ← gives 25 rows, mixes brands with sub-channels
+  CORRECT: GROUP BY partner_group ← gives 9 clean brand rows
+- Linkaja variants — always include ALL: ('linkaja', 'linkaja_wco', 'linkajawco', 'linkaja_app', 'linkaja_basic', 'linkaja_wec')
+- tsel_wallet (in financial_internal/product_summary) = telkomsel_wallet (in daily_master)
+- Success rate formula: ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)
+- "Anomali"/"lonjakan": pct_change = ROUND((current - baseline) / NULLIF(baseline, 0) * 100, 2). Flag >30% significant, >50% extreme.
+
+STRICT RULES:
+1. Only generate a single SELECT query.
+2. Use ONLY tables listed in AVAILABLE TABLES.
+3. Always include LIMIT clause (default LIMIT 100).
+4. Use explicit JOIN conditions.
+5. Use table aliases when joining multiple tables.
+6. Avoid SELECT *.
+7. Do NOT prefix table names with database name.
+
+POSTGRESQL TYPE RULES:
+8. ROUND() requires numeric: ROUND((expr)::numeric, 2) — never ROUND(AVG(col), 2)
+9. Cast numerator to numeric before division to avoid integer division.
+10. Use COUNT(DISTINCT column) when counting unique entities.
+
+PARTNER COLUMN RULE — MANDATORY:
+11. In daily_master, ALWAYS use partner_group (not partner) for GROUP BY, SELECT, WHERE, or ORDER.
+    WRONG:   SELECT partner, SUM(total_trx) FROM daily_master GROUP BY partner
+    CORRECT: SELECT partner_group, SUM(total_trx) FROM daily_master GROUP BY partner_group
+    EXCEPTION: use partner ONLY if question explicitly asks about sub-channels (paybill, wec, basic).
+
+MULTI-METRIC RULE — MANDATORY:
+12. If the user question mentions MORE THAN ONE metric connected by "dan"/"serta"/"juga"/"and"
+    (e.g. "total revenue dan share revenue", "transaksi dan revenue", "volume dan success rate"),
+    the SELECT MUST include ALL mentioned metrics — never omit one silently.
+    WRONG:   user asks "total revenue dan share revenue" → SELECT total_revenue          ← missing share
+    CORRECT: user asks "total revenue dan share revenue" → use a CTE to pre-aggregate, then compute share:
+      WITH base AS (SELECT partner_group, SUM(total_revenue) AS total_revenue
+                    FROM daily_master WHERE ... GROUP BY partner_group)
+      SELECT partner_group, total_revenue,
+             ROUND((total_revenue::numeric / NULLIF(SUM(total_revenue::numeric) OVER (), 0)) * 100, 2)
+               AS revenue_share_pct
+      FROM base ORDER BY revenue_share_pct DESC LIMIT 100;
+
+SQL STYLE RULES:
+13. Use snake_case column names exactly as provided.
+14. Prefer CTE (WITH ...) for complex queries.
+15. Do not generate INSERT, UPDATE, DELETE, or DROP statements.
+
+{history_block}{intent_hint}
+{error_block}
+{schema_context}
+
+EXAMPLE QUERIES:
+
+Example 1: berapa total transaksi bulan April 2026?
+SELECT SUM(total_trx) AS total_transaksi FROM daily_master
+WHERE date >= '2026-04-01' AND date <= '2026-04-30';
+
+Example 2: success rate per partner bulan Mei 2026
+SELECT partner_group,
+  ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct,
+  SUM(total_trx) AS total_transaksi
+FROM daily_master WHERE date >= '2026-05-01' AND date <= '2026-05-31'
+GROUP BY partner_group ORDER BY success_rate_pct DESC;
+
+Example 3: total revenue gopay vs ovo vs dana bulan Juni 2026
+SELECT partner_group, SUM(total_revenue) AS total_revenue, SUM(total_trx) AS total_transaksi
+FROM daily_master WHERE date >= '2026-06-01' AND date <= '2026-06-30'
+  AND partner_group IN ('gopay', 'ovo', 'dana')
+GROUP BY partner_group ORDER BY total_revenue DESC;
+
+Example 4: partner yang mengalami lonjakan ekstrim bulan Juni 2026
+WITH current_period AS (
+  SELECT partner_group, SUM(total_trx) AS trx_current, SUM(total_revenue) AS rev_current
+  FROM daily_master WHERE date >= '2026-06-01' AND date <= '2026-06-30' GROUP BY partner_group
+),
+baseline_period AS (
+  SELECT partner_group, SUM(total_trx) AS trx_baseline, SUM(total_revenue) AS rev_baseline
+  FROM daily_master WHERE date >= '2026-05-01' AND date <= '2026-05-31' GROUP BY partner_group
+)
+SELECT c.partner_group, c.trx_current, b.trx_baseline,
+  ROUND((c.trx_current - b.trx_baseline)::numeric / NULLIF(b.trx_baseline, 0) * 100, 2) AS trx_pct_change
+FROM current_period c JOIN baseline_period b USING (partner_group)
+ORDER BY ABS(trx_pct_change) DESC LIMIT 20;
+
+Example 5: partner yang konsisten tumbuh dari Maret sampai Juni 2026
+WITH monthly AS (
+  SELECT partner_group, TO_CHAR(date, 'YYYY-MM') AS bulan, SUM(total_trx) AS total_trx
+  FROM daily_master WHERE date >= '2026-03-01' AND date <= '2026-06-30'
+  GROUP BY partner_group, TO_CHAR(date, 'YYYY-MM')
+),
+with_growth AS (
+  SELECT partner_group, bulan, total_trx,
+    LAG(total_trx) OVER (PARTITION BY partner_group ORDER BY bulan) AS prev_trx
+  FROM monthly
+)
+SELECT partner_group, BOOL_AND(total_trx > prev_trx) AS konsisten_naik,
+  ROUND((MAX(total_trx) - MIN(total_trx))::numeric / NULLIF(MIN(total_trx), 0) * 100, 1) AS total_growth_pct
+FROM with_growth WHERE prev_trx IS NOT NULL
+GROUP BY partner_group HAVING BOOL_AND(total_trx > prev_trx)
+ORDER BY total_growth_pct DESC;
+
+{prev_steps_block}
+
+Generate SQL for:
+{query}
+
+IMPORTANT: Return ONLY the SQL query. No explanation. Start with SELECT or WITH.
+SQL:</div>
+    <button class="expand-btn" onclick="expandPrompt(this)">▼ Tampilkan semua</button>
+  </div>
+</div>
+
+<!-- 6. SQLValidator -->
+<div class="section" id="s6">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--amber-light);color:var(--amber)">6</div>
+    <div class="section-titles"><h2>SQLValidator</h2><small>src/agents/sql_validator.py · 4 validation layers</small></div>
+    <span class="badge b-hybrid">Hybrid</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Validasi berlapis. Layer 1–3 rule-based (tidak butuh LLM). Layer 4 opsional. Jika validasi gagal dan AI validation aktif, auto-fix dipanggil. Jika masih gagal, raise SQLValidationError.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.sql</li><li>state.query</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.validated_sql</li></ul></div>
+    </div>
+    <table>
+      <tr><th>Layer</th><th>Tipe</th><th>Validasi</th></tr>
+      <tr><td>1. Syntax</td><td>Rule (sqlparse)</td><td>SQL valid, tidak empty</td></tr>
+      <tr><td>2. Security</td><td>Rule (regex)</td><td>Block: DROP/DELETE/INSERT/UPDATE/CREATE/TRUNCATE. No comments. No multi-statement. Hanya SELECT/WITH.</td></tr>
+      <tr><td>3. Table Whitelist</td><td>Rule</td><td>Hanya tabel di Config.ALLOWED_TABLES. CTE names diexempt.</td></tr>
+      <tr><td>4. AI Logic (opsional)</td><td>LLM</td><td>Logic correctness check. Skip jika ada EXTRACT/DATE_TRUNC.</td></tr>
+    </table>
+    <div class="prompt-label"><span>PROMPT — Layer 4: AI Logic Check</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box">You are a SQL validator. Check if this SQL correctly answers the user's question.
+
+USER QUESTION: "{query}"
+
+SQL:
+{sql}
+
+Respond in this EXACT format:
+VALID: [YES or NO]
+ERRORS: [logic errors, one per line, or "None"]
+WARNINGS: [warnings, one per line, or "None"]
+
+Your response:</div>
+    <div class="prompt-label" style="margin-top:16px"><span>PROMPT — Auto-Fix</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box">You are a SQL fixer. Fix the errors in this SQL query.
+
+USER QUESTION: "{query}"
+
+CURRENT SQL (with errors):
+{sql}
+
+ERRORS:
+{errors}
+
+Return ONLY the corrected SQL, no explanation.
+
+Corrected SQL:</div>
+  </div>
+</div>
+
+<!-- 7. QueryExecutor -->
+<div class="section" id="s7">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--red-light);color:var(--red)">7</div>
+    <div class="section-titles"><h2>QueryExecutor</h2><small>src/agents/query_executor.py · SQLAlchemy pool</small></div>
+    <span class="badge b-exec">Executor</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Mengeksekusi validated SQL ke PostgreSQL. Tidak menggunakan LLM. Jika QueryExecutionError terjadi, error message ditulis ke state.sql_error dan pipeline kembali ke SQLGenerator untuk retry (max 2×).</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.validated_sql</li><li>state.database</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.query_result (list[dict])</li><li>state.row_count</li></ul></div>
+    </div>
+    <div class="info-box">Tidak ada LLM prompt. Retry loop ada di <code>pipeline._run_sql_pipeline()</code>: error → state.sql_error → SQLGenerator (with error_block in prompt) → SQLValidator → QueryExecutor lagi. Maksimal _SQL_RETRY_LIMIT = 2 kali.</div>
+  </div>
+</div>
+
+<!-- 8. ContextDistiller -->
+<div class="section" id="s8">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--blue-light);color:var(--blue)">8</div>
+    <div class="section-titles"><h2>ContextDistiller</h2><small>src/utils/context_distiller.py</small></div>
+    <span class="badge b-llm">LLM (Haiku)</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Layer enrichment dinamis. Mengekstrak temuan penting dari hasil query (puncak, lembah, anomali, rate changes) dan menambahkannya ke context_snapshot sebagai bullet points terstruktur. Memberi InsightGenerator konteks yang lebih kaya.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.query_result</li><li>state.validated_sql</li><li>state.intent</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.context_snapshot (enriched append)</li></ul></div>
+    </div>
+  </div>
+</div>
+
+<!-- 9. ResponsePlanner -->
+<div class="section" id="s9">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--blue-light);color:var(--blue)">9</div>
+    <div class="section-titles"><h2>ResponsePlanner</h2><small>src/agents/response_planner.py · menggunakan model murah</small></div>
+    <span class="badge b-llm">LLM (Haiku)</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Merencanakan struktur output sebelum InsightGenerator. Menggunakan Claude Haiku (model murah) karena hanya klasifikasi struktural JSON, bukan prose generation.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.query</li><li>state.intent</li><li>state.query_result (shape only)</li><li>state.is_multi_step</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.layout_plan (dict)</li></ul></div>
+    </div>
+    <div class="prompt-label"><span>PROMPT</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box">You are a response layout planner for a data analytics chatbot about Telkomsel's digital payment platform.
+Given the query, business segment, intent, and data shape, output a JSON layout plan.
+
+QUERY: "{query}"
+SEGMENT: {segment}
+INTENT: {intent_cat}
+DATA: {data_shape}
+
+Return ONLY valid JSON — no explanation, no markdown fences:
+{
+  "narrative_sections": [
+    {"title": null, "instruction": "one concise instruction for the writer"},
+    {"title": "## Section Title", "instruction": "..."}
+  ],
+  "ui_blocks": ["kpi_grid"|"bar_chart"|"line_chart"|"anomaly_callout"|"data_table"|"ranking_table"],
+  "key_metrics": ["col_name", ...],
+  "anomaly_flag": true|false,
+  "response_length": "brief"|"standard"|"detailed"
+}
+
+RULES:
+- narrative_sections: 1–4 entries. First section always title=null (direct 1–2 sentence answer + SEHAT/PERHATIAN/KRITIS verdict).
+- Section instructions MUST specify bullet points format.
+- Segment-aware section titles:
+  TRANSACTIONS: "## Performa Harian", "## Tren Volume", "## Success Rate", "## Anomali"
+  PRODUCTS: "## Portfolio Produk", "## Momentum Pertumbuhan", "## Produk Bermasalah"
+  PARTNERS: "## Kesehatan Ekosistem", "## Momentum Partner", "## Partner Berisiko"
+  CHANNELS: "## Distribusi Channel", "## Performa Channel"
+- ui_blocks: kpi_grid if ≤6 rows ≤4 cols; bar_chart for rankings; line_chart for time series; anomaly_callout only if anomaly_flag=true; data_table for raw detail.
+- response_length: "brief" single-scalar; "standard" most queries; "detailed" for root_cause/complex/ranking.
+- key_metrics: max 4 column names from data.
+- Output ONLY the JSON object.</div>
+  </div>
+</div>
+
+<!-- 10. InsightGenerator -->
+<div class="section" id="s10">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--blue-light);color:var(--blue)">10</div>
+    <div class="section-titles"><h2>InsightGenerator</h2><small>src/agents/insight_generator.py · final output</small></div>
+    <span class="badge b-llm">LLM</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Agent terakhir yang menghasilkan narasi bahasa Indonesia. Dua mode: single-step dan multi-step. Juga membangun chart_configs untuk Chart.js secara programatik. Extended thinking diaktifkan untuk intent: root_cause_analysis, complex_analytics, ranking_analysis.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.query + state.validated_sql</li><li>state.query_result + state.row_count</li><li>state.context_snapshot (baseline bisnis)</li><li>state.layout_plan (dari ResponsePlanner)</li><li>state.is_multi_step + state.step_results</li><li>state.tool_results (AnalyticsAgent path — untuk MANDATORY FINDINGS)</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.insights (str narasi)</li><li>state.chart_configs (list[dict])</li><li>state.chart_config (first config)</li></ul></div>
+    </div>
+    <div class="info-box"><b>Mandatory findings block (baru — AnalyticsAgent path):</b> Sebelum SYNTHESIS RULES, InsightGenerator menghitung <code>partial_display_block</code> dari <code>state.tool_results</code>. Jika <code>actual_entity_count &gt; row_count</code>, blok <b>[PARTIAL]</b> diinjeksi: <i>"Dari X entitas yang tersedia, ditampilkan Y teratas."</i> Jika <code>cumulative_trx_share_pct &gt; 0</code>, blok <b>[KONSENTRASI]</b> diinjeksi: <i>"Y entitas teratas merepresentasikan Z% dari total transaksi dan W% dari total revenue."</i> Kedua angka TIDAK BOLEH diubah LLM.</div>
+    <div class="prompt-label"><span>PROMPT A — Single-Step Query</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box" style="max-height:480px">You are a data analyst for Telkomsel's digital payment platform. Generate insights in conversational Indonesian.
+
+{context_snapshot}
+{history_block}
+
+USER QUESTION: "{query}"
+
+ELABORASI WAJIB — Jawaban harus minimal 4–5 kalimat. Jangan berhenti di satu fakta.
+Bahkan ketika RESULTS hanya berisi satu angka, WAJIB elaborasi menggunakan CONTEXT SNAPSHOT di atas.
+Jawab poin-poin berikut menggunakan struktur markdown (## sub-judul, **bold** angka):
+
+1. JAWAB LANGSUNG: sebutkan angkanya dengan format yang benar.
+2. KOMPARASI: bandingkan angka ini dengan data di CONTEXT SNAPSHOT.
+3. POSISI: apakah angka ini tinggi, rendah, atau normal? Gunakan BUSINESS THRESHOLDS di bawah.
+4. IMPLIKASI: apa yang angka ini berarti?
+5. KONTEKS TAMBAHAN: satu hal lain yang relevan jika ada.
+
+DILARANG mengarang angka yang tidak ada di RESULTS maupun CONTEXT SNAPSHOT.
+
+SQL EXECUTED: {validated_sql}
+RESULTS ({row_count} rows): {results_text}
+
+CRITICAL — Number formatting:
+- TRANSACTION COUNTS (total_trx, success_trx, unique_users_daily): INTEGER COUNTS — NEVER Rupiah
+  Under 1M: "52.000 transaksi" · 1M-999M: "52,6 juta transaksi" · 1B+: "1,2 miliar transaksi"
+- REVENUE (total_revenue, net_revenue, net_gap): Rupiah — "Rp 252,3 juta" · "Rp 1,2 miliar"
+- PERCENTAGES (success_rate_pct): "92,5%"
+
+FORMAT OUTPUT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Pembuka: 1–2 kalimat singkat langsung menjawab (tanpa sub-judul)
+✓ Section berikutnya: ## Sub-Judul → BULLET POINTS (- ), maks 1–2 kalimat per bullet
+✓ Angka kunci WAJIB di-bold: **28,4 juta**, **Rp 3,2 miliar**, **99,2%**
+✓ Ranking → numbered list (1. 2. 3.)
+✗ DILARANG: paragraf >2 kalimat tanpa bullet
+✗ DILARANG: blok kode SQL, backticks
+✗ DILARANG: nama kolom teknis (total_trx → "transaksi")
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BUSINESS THRESHOLDS:
+| Metrik              | SEHAT       | PERHATIAN      | KRITIS    |
+| MoM Volume Growth   | > 0%        | -10% s/d 0%    | < -10%    |
+| Success Rate        | > 98%       | 95% – 98%      | < 95%     |
+| Konsentrasi Top-2   | < 50%       | 50% – 70%      | > 70%     |
+| DoD Spike/Drop      | < ±20%      | ±20% – 40%     | > ±40%    |
+| Perubahan transaksi | < 15%       | 15% – 35%      | > 35%     |
+| Perubahan revenue   | < 10%       | 10% – 25%      | > 25%     |
+
+VERDICT WAJIB: setiap jawaban harus menyebut SEHAT / PERHATIAN / KRITIS — [1 kalimat alasan]
+KONTEKS WAKTU WAJIB: selalu sebut konteks — "vs kemarin", "vs bulan lalu", "vs rata-rata"
+
+PERIODE PARSIAL: jika bulan belum penuh, selalu sebutkan "data Juni mencakup X hari pertama".
+
+{segment_guide}
+{layout_block}
+
+Your insights in Indonesian:</div>
+    <button class="expand-btn" onclick="expandPrompt(this)">▼ Tampilkan semua</button>
+
+    <div class="prompt-label" style="margin-top:16px"><span>PROMPT B — Multi-Step Query (synthesis)</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box" style="max-height:400px">You are a data analyst for Telkomsel's digital payment platform.
+
+{context_snapshot}{history_block}
+
+USER ORIGINAL QUESTION: "{query}"
+
+ANALYSIS STEPS EXECUTED:
+{steps_block}
+-- Format: STEP N: {description} | SQL: {sql} | Results ({row_count} rows): [{...}]
+
+[Number formatting rules — same as single-step prompt above]
+
+COMPARISON INSTRUCTIONS — when multiple steps represent two groups:
+1. Compute absolute difference between groups
+2. Compute ratio (e.g. "X kali lipat lebih tinggi")
+3. Compute percentage change: ((A - B) / B) * 100
+4. State clearly which group is higher/lower
+5. Do NOT skip the math — calculate from raw step results
+
+BUSINESS THRESHOLDS: [same as single-step]
+VERDICT WAJIB: SEHAT / PERHATIAN / KRITIS — [1 kalimat alasan]
+Nilai 99.x% adalah SEHAT — jangan flag sebagai bermasalah.
+
+DATA INTEGRITY: HANYA gunakan angka dari step results. DILARANG mengarang.
+
+SYNTHESIS RULES:
+1. Lead with direct answer to original question
+2. Show key numbers from each step
+3. State comparison with computed ratio/percentage
+4. Elaborate: konteks tren, outlier, implikasi bisnis
+5. If a step has 0 rows, acknowledge briefly
+
+{layout_block}
+
+Your insights in Indonesian:</div>
+    <button class="expand-btn" onclick="expandPrompt(this)">▼ Tampilkan semua</button>
+  </div>
+</div>
+
+<!-- 11. AnalyticsAgent -->
+<div class="section" id="s11">
+  <div class="section-head" onclick="toggle(this)">
+    <div class="section-num" style="background:var(--purple-light);color:var(--purple)">11</div>
+    <div class="section-titles"><h2>AnalyticsAgent</h2><small>src/agents/analytics_agent.py · max 8 tool iterations</small></div>
+    <span class="badge b-tool">Tool Calling</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="section-body">
+    <p class="desc">Agent investigasi berbasis tool calling. Aktif untuk intent: root_cause_analysis, ranking_analysis, complex_analytics. AI memilih tool secara mandiri berdasarkan pertanyaan dan hasil iterasi sebelumnya. Menggunakan pre-defined SQL tools — tidak generate SQL ad-hoc. Dedup: jika tool dipanggil dengan argumen yang sama, sistem inject stop hint.</p>
+    <div class="io-grid">
+      <div class="io-box"><h4>Reads</h4><ul><li>state.query</li><li>state.database</li><li>state.context_snapshot</li></ul></div>
+      <div class="io-box write"><h4>Writes</h4><ul><li>state.insights</li><li>state.tool_calls (log)</li><li>state.query_result + state.validated_sql + state.row_count</li><li>state.tool_results (list[ToolCallResult] — termasuk actual_entity_count, cumulative_trx_share_pct, cumulative_rev_share_pct, dimension)</li></ul></div>
+    </div>
+    <div class="prompt-label"><span>SYSTEM PROMPT</span><button class="copy-btn" onclick="copyPrompt(this)">Copy</button></div>
+    <div class="prompt-box">Kamu adalah analis data senior untuk platform pembayaran digital Telkomsel.
+Gunakan tools yang tersedia untuk menjawab pertanyaan analitik secara sistematis.
+
+Data tersedia: Maret 2026 – Juni 2026.
+Partner: QRIS, Dana, GoPay, OVO, Finnet, ShopeePay, LinkAja, Indomaret, Telkomsel Wallet.
+Channel: i1, a0, b0, b3, f0, f4, f5, ig.
+
+⚠️ ATURAN WAJIB — TIDAK BOLEH DILANGGAR:
+1. Kamu HARUS memanggil minimal 1 tool sebelum memberikan jawaban apapun.
+2. Jangan pernah menjawab langsung dari pengetahuan umum — semua angka harus berasal dari tool call.
+3. Jika tidak yakin tool mana yang tepat, mulai dengan get_summary terlebih dahulu.
+4. Angka yang tidak berasal dari tool call dianggap halusinasi dan TIDAK BOLEH disebutkan.
+
+Panduan pemilihan tool:
+- "anomali", "lonjakan", "penurunan tiba-tiba", "tidak wajar" → WAJIB mulai dengan detect_anomaly
+- "bandingkan", "vs", "dibanding bulan lalu", "perubahan" → WAJIB mulai dengan compare_periods
+- "distribusi", "breakdown", "kontributor", "siapa yang dominan" → mulai dengan get_distribution
+- "tren", "pertumbuhan", "dari waktu ke waktu", "setiap bulan" → mulai dengan get_trend
+- "jam", "pukul", "waktu puncak", "peak hour" → gunakan get_hourly_pattern
+- Pertanyaan umum tanpa kata kunci di atas → mulai dengan get_summary
+
+Strategi investigasi:
+1. Tool pertama dipilih berdasarkan panduan di atas
+2. Gunakan compare_periods untuk membuktikan ada/tidaknya perubahan vs baseline
+3. Drill down dengan get_distribution untuk tahu kontributor utama jika perlu
+4. Berhenti jika pertanyaan sudah terjawab — jangan over-investigate
+
+BUSINESS THRESHOLDS:
+- Success Rate: ≥97% = normal, 95–96.99% = perlu perhatian, <95% = kritis
+- Perubahan transaksi harian vs baseline: <15% = normal, 15–35% = signifikan, >35% = ekstrim
+- Perubahan revenue vs baseline: <10% = normal, 10–25% = signifikan, >25% = ekstrim
+- Lonjakan positif >35% biasanya promo/event; negatif >35% indikasi gangguan sistem
+
+PERIODE PARSIAL: jika bulan belum penuh, SELALU sebutkan "data X mencakup Y hari pertama".
+Perbandingan bulan parsial vs bulan penuh harus dinormalisasi per hari.
+
+Dalam insight final:
+- Jawab pertanyaan langsung di kalimat pertama
+- Sertakan angka konkret (Rp X miliar / X juta transaksi / X%)
+- Jelaskan normal atau tidak dengan menyebut angka baseline
+- Bahasa Indonesia, 3–5 kalimat padat dan informatif</div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ANALYTICS TOOLS -->
+<div class="section-label" id="tools">Analytics Tools (Pre-defined SQL)</div>
+<div class="tools-grid">
+  <div class="tool-card">
+    <h4>get_summary(period_start, period_end, dimension)</h4>
+    <p>Total transaksi, revenue, dan SR untuk suatu periode. dimension: all | partner | channel | product</p>
+    <ul class="tool-params">
+      <li><b>partner</b>: GROUP BY partner_group FROM daily_master → LIMIT 50</li>
+      <li><b>channel</b>: GROUP BY channel FROM channel_payment → LIMIT 50</li>
+      <li><b>product</b>: GROUP BY product_name FROM product_summary → LIMIT 50</li>
+      <li><b>all</b>: SUM semua daily_master (satu baris hasil)</li>
+    </ul>
+  </div>
+  <div class="tool-card">
+    <h4>compare_periods(period_a_*, period_b_*, dimension)</h4>
+    <p>Bandingkan dua periode, hitung % perubahan. FULL OUTER JOIN kedua periode.</p>
+    <ul class="tool-params">
+      <li>Returns: entity, trx_a, trx_b, <b>trx_pct_change</b>, rev_a, rev_b, <b>rev_pct_change</b></li>
+      <li>ORDER BY ABS(trx_pct_change) DESC LIMIT 30</li>
+    </ul>
+  </div>
+  <div class="tool-card">
+    <h4>detect_anomaly(target_date, dimension, threshold_pct=30)</h4>
+    <p>Deteksi entitas dengan perubahan >threshold% vs rata-rata 7 hari sebelumnya.</p>
+    <ul class="tool-params">
+      <li>baseline: AVG daily_trx dari (target_date - 7 hari) hingga (target_date - 1 hari)</li>
+      <li>Returns: entity, trx_target, <b>trx_baseline_avg</b>, <b>trx_pct_change</b>, <b>is_anomaly</b></li>
+    </ul>
+  </div>
+  <div class="tool-card">
+    <h4>get_trend(start_date, end_date, dimension, granularity)</h4>
+    <p>Tren per periode. granularity: daily | weekly | monthly</p>
+    <ul class="tool-params">
+      <li><b>all</b>: total platform per period (daily_master)</li>
+      <li><b>partner</b>: top 5 partner_group by total_trx, tren per period</li>
+      <li><b>channel</b>: top 5 channel, tren per period</li>
+    </ul>
+  </div>
+  <div class="tool-card">
+    <h4>get_distribution(period_start, period_end, dimension, top_n=30)</h4>
+    <p>Distribusi kontribusi (%) setiap entitas terhadap total. Display cap: max 20 baris (bukan 30). Pre-flight COUNT(DISTINCT) untuk actual_entity_count.</p>
+    <ul class="tool-params">
+      <li>Returns: entity, total_trx, <b>trx_share_pct</b>, total_revenue, <b>rev_share_pct</b></li>
+      <li>ORDER BY total_trx DESC LIMIT min(top_n, 20, actual_entity_count)</li>
+      <li><b>COALESCE normalisasi product</b>: NULL + 'NULL' + '' → '[Tidak Teridentifikasi]'</li>
+      <li>Extra return fields: <b>actual_entity_count</b>, <b>cumulative_trx_share_pct</b>, <b>cumulative_rev_share_pct</b>, <b>dimension</b></li>
+    </ul>
+  </div>
+  <div class="tool-card">
+    <h4>get_hourly_pattern(target_date)</h4>
+    <p>Pola transaksi per jam untuk satu tanggal. FROM hourly_pattern_daily.</p>
+    <ul class="tool-params">
+      <li>Returns: hour (0–23), total_trx, success_rate_pct</li>
+    </ul>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- SHARED DATA MODELS -->
+<div class="section-label">Shared Data Models</div>
+<div style="background:var(--white);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:44px;box-shadow:0 1px 3px rgba(0,0,0,.04);padding:20px 24px">
+  <p class="desc" style="margin-bottom:12px"><b>ToolCallResult</b> — dataclass di <code>src/models/agent_state.py</code>. Diisi oleh AnalyticsAgent setelah setiap tool call; dikonsumsi oleh InsightGenerator untuk mandatory findings.</p>
+  <table>
+    <tr><th>Field</th><th>Tipe</th><th>Diisi oleh</th><th>Keterangan</th></tr>
+    <tr><td><code>tool_name</code></td><td>str</td><td>AnalyticsAgent</td><td>Nama tool: get_distribution, compare_periods, dll.</td></tr>
+    <tr><td><code>data</code></td><td>list[dict]</td><td>AnalyticsAgent</td><td>Baris hasil tool</td></tr>
+    <tr><td><code>row_count</code></td><td>int</td><td>AnalyticsAgent</td><td>Jumlah baris yang DITAMPILKAN (≤ display cap)</td></tr>
+    <tr><td><code>sql_or_params</code></td><td>str</td><td>AnalyticsAgent</td><td>SQL yang dieksekusi</td></tr>
+    <tr><td><code>description</code></td><td>str</td><td>AnalyticsAgent</td><td>Deskripsi human-readable hasil tool</td></tr>
+    <tr><td><code>actual_entity_count</code></td><td>int</td><td>get_distribution</td><td>Total entitas unik di DB (setelah COALESCE). Untuk [PARTIAL] disclosure.</td></tr>
+    <tr><td><code>cumulative_trx_share_pct</code></td><td>float</td><td>get_distribution</td><td>Jumlah trx_share_pct dari semua baris yang ditampilkan. Untuk [KONSENTRASI] finding.</td></tr>
+    <tr><td><code>cumulative_rev_share_pct</code></td><td>float</td><td>get_distribution</td><td>Jumlah rev_share_pct dari semua baris yang ditampilkan.</td></tr>
+    <tr><td><code>dimension</code></td><td>str</td><td>get_distribution</td><td>"partner" | "product" | "channel". Dipakai di label insight.</td></tr>
+  </table>
+</div>
+
+<!-- DATA SCHEMA -->
+<div class="section-label" id="schema">Data Schema (PostgreSQL · 10 Tables)</div>
+<div class="schema-grid">
+  <div class="schema-card">
+    <h4>daily_master</h4>
+    <div class="cols">
+      Tabel transaksi utama. Data Maret–Juni 2026.<br>
+      <b>date</b>, <span class="highlight">partner_group</span> (9 brands — gunakan ini!), <b>partner</b> (25 sub-channels — jangan pakai untuk GROUP BY), <b>channel</b>, <b>product_name</b>, <b>total_trx</b>, <b>success_trx</b>, <b>fail_trx</b>, <b>total_revenue</b>, <b>success_rate_pct</b>
+    </div>
+  </div>
+  <div class="schema-card">
+    <h4>channel_payment</h4>
+    <div class="cols">Per-channel daily metrics.<br><b>date</b>, <b>channel</b>, <b>total_trx</b>, <b>total_revenue</b>, <b>success_rate_pct</b></div>
+  </div>
+  <div class="schema-card">
+    <h4>product_summary</h4>
+    <div class="cols">Per-product daily metrics.<br><b>date</b>, <b>product_name</b>, <b>total_trx</b>, <b>success_trx</b>, <b>total_revenue</b><br>⚠️ <span class="highlight">product_name</span> dapat berisi SQL NULL, string 'NULL', atau '' — get_distribution meng-COALESCE ketiganya jadi <b>[Tidak Teridentifikasi]</b>.</div>
+  </div>
+  <div class="schema-card">
+    <h4>daily_unique_users</h4>
+    <div class="cols"><b>date</b>, <b>month</b>, <b>unique_users</b>, <span class="highlight">unique_users_daily</span>, <b>unique_users_monthly</b></div>
+  </div>
+  <div class="schema-card">
+    <h4>hourly_pattern_daily</h4>
+    <div class="cols"><b>date</b>, <b>hour</b> (0–23), <b>total_trx</b>, <b>success_rate_pct</b></div>
+  </div>
+  <div class="schema-card">
+    <h4>financial_internal</h4>
+    <div class="cols">Rekonsiliasi internal.<br><b>date</b>, <b>payment_provider</b>, <b>total_net_revenue</b>, <b>total_platform_fee</b>, <b>net_gap</b></div>
+  </div>
+  <div class="schema-card">
+    <h4>anomalies</h4>
+    <div class="cols">Pre-computed anomaly flags.<br><b>date</b>, <b>partner</b>, <b>metric</b>, <b>value</b>, <b>baseline</b>, <b>pct_change</b>, <b>severity</b></div>
+  </div>
+  <div class="schema-card">
+    <h4>daily_product_channel</h4>
+    <div class="cols"><b>date</b>, <b>product_name</b>, <b>channel</b>, <b>total_trx</b>, <b>total_revenue</b></div>
+  </div>
+  <div class="schema-card">
+    <h4>daily_user_partner</h4>
+    <div class="cols"><b>date</b>, <b>partner</b>, <b>unique_users</b></div>
+  </div>
+  <div class="schema-card">
+    <h4>product_price_list</h4>
+    <div class="cols"><b>product_name</b>, <b>face_value</b>, <b>price</b>, <b>category</b></div>
+  </div>
+</div>
+
+</div><!-- end .page -->
+
+<script>
+function toggle(head) { head.parentElement.classList.toggle('open'); }
+
+function copyPrompt(btn) {
+  const box = btn.closest('.section-body').querySelector('.prompt-box');
+  if (!box) return;
+  navigator.clipboard.writeText(box.textContent).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = orig, 1800);
+  });
+}
+
+function expandPrompt(btn) {
+  const box = btn.previousElementSibling;
+  const expanded = box.classList.toggle('expanded');
+  btn.textContent = expanded ? '▲ Lipat' : '▼ Tampilkan semua';
+}
+</script>
+</body>
+</html>

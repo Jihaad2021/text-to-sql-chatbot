@@ -1,32 +1,34 @@
 # Few-Shot SQL Examples — Telkomsel Financial DB
-# NOTE: Always use ::numeric cast before ROUND() to avoid PostgreSQL type errors.
+# IMPORTANT: daily_master has partner_group (9 brand values) and partner (25 sub-channel values).
+# ALWAYS use partner_group for any partner-level GROUP BY, SELECT, WHERE, or ranking.
+# Only use partner when the question explicitly asks about sub-channels (paybill, wec, basic).
+#
+# First 7 entries are loaded as few-shot examples by SQLGenerator (self.examples[:7]).
+# Ordering rationale: examples 6-7 (lonjakan ekstrim, MoM comparison) were moved up from
+# positions 11 and 13 to cover CTE 2-period, multi-metric, and ::numeric cast patterns.
+# Linkaja variant and hourly pattern examples moved below position 7 (still available
+# for reference, not loaded as few-shot).
 
 examples:
+  # ── Loaded as few-shot (positions 1-7) ───────────────────────────────────────
+
   - question: "berapa total transaksi bulan April 2026?"
     sql: |
       SELECT SUM(total_trx) AS total_transaksi
       FROM daily_master
-      WHERE date >= '2026-04-01' AND date <= '2026-04-30';
+      WHERE date >= '2026-04-01' AND date <= '2026-04-30'
+      LIMIT 100;
 
   - question: "success rate per partner bulan Mei 2026"
     sql: |
       SELECT
-        partner,
+        partner_group,
         ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct,
         SUM(total_trx) AS total_transaksi
       FROM daily_master
-      WHERE date >= '2026-05-01' AND date <= '2026-05-06'
-      GROUP BY partner
+      WHERE date >= '2026-05-01' AND date <= '2026-05-31'
+      GROUP BY partner_group
       ORDER BY success_rate_pct DESC;
-
-  - question: "total transaksi linkaja termasuk semua variannya"
-    sql: |
-      SELECT
-        SUM(total_trx)     AS total_transaksi,
-        SUM(total_revenue) AS total_revenue,
-        ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct
-      FROM daily_master
-      WHERE partner IN ('linkaja', 'linkaja_wco', 'linkajawco', 'linkaja_app', 'linkaja_basic', 'linkaja_wec');
 
   - question: "10 produk dengan revenue tertinggi"
     sql: |
@@ -39,31 +41,17 @@ examples:
       ORDER BY total_revenue DESC
       LIMIT 10;
 
-  - question: "total revenue gopay vs ovo vs dana"
+  - question: "total revenue gopay vs ovo vs dana bulan Juni 2026"
     sql: |
       SELECT
-        CASE
-          WHEN partner IN ('gopay', 'gopay_basic', 'gopay_wec') THEN 'gopay'
-          WHEN partner IN ('ovo', 'ovo_wec')                    THEN 'ovo'
-          WHEN partner IN ('dana', 'dana_wec')                  THEN 'dana'
-        END AS partner_group,
+        partner_group,
         SUM(total_revenue) AS total_revenue,
         SUM(total_trx)     AS total_transaksi
       FROM daily_master
-      WHERE partner IN ('gopay','gopay_basic','gopay_wec','ovo','ovo_wec','dana','dana_wec')
+      WHERE date >= '2026-06-01' AND date <= '2026-06-30'
+        AND partner_group IN ('gopay', 'ovo', 'dana')
       GROUP BY partner_group
       ORDER BY total_revenue DESC;
-
-  - question: "jam berapa paling banyak transaksi?"
-    sql: |
-      SELECT
-        hour AS jam,
-        SUM(total_trx) AS total_transaksi,
-        ROUND(AVG(success_rate_pct)::numeric, 2) AS avg_success_rate
-      FROM hourly_pattern_daily
-      GROUP BY hour
-      ORDER BY total_transaksi DESC
-      LIMIT 5;
 
   - question: "tren transaksi harian bulan April 2026"
     sql: |
@@ -77,10 +65,93 @@ examples:
       GROUP BY date
       ORDER BY date;
 
+  - question: "apakah ada partner yang mengalami lonjakan ekstrim bulan Juni 2026?"
+    sql: |
+      WITH current_period AS (
+        SELECT
+          partner_group,
+          SUM(total_trx)     AS trx_current,
+          SUM(total_revenue) AS rev_current
+        FROM daily_master
+        WHERE date >= '2026-06-01' AND date <= '2026-06-30'
+        GROUP BY partner_group
+      ),
+      baseline_period AS (
+        SELECT
+          partner_group,
+          SUM(total_trx)     AS trx_baseline,
+          SUM(total_revenue) AS rev_baseline
+        FROM daily_master
+        WHERE date >= '2026-05-01' AND date <= '2026-05-31'
+        GROUP BY partner_group
+      )
+      SELECT
+        c.partner_group,
+        c.trx_current,
+        b.trx_baseline,
+        ROUND((c.trx_current - b.trx_baseline)::numeric / NULLIF(b.trx_baseline, 0) * 100, 2) AS trx_pct_change,
+        c.rev_current,
+        b.rev_baseline,
+        ROUND((c.rev_current - b.rev_baseline)::numeric / NULLIF(b.rev_baseline, 0) * 100, 2) AS rev_pct_change
+      FROM current_period c
+      JOIN baseline_period b USING (partner_group)
+      ORDER BY ABS(ROUND((c.trx_current - b.trx_baseline)::numeric / NULLIF(b.trx_baseline, 0) * 100, 2)) DESC
+      LIMIT 20;
+
+  - question: "partner mana yang transaksinya naik atau turun signifikan bulan ini dibanding bulan lalu?"
+    sql: |
+      WITH cur AS (
+        SELECT partner_group, SUM(total_trx) AS trx_cur, SUM(total_revenue) AS rev_cur
+        FROM daily_master
+        WHERE date >= '2026-06-01' AND date <= '2026-06-30'
+        GROUP BY partner_group
+      ),
+      prev AS (
+        SELECT partner_group, SUM(total_trx) AS trx_prev, SUM(total_revenue) AS rev_prev
+        FROM daily_master
+        WHERE date >= '2026-05-01' AND date <= '2026-05-31'
+        GROUP BY partner_group
+      )
+      SELECT
+        c.partner_group,
+        c.trx_cur                                                                                   AS transaksi_juni,
+        p.trx_prev                                                                                  AS transaksi_mei,
+        ROUND((c.trx_cur - p.trx_prev)::numeric / NULLIF(p.trx_prev, 0) * 100, 2)                 AS perubahan_trx_pct,
+        ROUND(c.rev_cur::numeric / 1e9, 2)                                                          AS revenue_juni_miliar,
+        ROUND(p.rev_prev::numeric / 1e9, 2)                                                         AS revenue_mei_miliar,
+        ROUND((c.rev_cur - p.rev_prev)::numeric / NULLIF(p.rev_prev, 0) * 100, 2)                 AS perubahan_rev_pct
+      FROM cur c
+      JOIN prev p USING (partner_group)
+      WHERE ABS(ROUND((c.trx_cur - p.trx_prev)::numeric / NULLIF(p.trx_prev, 0) * 100, 2)) > 10
+      ORDER BY ABS(ROUND((c.trx_cur - p.trx_prev)::numeric / NULLIF(p.trx_prev, 0) * 100, 2)) DESC
+      LIMIT 20;
+
+  # ── Additional examples (positions 8-13, not loaded as few-shot) ─────────────
+
+  - question: "total transaksi linkaja termasuk semua variannya"
+    sql: |
+      SELECT
+        SUM(total_trx)     AS total_transaksi,
+        SUM(total_revenue) AS total_revenue,
+        ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct
+      FROM daily_master
+      WHERE partner_group = 'linkaja';
+
+  - question: "jam berapa paling banyak transaksi?"
+    sql: |
+      SELECT
+        hour AS jam,
+        SUM(total_trx) AS total_transaksi,
+        ROUND(AVG(success_rate_pct)::numeric, 2) AS avg_success_rate
+      FROM hourly_pattern_daily
+      GROUP BY hour
+      ORDER BY total_transaksi DESC
+      LIMIT 5;
+
   - question: "berapa pengguna aktif harian rata-rata?"
     sql: |
       SELECT
-        ROUND(AVG(daily_unique_users)::numeric, 0) AS rata_rata_pengguna_aktif_harian
+        ROUND(AVG(unique_users_daily)::numeric, 0) AS rata_rata_pengguna_aktif_harian
       FROM daily_unique_users;
 
   - question: "produk dengan success rate di bawah 80 persen"
@@ -107,60 +178,27 @@ examples:
       ORDER BY total_net_gap ASC
       LIMIT 10;
 
-  - question: "apakah ada partner yang mengalami lonjakan ekstrim bulan Juni 2026?"
-    sql: |
-      WITH current_period AS (
-        SELECT
-          partner,
-          SUM(total_trx)     AS trx_current,
-          SUM(total_revenue) AS rev_current
-        FROM daily_master
-        WHERE date >= '2026-06-01' AND date <= '2026-06-20'
-        GROUP BY partner
-      ),
-      baseline_period AS (
-        SELECT
-          partner,
-          SUM(total_trx)     AS trx_baseline,
-          SUM(total_revenue) AS rev_baseline
-        FROM daily_master
-        WHERE date >= '2026-05-01' AND date <= '2026-05-20'
-        GROUP BY partner
-      )
-      SELECT
-        c.partner,
-        c.trx_current,
-        b.trx_baseline,
-        ROUND((c.trx_current - b.trx_baseline)::numeric / NULLIF(b.trx_baseline, 0) * 100, 2) AS trx_pct_change,
-        c.rev_current,
-        b.rev_baseline,
-        ROUND((c.rev_current - b.rev_baseline)::numeric / NULLIF(b.rev_baseline, 0) * 100, 2) AS rev_pct_change
-      FROM current_period c
-      JOIN baseline_period b USING (partner)
-      ORDER BY ABS(ROUND((c.trx_current - b.trx_baseline)::numeric / NULLIF(b.trx_baseline, 0) * 100, 2)) DESC
-      LIMIT 20;
-
   - question: "partner mana yang konsisten tumbuh setiap bulan dari Maret sampai Juni 2026?"
     sql: |
       WITH monthly AS (
         SELECT
-          partner,
+          partner_group,
           TO_CHAR(date, 'YYYY-MM')  AS bulan,
           SUM(total_trx)            AS total_trx
         FROM daily_master
         WHERE date >= '2026-03-01' AND date <= '2026-06-30'
-        GROUP BY partner, TO_CHAR(date, 'YYYY-MM')
+        GROUP BY partner_group, TO_CHAR(date, 'YYYY-MM')
       ),
       with_growth AS (
         SELECT
-          partner,
+          partner_group,
           bulan,
           total_trx,
-          LAG(total_trx) OVER (PARTITION BY partner ORDER BY bulan) AS prev_trx
+          LAG(total_trx) OVER (PARTITION BY partner_group ORDER BY bulan) AS prev_trx
         FROM monthly
       )
       SELECT
-        partner,
+        partner_group,
         COUNT(*)                                                    AS jumlah_bulan,
         BOOL_AND(total_trx > prev_trx)                             AS konsisten_naik,
         MIN(total_trx)                                             AS trx_terendah,
@@ -168,34 +206,6 @@ examples:
         ROUND((MAX(total_trx) - MIN(total_trx))::numeric / NULLIF(MIN(total_trx), 0) * 100, 1) AS total_growth_pct
       FROM with_growth
       WHERE prev_trx IS NOT NULL
-      GROUP BY partner
+      GROUP BY partner_group
       HAVING BOOL_AND(total_trx > prev_trx)
       ORDER BY total_growth_pct DESC;
-
-  - question: "partner mana yang transaksinya naik atau turun signifikan bulan ini dibanding bulan lalu?"
-    sql: |
-      WITH cur AS (
-        SELECT partner, SUM(total_trx) AS trx_cur, SUM(total_revenue) AS rev_cur
-        FROM daily_master
-        WHERE date >= '2026-06-01' AND date <= '2026-06-20'
-        GROUP BY partner
-      ),
-      prev AS (
-        SELECT partner, SUM(total_trx) AS trx_prev, SUM(total_revenue) AS rev_prev
-        FROM daily_master
-        WHERE date >= '2026-05-01' AND date <= '2026-05-20'
-        GROUP BY partner
-      )
-      SELECT
-        c.partner,
-        c.trx_cur                                                                                      AS transaksi_juni,
-        p.trx_prev                                                                                     AS transaksi_mei,
-        ROUND((c.trx_cur - p.trx_prev)::numeric / NULLIF(p.trx_prev, 0) * 100, 2)                    AS perubahan_trx_pct,
-        ROUND(c.rev_cur::numeric / 1e9, 2)                                                             AS revenue_juni_miliar,
-        ROUND(p.rev_prev::numeric / 1e9, 2)                                                            AS revenue_mei_miliar,
-        ROUND((c.rev_cur - p.rev_prev)::numeric / NULLIF(p.rev_prev, 0) * 100, 2)                    AS perubahan_rev_pct
-      FROM cur c
-      JOIN prev p USING (partner)
-      WHERE ABS(ROUND((c.trx_cur - p.trx_prev)::numeric / NULLIF(p.trx_prev, 0) * 100, 2)) > 10
-      ORDER BY ABS(ROUND((c.trx_cur - p.trx_prev)::numeric / NULLIF(p.trx_prev, 0) * 100, 2)) DESC
-      LIMIT 20;
