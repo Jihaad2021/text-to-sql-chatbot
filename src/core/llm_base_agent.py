@@ -59,6 +59,7 @@ AGENT_ENV_KEYS = {
     "sql_validator":          ("SQL_VALIDATOR_LLM",          "SQL_VALIDATOR_MODEL"),
     "analytical_investigator":("ANALYTICAL_INVESTIGATOR_LLM","ANALYTICAL_INVESTIGATOR_MODEL"),
     "insight_generator":      ("INSIGHT_GENERATOR_LLM",      "INSIGHT_GENERATOR_MODEL"),
+    "response_planner":       ("RESPONSE_PLANNER_LLM",       "RESPONSE_PLANNER_MODEL"),
 }
 
 # API key env names per provider
@@ -208,7 +209,8 @@ class LLMBaseAgent(BaseAgent):
         self,
         prompt: str,
         max_tokens: int = 1000,
-        temperature: float = 0
+        temperature: float = 0,
+        use_thinking: bool = False,
     ) -> str:
         """
         Call LLM API and return response text.
@@ -219,6 +221,7 @@ class LLMBaseAgent(BaseAgent):
             prompt: Prompt string
             max_tokens: Maximum tokens in response
             temperature: Sampling temperature (0 = deterministic)
+            use_thinking: Enable extended thinking (Anthropic only)
 
         Returns:
             Response text
@@ -228,8 +231,10 @@ class LLMBaseAgent(BaseAgent):
         """
         try:
             if self.provider == "anthropic":
-                return self._call_anthropic(prompt, max_tokens, temperature)
-            elif self.provider in ("openai", "openrouter", "gemini"):
+                return self._call_anthropic(prompt, max_tokens, temperature, use_thinking)
+            elif self.provider in ("openai", "openrouter"):
+                return self._call_openai(prompt, max_tokens, temperature, use_thinking)
+            elif self.provider in ("gemini",):
                 return self._call_openai(prompt, max_tokens, temperature)
             elif self.provider == "groq":
                 return self._call_groq(prompt, max_tokens, temperature)
@@ -248,24 +253,71 @@ class LLMBaseAgent(BaseAgent):
                 message=f"LLM call failed: {str(e)}"
             ) from e
 
-    def _call_anthropic(self, prompt: str, max_tokens: int, temperature: float) -> str:
-        """Call Anthropic Claude API."""
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text.strip()
+    def _call_anthropic(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        use_thinking: bool = False,
+    ) -> str:
+        """Call Anthropic Claude API, optionally with extended thinking."""
+        # Thinking requires budget_tokens < max_tokens; no temperature allowed
+        _THINKING_BUDGET = 8000
+        kwargs: dict = {
+            "model":    self.model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if use_thinking:
+            kwargs["max_tokens"] = max(max_tokens, _THINKING_BUDGET + 4000)
+            kwargs["thinking"]   = {"type": "enabled", "budget_tokens": _THINKING_BUDGET}
+        else:
+            kwargs["max_tokens"]  = max_tokens
+            kwargs["temperature"] = temperature
 
-    def _call_openai(self, prompt: str, max_tokens: int, temperature: float) -> str:
-        """Call OpenAI GPT API."""
-        response = self.client.chat.completions.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}]
+        response = self.client.messages.create(**kwargs)
+        # Response may contain thinking blocks + text blocks — return text only
+        return next(
+            (b.text.strip() for b in response.content if b.type == "text"), ""
         )
+
+    # OpenAI reasoning model prefixes — these require different API params
+    _OPENAI_REASONING_PREFIXES = ("o1", "o3", "o4")
+
+    def _is_openai_reasoning_model(self, model: str) -> bool:
+        return any(model.startswith(p) for p in self._OPENAI_REASONING_PREFIXES)
+
+    def _call_openai(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        use_thinking: bool = False,
+    ) -> str:
+        """Call OpenAI GPT API, optionally routing to a reasoning model."""
+        if use_thinking:
+            # Switch to reasoning model for complex intents
+            reasoning_model = "o4-mini"
+            response = self.client.chat.completions.create(
+                model=reasoning_model,
+                max_completion_tokens=max(max_tokens, 8000),
+                reasoning_effort="high",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            self.log(f"OpenAI reasoning model used: {reasoning_model}")
+        elif self._is_openai_reasoning_model(self.model):
+            # Configured model is already a reasoning model — use its native params
+            response = self.client.chat.completions.create(
+                model=self.model,
+                max_completion_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        else:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[{"role": "user", "content": prompt}],
+            )
         return response.choices[0].message.content.strip()
 
     def _call_groq(self, prompt: str, max_tokens: int, temperature: float) -> str:
