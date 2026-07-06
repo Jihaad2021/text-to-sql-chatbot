@@ -146,6 +146,9 @@ class AgentState:
     # Conversational memory — passed in from client each request
     conversation_history: List[Dict[str, Any]] = field(default_factory=list)
 
+    # Set by pipeline when auto drill-down was triggered for a DoD anomaly day
+    auto_drilldown_triggered: bool = False
+
     # Tracking
     errors: List[str] = field(default_factory=list)
     timing: Dict[str, float] = field(default_factory=dict)

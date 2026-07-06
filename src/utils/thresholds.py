@@ -21,6 +21,16 @@ def _load() -> dict:
         return yaml.safe_load(fh)
 
 
+def get_auto_drilldown_threshold() -> float:
+    """Return DoD drop magnitude (positive %) that triggers auto drill-down.
+
+    Stored as auto_drilldown_dod_threshold in business_thresholds.yaml so it
+    can be tuned independently from the PERHATIAN/KRITIS verdict thresholds.
+    Defaults to 30 if key is absent.
+    """
+    return float(_load().get("auto_drilldown_dod_threshold", 30))
+
+
 def render_thresholds_block() -> str:
     """
     Render the full thresholds table + verdict notes as a single string.

@@ -18,8 +18,24 @@ Usage:
 """
 
 import copy
+import re
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import Any
+
+_MONTH_ID = [
+    "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+]
+
+
+def _fmt_date_id(date_str: str) -> str:
+    """Convert 'YYYY-MM-DD' to Indonesian long form ('30 Juni 2026')."""
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        return f"{d.day} {_MONTH_ID[d.month]} {d.year}"
+    except ValueError:
+        return date_str
 
 from src.agents.analytics_agent import AnalyticsAgent
 from src.agents.insight_generator import InsightGenerator
@@ -37,12 +53,69 @@ from src.core.baseline_cache import BaselineCache
 from src.core.config import Config
 from src.core.context_snapshot import build_context_snapshot
 from src.core.query_cache import QueryCache, build_snapshot, restore_snapshot
-from src.models.agent_state import AgentState, ExecutionStep, StepResult
+from src.models.agent_state import AgentState, ExecutionStep, StepResult, ToolCallResult
+from src.tools.analytics_tools import get_distribution
 from src.utils.context_distiller import distill_context
+from src.utils.date_range import get_latest_available_date
 from src.utils.exceptions import QueryExecutionError
+from src.utils.thresholds import get_auto_drilldown_threshold
 
 # Maximum retries for SQL generation when PostgreSQL returns an execution error
 _SQL_RETRY_LIMIT = 2
+
+# Brief-mode phrases: skip auto drill-down when user only wants raw numbers
+_BRIEF_MODE_RE = re.compile(
+    r'\b(tampilkan\s+saja|cukup\s+angka|hanya\s+data|show\s+only|singkat\s+saja|data\s+saja)\b',
+    re.IGNORECASE,
+)
+
+# Column name lookup sets for auto drill-down detection.
+# "period" is included because get_trend returns its date column as "period".
+_DATE_COL_NAMES = frozenset({"date", "tanggal", "bulan", "hari", "period"})
+_TRX_COL_PATTERNS = ("trx", "transaksi", "volume")
+
+# Intent categories that use tool-calling analytics path
+_ANALYTICS_INTENTS = {
+    "root_cause_analysis",
+    "ranking_analysis",
+    "complex_analytics",
+}
+
+# These same categories, when present in conversation_history, enable history-synthesis
+# for follow-up recommendation queries.
+_SYNTHESIS_ELIGIBLE_INTENTS = _ANALYTICS_INTENTS
+
+
+def _find_date_col(row: dict) -> str | None:
+    """Return the first key that looks like a date column, or None."""
+    for key in row:
+        if key.lower() in _DATE_COL_NAMES:
+            return key
+    return None
+
+
+def _find_trx_col(row: dict) -> str | None:
+    """Return the first key whose name contains a transaction-volume pattern, or None."""
+    for key in row:
+        k = key.lower()
+        if any(p in k for p in _TRX_COL_PATTERNS):
+            return key
+    return None
+
+
+def _has_analytic_prior_turn(history: list[dict]) -> bool:
+    """Return True if any prior turn had an analytic intent with non-empty results.
+
+    Used to route 'recommendation' queries: if the user just ran a root_cause /
+    ranking / complex_analytics query that returned data, the follow-up
+    recommendation can be synthesised from that history without a new SQL query.
+    """
+    for turn in history:
+        intent_cat = turn.get("intent_category", "")
+        row_count  = turn.get("row_count", 0)
+        if intent_cat in _SYNTHESIS_ELIGIBLE_INTENTS and row_count > 0:
+            return True
+    return False
 
 
 class TextToSQLPipeline:
@@ -101,6 +174,7 @@ class TextToSQLPipeline:
         if _engine:
             self.baseline = BaselineCache(_engine)
             self.context_snapshot = build_context_snapshot(_engine, self.baseline)
+            self.data_end_date = get_latest_available_date(_engine)
         else:
             self.baseline = BaselineCache.__new__(BaselineCache)
             self.baseline.partner = {}
@@ -108,6 +182,7 @@ class TextToSQLPipeline:
             self.baseline.overall = {}
             self.baseline.period = {}
             self.context_snapshot = ""
+            self.data_end_date = None
 
     @property
     def agents(self) -> list[BaseAgent]:
@@ -148,6 +223,7 @@ class TextToSQLPipeline:
 
         # Inject pre-computed context so all agents have business baseline
         state.context_snapshot = self.context_snapshot
+        state.data_end_date    = self.data_end_date
 
         # ── Cache check ──────────────────────────────────────────
         if Config.CACHE_TTL_SECONDS > 0:
@@ -159,6 +235,21 @@ class TextToSQLPipeline:
         # ── 0: QueryRewriter ─────────────────────────────────────
         # May update state.query; non-fatal if it fails.
         state = self.query_rewriter.run(state)
+
+        # Out-of-range queries: resolved period starts after data_end_date.
+        # Skip all downstream agents (IntentClassifier, AnalyticsAgent, SQL pipeline)
+        # to avoid wasted LLM calls and prevent stale data leaking into the response.
+        if state.query_out_of_range and state.out_of_range_latest:
+            latest_fmt = _fmt_date_id(state.out_of_range_latest)
+            state.insights = (
+                f"Data terbaru yang tersedia adalah sampai **{latest_fmt}**. "
+                f"Belum ada data untuk periode yang diminta."
+            )
+            self.query_rewriter.log(
+                f"Pipeline early-return: query_out_of_range=True, latest={state.out_of_range_latest}",
+                level="warning",
+            )
+            return state
 
         # ── 1 + 2: IntentClassifier ∥ QueryPlanner ───────────────
         state = self._run_initial_agents_parallel(state)
@@ -175,26 +266,20 @@ class TextToSQLPipeline:
             state.insights = oos_message
             return state
 
-        # Intents that benefit from tool-calling analytics (multi-dimensional investigation).
-        # complex_analytics: compare_periods/get_trend tools handle period normalization better
-        #   than ad-hoc SQL (e.g. partial months vs full months).
-        # recommendation: excluded — meta-questions like "apa yang harus dilakukan?" don't need
-        #   multi-tool orchestration and caused 180s+ timeouts with mandatory tool call rule.
-        #   SQL pipeline + InsightGenerator handles recommendation queries well enough.
-        _ANALYTICS_INTENTS = {
-            "root_cause_analysis",
-            "ranking_analysis",
-            "complex_analytics",
-        }
-
         # ── 3–7: SQL sub-pipeline + InsightGenerator ─────────────
-        if state.intent and state.intent.get("category") in _ANALYTICS_INTENTS:
+        intent_category = (state.intent or {}).get("category") if state.intent else None
+        if intent_category in _ANALYTICS_INTENTS:
             state = self._run_analytics(state)
+        elif intent_category == "recommendation" and _has_analytic_prior_turn(state.conversation_history):
+            state = self._run_recommendation_from_history(state)
         elif state.is_multi_step:
             state = self._run_multi_step(state)
         else:
             state.query = state.execution_plan[0].sub_query
             state = self._run_sql_pipeline(state)
+
+        # ── Auto drill-down: partner breakdown for DoD anomaly days ──
+        state = self._run_auto_drilldown(state)
 
         # ── Context Distiller: enrich snapshot with dynamic findings ──
         distilled = distill_context(state)
@@ -354,6 +439,100 @@ class TextToSQLPipeline:
         state.query = original_query
         return state
 
+    def _run_auto_drilldown(self, state: AgentState) -> AgentState:
+        """Post-query auto drill-down for Day-over-Day anomaly days.
+
+        After a daily-trend SQL query completes, checks if any day's DoD drop
+        exceeds auto_drilldown_dod_threshold (business_thresholds.yaml).
+        If yes, calls get_distribution(partner) for the single worst day and
+        appends the result to state.tool_results so InsightGenerator can include
+        the partner-level breakdown in one response without a follow-up query.
+
+        Skipped when:
+        - state.tool_results already populated (AnalyticsAgent path)
+        - query text matches _BRIEF_MODE_RE (user asked for data-only)
+        - query_result has no date + trx columns, or fewer than 2 rows
+        - no row's DoD drop exceeds the threshold
+        """
+        # Skip only when a partner get_distribution already exists (drill-down done).
+        # Presence of other tool_results (e.g. get_trend) does NOT block drill-down.
+        if any(
+            tr.tool_name == "get_distribution" and tr.dimension == "partner"
+            for tr in state.tool_results
+        ):
+            return state
+
+        if _BRIEF_MODE_RE.search(state.query or ""):
+            return state
+
+        rows = state.query_result
+        if not rows or len(rows) < 2:
+            return state
+
+        date_col = _find_date_col(rows[0])
+        trx_col = _find_trx_col(rows[0])
+        if not date_col or not trx_col:
+            return state
+
+        try:
+            sorted_rows = sorted(rows, key=lambda r: str(r[date_col]))
+        except Exception:
+            return state
+
+        threshold_pct = get_auto_drilldown_threshold()
+        worst_date: str | None = None
+        worst_dod = 0.0  # track most negative value
+
+        for i in range(1, len(sorted_rows)):
+            prev_val = sorted_rows[i - 1].get(trx_col)
+            curr_val = sorted_rows[i].get(trx_col)
+            if prev_val is None or curr_val is None:
+                continue
+            prev = float(prev_val)
+            if prev <= 0:
+                continue
+            dod = (float(curr_val) - prev) / prev * 100
+            if dod < -threshold_pct and dod < worst_dod:
+                worst_dod = dod
+                worst_date = str(sorted_rows[i][date_col])[:10]
+
+        if worst_date is None:
+            return state
+
+        engine = self.query_executor.engines.get(state.database)
+        if engine is None:
+            return state
+
+        try:
+            result = get_distribution(engine, worst_date, worst_date, dimension="partner", top_n=10)
+            state.tool_results.append(ToolCallResult(
+                tool_name="get_distribution",
+                data=result["data"],
+                row_count=result["row_count"],
+                sql_or_params=result["sql"],
+                description=(
+                    f"Auto drill-down: breakdown partner untuk {worst_date} "
+                    f"(DoD {worst_dod:.1f}%)"
+                ),
+                actual_entity_count=result.get("actual_entity_count", 0),
+                cumulative_trx_share_pct=result.get("cumulative_trx_share_pct", 0.0),
+                cumulative_rev_share_pct=result.get("cumulative_rev_share_pct", 0.0),
+                dimension=result.get("dimension", "partner"),
+            ))
+            state.auto_drilldown_triggered = True
+            self.query_executor.log(
+                f"Auto drill-down triggered: {worst_date} DoD={worst_dod:.1f}%, "
+                f"partner rows={result['row_count']}"
+            )
+        except Exception as exc:
+            # Non-fatal: log and continue, main result is unaffected
+            self.query_executor.log(
+                f"Auto drill-down failed (non-fatal): {exc}",
+                level="warning",
+            )
+
+        return state
+
     def _run_analytics(self, state: AgentState) -> AgentState:
         """Route analytics intents to AnalyticsAgent (tool calling).
 
@@ -365,6 +544,22 @@ class TextToSQLPipeline:
         # Ensure is_multi_step=False so InsightGenerator routes to _build_tool_results_prompt
         # (not _build_multi_step_prompt which reads step_results, not tool_results).
         state.is_multi_step = False
+        return state
+
+    def _run_recommendation_from_history(self, state: AgentState) -> AgentState:
+        """Skip SQL generation for recommendation follow-up queries.
+
+        When the user asks for recommendations after a prior analytic turn that
+        returned data, skip the SQL sub-pipeline entirely. InsightGenerator will
+        synthesise recommendations from the conversation history.
+        """
+        state.recommendation_from_history = True
+        state.validated_sql = None
+        state.query_result  = []
+        state.row_count     = 0
+        self.intent_classifier.log(
+            "recommendation follow-up: skipping SQL pipeline, synthesising from conversation history"
+        )
         return state
 
     # ─────────────────────────────────────────────

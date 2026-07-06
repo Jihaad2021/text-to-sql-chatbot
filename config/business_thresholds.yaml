@@ -43,6 +43,14 @@ thresholds:
     perhatian: "10% – 25%"
     kritis:   "> 25%"
 
+# Auto drill-down threshold (independent from verdict thresholds above).
+# When a daily-trend SQL query returns rows with a DoD drop exceeding this value (%),
+# the pipeline automatically calls get_distribution(partner) for the worst day.
+# Tuned to 30 based on 4-month historical data (Mar-Jun 2026): only 1 event reached
+# this level (2026-06-30 at -37.7%); second-biggest drop was -11.8% — 18pp gap.
+# Change this without affecting PERHATIAN/KRITIS verdict thresholds above.
+auto_drilldown_dod_threshold: 30
+
 notes:
   - "VERDICT WAJIB: setiap jawaban harus menyebut salah satu — SEHAT / PERHATIAN / KRITIS — [1 kalimat alasan]"
   - "HANYA flag SR yang benar-benar di bawah 98%. Nilai 99.x% adalah SEHAT, jangan sebut sebagai 'di bawah threshold'."
