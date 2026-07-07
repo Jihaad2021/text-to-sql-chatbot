@@ -131,6 +131,73 @@ class TestCheckMetricCoverage:
         assert "revenue" in missing
         assert "share" in missing
 
+    # ── CTE alias prefix tests (FIX #1) ──────────────────────────────────────
+
+    def test_revenue_cte_alias_rev_june_not_flagged(self):
+        """CTE outer SELECT with rev_june, rev_may aliases must pass revenue coverage check."""
+        gen = _make_generator()
+        sql = (
+            "WITH base AS ("
+            "  SELECT partner_group,"
+            "    SUM(CASE WHEN EXTRACT(MONTH FROM date) = 6 THEN total_revenue END) AS rev_june,"
+            "    SUM(CASE WHEN EXTRACT(MONTH FROM date) = 5 THEN total_revenue END) AS rev_may"
+            "  FROM daily_master GROUP BY partner_group"
+            ") "
+            "SELECT partner_group, rev_june, rev_may, rev_june - rev_may AS gap FROM base"
+        )
+        missing = gen._check_metric_coverage(
+            "Bandingkan revenue Juni vs Mei per partner", sql
+        )
+        assert "revenue" not in missing, (
+            f"rev_june/rev_may should be recognised as revenue columns, got missing={missing}"
+        )
+
+    def test_revenue_cte_alias_rev_a_rev_b_not_flagged(self):
+        """Generic CTE aliases rev_a, rev_b (period comparison) must pass revenue check."""
+        gen = _make_generator()
+        sql = (
+            "WITH periods AS ("
+            "  SELECT partner_group,"
+            "    SUM(CASE WHEN date >= '2026-05-01' THEN total_revenue END) AS rev_a,"
+            "    SUM(CASE WHEN date >= '2026-06-01' THEN total_revenue END) AS rev_b"
+            "  FROM daily_master GROUP BY partner_group"
+            ") SELECT partner_group, rev_a, rev_b FROM periods"
+        )
+        missing = gen._check_metric_coverage(
+            "Perbandingan revenue dua periode per partner", sql
+        )
+        assert "revenue" not in missing, (
+            f"rev_a/rev_b should be recognised as revenue columns, got missing={missing}"
+        )
+
+    def test_success_cte_alias_sr_june_not_flagged(self):
+        """CTE outer SELECT with sr_june, sr_may aliases must pass success coverage check."""
+        gen = _make_generator()
+        sql = (
+            "WITH base AS ("
+            "  SELECT partner_group,"
+            "    AVG(CASE WHEN EXTRACT(MONTH FROM date) = 6 THEN success_rate_pct END) AS sr_june,"
+            "    AVG(CASE WHEN EXTRACT(MONTH FROM date) = 5 THEN success_rate_pct END) AS sr_may"
+            "  FROM daily_master GROUP BY partner_group"
+            ") "
+            "SELECT partner_group, sr_june, sr_may FROM base"
+        )
+        missing = gen._check_metric_coverage(
+            "Bandingkan success rate Juni vs Mei per partner", sql
+        )
+        assert "success" not in missing, (
+            f"sr_june/sr_may should be recognised as success columns, got missing={missing}"
+        )
+
+    def test_revenue_exact_column_still_passes(self):
+        """Existing exact 'revenue' column name must still pass (no regression)."""
+        gen = _make_generator()
+        sql = "SELECT partner_group, SUM(total_revenue) AS total_revenue FROM daily_master GROUP BY partner_group"
+        missing = gen._check_metric_coverage(
+            "Total revenue per partner bulan Juni", sql
+        )
+        assert "revenue" not in missing
+
 
 # ── execute() — regeneration on coverage failure ─────────────────────────────
 

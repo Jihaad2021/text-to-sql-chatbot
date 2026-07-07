@@ -45,10 +45,10 @@ _PREV_STEP_ROW_PREVIEW = 5
 # Each entry: if the keyword appears in the user's query (case-insensitive), at least one
 # of the col_patterns must appear in the final SELECT clause.
 _METRIC_KEYWORDS: dict[str, list[str]] = {
-    "revenue":   ["revenue"],
+    "revenue":   ["revenue", "rev_"],   # rev_ catches CTE aliases: rev_june, rev_may, rev_a, rev_b
     "transaksi": ["trx", "transaksi"],
     "share":     ["share", "_pct"],
-    "success":   ["success"],
+    "success":   ["success", "sr_"],    # sr_ catches CTE aliases: sr_june, sr_may
     "volume":    ["trx", "volume"],
     "gap":       ["gap"],
     "fail":      ["fail"],
