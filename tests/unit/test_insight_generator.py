@@ -504,3 +504,191 @@ class TestKritisGuardInExecute:
         # Guard must NOT fire — count occurrences of the entity name
         count = state.insights.lower().count("telkomsel_wallet")
         assert count == 1, f"Expected 1 occurrence, got {count}"
+
+
+# ========================================
+# Test: PRIORITAS 3 — Recommendation synthesis domain constraints
+# ========================================
+
+class TestRecommendationSynthesisPromptDomain:
+    """_build_recommendation_synthesis_prompt must enforce Finance & RA domain + 3-criteria format."""
+
+    def _gen(self):
+        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            return InsightGenerator()
+
+    def _get_prompt(self, query="apa yang harus dilakukan?", segment="partners"):
+        gen = self._gen()
+        state = AgentState(query=query, database="financial_db")
+        state.intent = {"category": "recommendation", "segment": segment}
+        state.conversation_history = [{"query": "partner mana KRITIS?", "insights": "telkomsel_wallet SR 92.87% KRITIS."}]
+        return gen._build_recommendation_synthesis_prompt(state)
+
+    def test_persona_is_finance_ra(self):
+        """Prompt must open with Finance & Revenue Assurance persona, not generic analyst."""
+        prompt = self._get_prompt()
+        assert "Finance & Revenue Assurance" in prompt
+
+    def test_in_scope_actions_listed(self):
+        """Prompt must enumerate in-scope Finance & RA actions."""
+        prompt = self._get_prompt()
+        assert "eskalasi" in prompt.lower()
+        assert "SLA" in prompt
+        assert "audit kontrak" in prompt.lower()
+
+    def test_out_of_scope_actions_listed(self):
+        """Prompt must explicitly prohibit marketing/UX/product actions."""
+        prompt = self._get_prompt()
+        assert "promosi" in prompt.lower()
+        assert "OUT-OF-SCOPE" in prompt or "DILARANG" in prompt
+
+    def test_no_escape_hatch_rule(self):
+        """Rule 5 escape hatch (perlu diinvestigasi lebih lanjut) must be gone."""
+        prompt = self._get_prompt()
+        # Old escape hatch phrasing must not appear
+        assert "perlu diinvestigasi lebih lanjut" not in prompt.lower()
+
+    def test_prohibits_circular_recommendation(self):
+        """Prompt must explicitly prohibit analisis/investigasi lebih lanjut as main recommendation."""
+        prompt = self._get_prompt()
+        assert "analisis" in prompt.lower() and "DILARANG" in prompt
+
+    def test_three_criteria_required(self):
+        """Prompt must require all 3 actionable criteria: tindakan, prioritas, dampak/risiko."""
+        prompt = self._get_prompt()
+        assert "(i)" in prompt
+        assert "(ii)" in prompt
+        assert "(iii)" in prompt
+
+    def test_few_shot_correct_example_present(self):
+        """Prompt must contain a BENAR (Finance & RA) recommendation example."""
+        prompt = self._get_prompt()
+        assert "BENAR" in prompt or "CONTOH BENAR" in prompt
+
+    def test_few_shot_wrong_example_present(self):
+        """Prompt must contain SALAH examples showing circular and out-of-scope patterns."""
+        prompt = self._get_prompt()
+        assert "SALAH" in prompt or "CONTOH SALAH" in prompt or "JANGAN TIRU" in prompt
+
+
+# ========================================
+# Test: PRIORITAS 4 poin 5 — Product MoM threshold exception
+# ========================================
+
+class TestProductSegmentThresholdException:
+    """_build_segment_guide(products) must prohibit MoM verdict for individual products."""
+
+    def _gen(self):
+        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            return InsightGenerator()
+
+    def test_product_guide_has_threshold_exception_header(self):
+        """Product segment guide must include explicit THRESHOLD EXCEPTION note."""
+        gen = self._gen()
+        guide = gen._build_segment_guide("products")
+        assert "THRESHOLD EXCEPTION" in guide or "threshold exception" in guide.lower()
+
+    def test_product_guide_prohibits_per_product_verdict(self):
+        """Product guide must explicitly prohibit assigning PERHATIAN/KRITIS to individual products."""
+        gen = self._gen()
+        guide = gen._build_segment_guide("products")
+        assert "DILARANG" in guide
+        assert "PERHATIAN" in guide
+        assert "KRITIS" in guide
+
+    def test_product_guide_requires_descriptive_language(self):
+        """Product guide must instruct use of descriptive language without verdict per-product."""
+        gen = self._gen()
+        guide = gen._build_segment_guide("products")
+        assert "deskriptif" in guide.lower()
+
+    def test_partner_guide_unaffected(self):
+        """Threshold exception must NOT appear in partner segment guide."""
+        gen = self._gen()
+        guide = gen._build_segment_guide("partners")
+        assert "THRESHOLD EXCEPTION" not in guide
+
+    def test_channel_guide_unaffected(self):
+        """Threshold exception must NOT appear in channel segment guide."""
+        gen = self._gen()
+        guide = gen._build_segment_guide("channels")
+        assert "THRESHOLD EXCEPTION" not in guide
+
+
+# ========================================
+# Test: PRIORITAS 4 poin 5 — threshold_override_block injection
+# ========================================
+
+class TestThresholdOverrideBlock:
+    """_threshold_override_block must return non-empty only for products, injected in all prompts."""
+
+    def _gen(self):
+        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            return InsightGenerator()
+
+    def test_products_returns_override(self):
+        gen = self._gen()
+        block = gen._threshold_override_block("products")
+        assert block  # non-empty
+        assert "DILARANG" in block
+        assert "KRITIS" in block or "PERHATIAN" in block
+
+    def test_non_products_returns_empty(self):
+        gen = self._gen()
+        for seg in ("partners", "channels", "transactions", "", "unknown"):
+            assert gen._threshold_override_block(seg) == "", f"Expected empty for segment={seg!r}"
+
+    def test_override_injected_in_single_step_prompt(self):
+        """For products segment, single-step prompt must contain override block text."""
+        gen = self._gen()
+        state = AgentState(query="produk terbesar bulan ini?", database="financial_db")
+        state.intent = {"category": "analysis", "segment": "products"}
+        state.query_result = [{"entity": "GoPay", "total_trx": 1000000, "trx_pct_change": -25.0}]
+        state.row_count = 1
+        state.validated_sql = "SELECT entity, total_trx FROM ..."
+        prompt = gen._build_single_step_prompt(state)
+        assert "EXCEPTION PRODUK" in prompt or "exception produk" in prompt.lower()
+
+    def test_override_absent_for_partner_single_step(self):
+        """For partners segment, single-step prompt must NOT contain product override."""
+        gen = self._gen()
+        state = AgentState(query="partner terbesar bulan ini?", database="financial_db")
+        state.intent = {"category": "analysis", "segment": "partners"}
+        state.query_result = [{"entity": "dana", "trx_a": 1000000, "trx_pct_change": -5.0}]
+        state.row_count = 1
+        state.validated_sql = "SELECT entity, trx_a FROM ..."
+        prompt = gen._build_single_step_prompt(state)
+        assert "EXCEPTION PRODUK" not in prompt
+
+
+    def test_early_product_warning_at_top_of_prompt(self):
+        """For products segment, early warning must appear before SQL/data section."""
+        gen = self._gen()
+        state = AgentState(query="produk mana yang turun?", database="financial_db")
+        state.intent = {"category": "analysis", "segment": "products"}
+        state.query_result = [{"entity": "GoPay", "trx_pct_change": -22.7}]
+        state.row_count = 1
+        state.validated_sql = "SELECT ..."
+        prompt = gen._build_single_step_prompt(state)
+        warning_pos = prompt.find("ATURAN WAJIB UNTUK ANALISIS PRODUK")
+        sql_pos = prompt.find("SQL EXECUTED")
+        assert warning_pos >= 0, "Early product warning not found"
+        assert warning_pos < sql_pos, "Warning must appear before data section"
+
+    def test_product_threshold_table_excludes_mom_row(self):
+        """Products segment threshold table must omit MoM Volume Growth row."""
+        gen = self._gen()
+        state = AgentState(query="produk mana yang turun?", database="financial_db")
+        state.intent = {"category": "analysis", "segment": "products"}
+        state.query_result = [{"entity": "GoPay", "trx_pct_change": -22.7}]
+        state.row_count = 1
+        state.validated_sql = "SELECT ..."
+        prompt = gen._build_single_step_prompt(state)
+        # Threshold table starts with "BUSINESS THRESHOLDS:"
+        tbl_start = prompt.find("BUSINESS THRESHOLDS:")
+        tbl_end   = prompt.find("\n\n", tbl_start) if tbl_start >= 0 else -1
+        table_text = prompt[tbl_start:tbl_end] if tbl_start >= 0 else ""
+        assert "| MoM Volume Growth" not in table_text, "MoM row must be excluded for products"
+        assert "| Perubahan transaksi" not in table_text, "Perubahan transaksi row must be excluded"
+        assert "| Success Rate" in table_text, "SR row must still be present"
+

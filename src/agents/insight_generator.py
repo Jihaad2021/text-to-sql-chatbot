@@ -200,6 +200,14 @@ class InsightGenerator(LLMBaseAgent):
         "anomaly_detection",
     }
 
+    # Threshold metrics excluded for product segment: MoM/transaction-change thresholds
+    # were calibrated at partner/channel level — per-product individual volatility makes
+    # them meaningless. Removing them from the prompt prevents false PERHATIAN/KRITIS.
+    _PRODUCT_EXCLUDED_THRESHOLDS: frozenset[str] = frozenset({
+        "MoM Volume Growth",
+        "Perubahan transaksi",
+    })
+
     def execute(self, state: AgentState) -> AgentState:
         """
         Generate insights from query results.
@@ -364,7 +372,9 @@ class InsightGenerator(LLMBaseAgent):
         context_block  = f"\n{_ctx}\n" if _ctx else ""
         layout_block   = self._build_layout_block(state.layout_plan)
         segment_guide             = self._build_segment_guide(segment)
-        business_thresholds_block = render_thresholds_block()
+        business_thresholds_block = self._thresholds_for_segment(segment)
+        threshold_override        = self._threshold_override_block(segment)
+        early_product_warning     = self._early_product_warning(segment)
         intent_category = (
             (state.intent or {}).get("category", "")
             if isinstance(state.intent, dict)
@@ -386,7 +396,7 @@ class InsightGenerator(LLMBaseAgent):
         elaboration_block = self._build_single_elaboration(response_length, has_context)
 
         return f"""You are a data analyst for Telkomsel's digital payment platform. Generate insights in conversational Indonesian.
-{context_block}{history_block}
+{early_product_warning}{context_block}{history_block}
 USER QUESTION: "{state.query}"
 
 {elaboration_block}
@@ -427,7 +437,7 @@ METODOLOGI ANALISIS — ikuti urutan ini:
 3. HITUNG SINYAL → perubahan %, selisih absolut, ranking, anomali
 4. BERI VERDICT → SEHAT / PERHATIAN / KRITIS berdasarkan threshold di bawah
 
-{business_thresholds_block}{late_synthesis_block}{general_analysis_block}
+{business_thresholds_block}{threshold_override}{late_synthesis_block}{general_analysis_block}
 {segment_guide}{layout_block}Your insights in Indonesian:"""
 
     def _build_tool_results_block(self, tool_results: list) -> str:
@@ -480,19 +490,20 @@ METODOLOGI ANALISIS — ikuti urutan ini:
         tools_block               = self._build_tool_results_block(state.tool_results)
         _ctx                      = self._ctx_for_segment(state)
         context_block             = f"\n{_ctx}\n" if _ctx else ""
-        layout_block              = self._build_layout_block(state.layout_plan)
-        business_thresholds_block = render_thresholds_block()
-
-        response_length   = (state.layout_plan or {}).get("response_length", "standard")
-        has_context       = bool(state.context_snapshot)
-        elaboration_block = self._build_multi_elaboration(response_length, has_context)
-
+        layout_block      = self._build_layout_block(state.layout_plan)
         segment = (
             (state.intent or {}).get("segment")
             if isinstance(state.intent, dict)
             else None
         ) or self._detect_segment(state.query)
-        segment_guide = self._build_segment_guide(segment)
+        business_thresholds_block = self._thresholds_for_segment(segment)
+        threshold_override        = self._threshold_override_block(segment)
+        segment_guide             = self._build_segment_guide(segment)
+        early_product_warning     = self._early_product_warning(segment)
+
+        response_length   = (state.layout_plan or {}).get("response_length", "standard")
+        has_context       = bool(state.context_snapshot)
+        elaboration_block = self._build_multi_elaboration(response_length, has_context)
 
         # Build mandatory-findings block: covers both partial-display AND cumulative share.
         # Both findings must appear in the insight when present; they are complementary,
@@ -532,7 +543,7 @@ METODOLOGI ANALISIS — ikuti urutan ini:
             break
 
         return f"""You are a data analyst for Telkomsel's digital payment platform.
-{context_block}{history_block}
+{early_product_warning}{context_block}{history_block}
 USER QUESTION: "{state.query}"
 
 {elaboration_block}
@@ -558,7 +569,7 @@ REVENUE / MONEY (kolom: total_revenue, net_revenue, platform_fee, net_gap, total
 
 PERCENTAGES: format as "92,5%"
 
-{business_thresholds_block}
+{business_thresholds_block}{threshold_override}
 
 DATA INTEGRITY — ANTI-HALLUCINATION (wajib diikuti):
 - HANYA gunakan angka yang BENAR-BENAR muncul di tool results di atas
@@ -591,15 +602,23 @@ FORMAT OUTPUT — gunakan markdown untuk struktur yang jelas:
         steps_block   = self._build_steps_block(state.step_results)
         _ctx          = self._ctx_for_segment(state)
         context_block = f"\n{_ctx}\n" if _ctx else ""
-        layout_block              = self._build_layout_block(state.layout_plan)
-        business_thresholds_block = render_thresholds_block()
+        layout_block = self._build_layout_block(state.layout_plan)
+        segment = (
+            (state.intent or {}).get("segment")
+            if isinstance(state.intent, dict)
+            else None
+        ) or self._detect_segment(state.query)
+        business_thresholds_block = self._thresholds_for_segment(segment)
+        threshold_override        = self._threshold_override_block(segment)
+        segment_guide             = self._build_segment_guide(segment)
+        early_product_warning     = self._early_product_warning(segment)
 
         response_length   = (state.layout_plan or {}).get("response_length", "standard")
         has_context       = bool(state.context_snapshot)
         elaboration_block = self._build_multi_elaboration(response_length, has_context)
 
         return f"""You are a data analyst for Telkomsel's digital payment platform.
-{context_block}{history_block}
+{early_product_warning}{context_block}{history_block}
 USER ORIGINAL QUESTION: "{state.query}"
 
 {elaboration_block}
@@ -632,7 +651,7 @@ COMPARISON INSTRUCTIONS — when multiple steps represent two groups being compa
 4. State clearly which group is higher/lower
 5. Do NOT skip the math — calculate it yourself from the raw numbers in the step results
 
-{business_thresholds_block}
+{business_thresholds_block}{threshold_override}
 
 DATA INTEGRITY — ANTI-HALLUCINATION (wajib diikuti):
 - HANYA gunakan angka yang BENAR-BENAR muncul di step results di atas
@@ -656,7 +675,7 @@ SYNTHESIS RULES:
 5. If a step has 0 rows or failed, acknowledge it briefly and work with the available data
 6. Panjang jawaban proporsional dengan data — tidak perlu dipotong jika ada temuan penting
 
-{layout_block}Your insights in Indonesian:"""
+{segment_guide}{layout_block}Your insights in Indonesian:"""
 
     def _truncate_brief_sections(self, text: str) -> str:
         """Post-processing guard for brief responses.
@@ -727,6 +746,52 @@ SYNTHESIS RULES:
             if entity and entity.lower() not in insights_lower:
                 missing.append((entity, sr_val))
         return missing
+
+    def _early_product_warning(self, segment: str) -> str:
+        """Return a strong preamble injected at the TOP of the prompt for product segment.
+
+        Position matters: instructions at the start of a prompt carry more weight than
+        instructions buried after data blocks. For gpt-4o-mini, even with the MoM threshold
+        row removed, the model's training priors still generate KRITIS/PERHATIAN verdicts for
+        large per-product MoM swings. This preamble pre-empts that behaviour.
+        """
+        if segment != "products":
+            return ""
+        return (
+            "\n⛔ ATURAN WAJIB UNTUK ANALISIS PRODUK:\n"
+            "DILARANG KERAS menggunakan kata KRITIS atau PERHATIAN untuk menggambarkan\n"
+            "perubahan volume MoM produk individual — tidak peduli seberapa besar % perubahannya.\n"
+            "Gunakan HANYA bahasa deskriptif: 'GoPay turun 22,7% MoM', 'OVO naik 5%'.\n"
+            "Verdict SEHAT/PERHATIAN/KRITIS HANYA boleh untuk: konsentrasi revenue portofolio\n"
+            "keseluruhan, atau SR yang benar-benar di bawah threshold.\n\n"
+        )
+
+    def _thresholds_for_segment(self, segment: str) -> str:
+        """Return thresholds block with product-level volume metrics excluded for 'products' segment."""
+        if segment == "products":
+            return render_thresholds_block(exclude_metrics=self._PRODUCT_EXCLUDED_THRESHOLDS)
+        return render_thresholds_block()
+
+    def _threshold_override_block(self, segment: str) -> str:
+        """Return a strong inline override right after the thresholds block for product segment.
+
+        The business thresholds (MoM Volume Growth, Perubahan transaksi) were calibrated at
+        partner/channel level — they do NOT apply to 882 individual product_name rows where
+        natural promo-driven volatility makes the same %-change thresholds meaningless.
+        Injecting this block immediately after render_thresholds_block() prevents the LLM from
+        applying PERHATIAN/KRITIS to per-product MoM swings.
+        """
+        if segment != "products":
+            return ""
+        return (
+            "\n⛔ EXCEPTION PRODUK — berlaku langsung setelah threshold di atas:\n"
+            "Threshold 'MoM Volume Growth' dan 'Perubahan transaksi' TIDAK BERLAKU untuk produk individual.\n"
+            "Produk individual (882 distinct product_name) mengalami fluktuasi MoM alami karena promo/musiman.\n"
+            "DILARANG: tulis verdict KRITIS atau PERHATIAN untuk perubahan volume produk individual.\n"
+            "WAJIB: gunakan bahasa deskriptif — 'GoPay turun 22,7% MoM' — tanpa verdict per-produk.\n"
+            "Verdict keseluruhan (SEHAT/PERHATIAN/KRITIS) HANYA boleh berdasarkan konsentrasi revenue\n"
+            "portofolio atau diversifikasi — BUKAN perubahan volume per-produk.\n"
+        )
 
     def _strip_partner_section(self, ctx: str) -> str:
         """Remove the 'Top 5 partner' block from context_snapshot for channel queries.
@@ -898,7 +963,15 @@ SYNTHESIS RULES:
                 "- Portfolio: hitung berapa produk tumbuh vs turun dari data, sebut top-5 share.\n"
                 "- Konsentrasi revenue: Top-3 <50%=Terdiversifikasi, 50–70%=Moderat, >70%=Ketergantungan tinggi.\n"
                 "- Produk turun: estimasi dampak revenue = |wow%| × total_revenue / 100.\n"
-                "- Template pembuka: \"Portfolio [N] produk — [growing] tumbuh, [declining] turun — Verdict: [SEHAT/PERHATIAN/KRITIS]\"\n\n"
+                "- Template pembuka: \"Portfolio [N] produk — [growing] tumbuh, [declining] turun — Verdict: [SEHAT/PERHATIAN/KRITIS]\"\n"
+                "PENTING — THRESHOLD EXCEPTION untuk produk:\n"
+                "Threshold MoM Volume Growth dan Perubahan transaksi di blok THRESHOLDS di atas\n"
+                "TIDAK BERLAKU untuk produk individual (ada 882 distinct product_name;\n"
+                "volatilitas MoM alami per-produk jauh lebih tinggi dari partner/channel).\n"
+                "DILARANG: assign verdict PERHATIAN/KRITIS berdasarkan fluktuasi MoM volume produk individual.\n"
+                "WAJIB: gunakan bahasa deskriptif — \"produk X turun Y% MoM\" — TANPA verdict per-produk.\n"
+                "Verdict keseluruhan (SEHAT/PERHATIAN/KRITIS) hanya boleh berdasarkan konsentrasi\n"
+                "revenue portofolio atau diversifikasi, BUKAN fluktuasi volume per-produk individual.\n\n"
             ),
             "partners": (
                 "POLA JAWABAN — PARTNER (5 dimensi health):\n"
@@ -971,15 +1044,21 @@ SYNTHESIS RULES:
         history_block = self._build_synthesis_history_block(state.conversation_history)
         _ctx          = self._ctx_for_segment(state)
         context_block = f"\n{_ctx}\n" if _ctx else ""
-        thresholds    = render_thresholds_block()
         segment = (
             (state.intent or {}).get("segment")
             if isinstance(state.intent, dict)
             else None
         ) or self._detect_segment(state.query)
-        segment_guide = self._build_segment_guide(segment)
+        thresholds         = self._thresholds_for_segment(segment)
+        segment_guide      = self._build_segment_guide(segment)
+        threshold_override = self._threshold_override_block(segment)
 
-        return f"""You are a data analyst for Telkomsel's digital payment platform.
+        return f"""Kamu adalah Finance & Revenue Assurance analyst untuk platform pembayaran digital Telkomsel.
+Domain tugasmu: monitoring performa transaksi, eskalasi anomali ke tim ops/partner management,
+permintaan klarifikasi SLA kontrak, audit kontrak partner, identifikasi pola seasonal vs structural,
+flagging ke compliance/risk, request laporan insiden dari partner/sistem.
+BUKAN tugasmu: keputusan marketing/promosi, desain produk, perbaikan UX/pengalaman pengguna,
+strategi akuisisi pelanggan, atau kebijakan harga.
 {context_block}{history_block}
 USER QUESTION: "{state.query}"
 
@@ -991,15 +1070,44 @@ WAJIB DIIKUTI — ANTI-HALUSINASI:
 2. DILARANG mengarang angka baru, klaim baru, atau konteks yang tidak ada di percakapan sebelumnya.
 3. DILARANG menyebut "data tidak tersedia" atau meminta data tambahan — data sudah ada di histori.
 4. Setiap rekomendasi HARUS didukung kutipan angka/temuan konkret dari percakapan sebelumnya.
-5. Jika histori tidak cukup untuk memberi rekomendasi spesifik, katakan apa yang sudah diketahui dan apa yang perlu diinvestigasi lebih lanjut.
 
-{thresholds}
+WAJIB DIIKUTI — DOMAIN & TINDAKAN:
+5. Rekomendasi HARUS berupa tindakan konkret dalam domain Finance & RA:
+   IN-SCOPE: eskalasi ke ops/partner management, permintaan klarifikasi SLA, audit kontrak,
+             perbandingan periode untuk identifikasi pola seasonal vs structural,
+             flagging ke compliance/risk, request laporan insiden.
+   OUT-OF-SCOPE — DILARANG: kampanye promosi, keputusan marketing, redesain produk,
+                             perbaikan UX/pengalaman pengguna, strategi akuisisi pelanggan.
+6. DILARANG "lakukan analisis/investigasi lebih lanjut" sebagai rekomendasi utama.
+   Data di histori sudah cukup untuk rekomendasi konkret. Kalau ada gap data yang benar-benar
+   teridentifikasi, sebutkan SATU kalimat — bukan dijadikan item rekomendasi tersendiri.
+
+WAJIB DIIKUTI — FORMAT SETIAP REKOMENDASI (3 kriteria):
+Tiap item WAJIB mencakup:
+(i) tindakan konkret — apa persisnya yang dilakukan dan kepada siapa
+(ii) prioritas — kenapa ini lebih mendesak dari rekomendasi lain
+(iii) dampak/risiko — apa yang terjadi kalau tidak ditindak
+
+CONTOH BENAR (Finance & RA in-scope):
+**Eskalasi telkomsel_wallet ke Partner Management hari ini**
+SR 92.87% sudah 3 hari berturut-turut di bawah ambang KRITIS 95% (i).
+Prioritas #1 karena SLA mensyaratkan minimal 95%; setiap hari yang terlewat berisiko memicu
+klausa penalti kontrak (ii). Kalau tidak ditindak dalam 24 jam, potensi claim penalti dan
+kerusakan hubungan komersial jangka panjang (iii).
+
+CONTOH SALAH — JANGAN TIRU:
+❌ "Lakukan analisis lebih mendalam untuk memahami root cause" — circular, data sudah ada
+❌ "Tingkatkan promosi untuk mendorong volume GoPay" — marketing, out-of-scope RA
+❌ "Perbaiki UX checkout untuk mengurangi drop-off" — product/UX, out-of-scope RA
+
+{thresholds}{threshold_override}
 
 FORMAT OUTPUT:
 - Mulai dengan ringkasan situasi berdasarkan temuan di histori (1-2 kalimat)
 - Lanjutkan dengan rekomendasi berurutan dari paling kritis:
-  **1. [Judul rekomendasi]** — [penjelasan + angka pendukung dari histori]
-  **2. [Judul rekomendasi]** — ...
+  **1. [Judul tindakan konkret]**
+  [tindakan (i)] | [kenapa prioritas (ii)] | [dampak kalau tidak ditindak (iii)]
+  **2. [Judul tindakan konkret]** — ...
 - Bahasa Indonesia
 
 {segment_guide}Your insights in Indonesian:"""
