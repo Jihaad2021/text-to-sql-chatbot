@@ -124,6 +124,11 @@ class AgentState:
     # MIN(date) from daily_master — injected by pipeline at startup alongside data_end_date
     data_start_date: date | None = None
 
+    # COUNT(DISTINCT product_name) from product_summary — injected by pipeline at startup.
+    # Used by InsightGenerator to report dynamic product count in prompt exceptions.
+    # 0 means "not loaded" (DB unreachable); callers fall back to hardcoded 882.
+    product_count: int = 0
+
     # Set by QueryRewriter when the resolved period starts after data_end_date.
     # InsightGenerator skips LLM and returns a template message when True.
     query_out_of_range: bool = False

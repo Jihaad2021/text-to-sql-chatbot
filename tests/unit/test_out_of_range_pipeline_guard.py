@@ -53,6 +53,7 @@ def _make_pipeline() -> TextToSQLPipeline:
         pipeline.analytics_agent   = MagicMock()
         pipeline.data_end_date     = date(2026, 6, 30)
         pipeline.data_start_date   = date(2026, 3, 1)
+        pipeline.product_count     = 882
         pipeline.context_snapshot  = ""
         pipeline._cache            = MagicMock()
         pipeline._cache.get.return_value = None  # no cache hit

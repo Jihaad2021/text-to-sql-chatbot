@@ -3,11 +3,12 @@ date_range — single source of truth for the latest available data date.
 
 Queried once at pipeline startup (not per-request) via get_latest_available_date().
 Used by:
-  - TextToSQLPipeline.__init__  → stored as self.data_end_date / self.data_start_date
-  - pipeline.run()              → injected into state.data_end_date / state.data_start_date
+  - TextToSQLPipeline.__init__  → stored as self.data_end_date / self.data_start_date / self.product_count
+  - pipeline.run()              → injected into state.data_end_date / state.data_start_date / state.product_count
   - QueryRewriter               → validates resolved period against latest date; injects year
   - SQLGenerator                → builds dynamic DATE RULES block
   - AnalyticsAgent              → builds dynamic "Data tersedia" string in system prompt
+  - InsightGenerator            → injects dynamic product count into prompt exceptions
 """
 
 from datetime import date
@@ -38,6 +39,18 @@ def get_earliest_available_date(engine: Engine) -> date | None:
             return row[0] if row and row[0] else None
     except Exception:
         return None
+
+
+def get_product_count(engine: Engine) -> int:
+    """Return COUNT(DISTINCT product_name) from product_summary, or 0 if unavailable."""
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT COUNT(DISTINCT product_name) FROM product_summary")
+            ).fetchone()
+            return int(row[0]) if row and row[0] else 0
+    except Exception:
+        return 0
 
 
 def get_data_year(end_date: date | None) -> int:

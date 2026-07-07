@@ -371,9 +371,9 @@ class InsightGenerator(LLMBaseAgent):
         history_block  = self._build_history_block(state.conversation_history)
         context_block  = f"\n{_ctx}\n" if _ctx else ""
         layout_block   = self._build_layout_block(state.layout_plan)
-        segment_guide             = self._build_segment_guide(segment)
+        segment_guide             = self._build_segment_guide(segment, state.product_count)
         business_thresholds_block = self._thresholds_for_segment(segment)
-        threshold_override        = self._threshold_override_block(segment)
+        threshold_override        = self._threshold_override_block(segment, state.product_count)
         early_product_warning     = self._early_product_warning(segment)
         intent_category = (
             (state.intent or {}).get("category", "")
@@ -497,8 +497,8 @@ METODOLOGI ANALISIS — ikuti urutan ini:
             else None
         ) or self._detect_segment(state.query)
         business_thresholds_block = self._thresholds_for_segment(segment)
-        threshold_override        = self._threshold_override_block(segment)
-        segment_guide             = self._build_segment_guide(segment)
+        threshold_override        = self._threshold_override_block(segment, state.product_count)
+        segment_guide             = self._build_segment_guide(segment, state.product_count)
         early_product_warning     = self._early_product_warning(segment)
 
         response_length   = (state.layout_plan or {}).get("response_length", "standard")
@@ -609,8 +609,8 @@ FORMAT OUTPUT — gunakan markdown untuk struktur yang jelas:
             else None
         ) or self._detect_segment(state.query)
         business_thresholds_block = self._thresholds_for_segment(segment)
-        threshold_override        = self._threshold_override_block(segment)
-        segment_guide             = self._build_segment_guide(segment)
+        threshold_override        = self._threshold_override_block(segment, state.product_count)
+        segment_guide             = self._build_segment_guide(segment, state.product_count)
         early_product_warning     = self._early_product_warning(segment)
 
         response_length   = (state.layout_plan or {}).get("response_length", "standard")
@@ -772,21 +772,22 @@ SYNTHESIS RULES:
             return render_thresholds_block(exclude_metrics=self._PRODUCT_EXCLUDED_THRESHOLDS)
         return render_thresholds_block()
 
-    def _threshold_override_block(self, segment: str) -> str:
+    def _threshold_override_block(self, segment: str, product_count: int = 0) -> str:
         """Return a strong inline override right after the thresholds block for product segment.
 
         The business thresholds (MoM Volume Growth, Perubahan transaksi) were calibrated at
-        partner/channel level — they do NOT apply to 882 individual product_name rows where
+        partner/channel level — they do NOT apply to individual product_name rows where
         natural promo-driven volatility makes the same %-change thresholds meaningless.
         Injecting this block immediately after render_thresholds_block() prevents the LLM from
         applying PERHATIAN/KRITIS to per-product MoM swings.
         """
         if segment != "products":
             return ""
+        count = product_count or 882
         return (
             "\n⛔ EXCEPTION PRODUK — berlaku langsung setelah threshold di atas:\n"
             "Threshold 'MoM Volume Growth' dan 'Perubahan transaksi' TIDAK BERLAKU untuk produk individual.\n"
-            "Produk individual (882 distinct product_name) mengalami fluktuasi MoM alami karena promo/musiman.\n"
+            f"Produk individual ({count} distinct product_name) mengalami fluktuasi MoM alami karena promo/musiman.\n"
             "DILARANG: tulis verdict KRITIS atau PERHATIAN untuk perubahan volume produk individual.\n"
             "WAJIB: gunakan bahasa deskriptif — 'GoPay turun 22,7% MoM' — tanpa verdict per-produk.\n"
             "Verdict keseluruhan (SEHAT/PERHATIAN/KRITIS) HANYA boleh berdasarkan konsentrasi revenue\n"
@@ -948,8 +949,9 @@ SYNTHESIS RULES:
             return "transactions"
         return "general"
 
-    def _build_segment_guide(self, segment: str) -> str:
+    def _build_segment_guide(self, segment: str, product_count: int = 0) -> str:
         """Return compact segment-specific answer pattern guidance."""
+        count = product_count or 882
         guides: dict[str, str] = {
             "transactions": (
                 "POLA JAWABAN — TRANSAKSI:\n"
@@ -966,7 +968,7 @@ SYNTHESIS RULES:
                 "- Template pembuka: \"Portfolio [N] produk — [growing] tumbuh, [declining] turun — Verdict: [SEHAT/PERHATIAN/KRITIS]\"\n"
                 "PENTING — THRESHOLD EXCEPTION untuk produk:\n"
                 "Threshold MoM Volume Growth dan Perubahan transaksi di blok THRESHOLDS di atas\n"
-                "TIDAK BERLAKU untuk produk individual (ada 882 distinct product_name;\n"
+                f"TIDAK BERLAKU untuk produk individual (ada {count} distinct product_name;\n"
                 "volatilitas MoM alami per-produk jauh lebih tinggi dari partner/channel).\n"
                 "DILARANG: assign verdict PERHATIAN/KRITIS berdasarkan fluktuasi MoM volume produk individual.\n"
                 "WAJIB: gunakan bahasa deskriptif — \"produk X turun Y% MoM\" — TANPA verdict per-produk.\n"
@@ -1050,8 +1052,8 @@ SYNTHESIS RULES:
             else None
         ) or self._detect_segment(state.query)
         thresholds         = self._thresholds_for_segment(segment)
-        segment_guide      = self._build_segment_guide(segment)
-        threshold_override = self._threshold_override_block(segment)
+        segment_guide      = self._build_segment_guide(segment, state.product_count)
+        threshold_override = self._threshold_override_block(segment, state.product_count)
 
         return f"""Kamu adalah Finance & Revenue Assurance analyst untuk platform pembayaran digital Telkomsel.
 Domain tugasmu: monitoring performa transaksi, eskalasi anomali ke tim ops/partner management,
