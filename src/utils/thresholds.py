@@ -21,6 +21,15 @@ def _load() -> dict:
         return yaml.safe_load(fh)
 
 
+def get_auto_drilldown_dimensions() -> list[str]:
+    """Return ordered list of dimensions for auto drill-down (from business_thresholds.yaml).
+
+    Defaults to ["partner", "channel"] if key is absent.
+    "product" is excluded by design — see config comment for rationale.
+    """
+    return list(_load().get("auto_drilldown_dimensions", ["partner", "channel"]))
+
+
 def get_auto_drilldown_threshold() -> float:
     """Return DoD drop magnitude (positive %) that triggers auto drill-down.
 

@@ -51,6 +51,17 @@ thresholds:
 # Change this without affecting PERHATIAN/KRITIS verdict thresholds above.
 auto_drilldown_dod_threshold: 30
 
+# Dimensions to drill into for the worst anomaly day (partner + channel always).
+# "product" is intentionally excluded: daily_master has 882 distinct product_name
+# values, which get hard-capped at 20 rows by get_distribution — the top-20 list
+# for a single anomaly day is almost identical to any other day and does not reveal
+# root cause. Channel (7-8 values) answers "which delivery path failed?" and is
+# always complementary to partner. Add "product" here only if a dedicated product-
+# level cap or a different aggregation strategy is implemented first.
+auto_drilldown_dimensions:
+  - partner
+  - channel
+
 notes:
   - "VERDICT WAJIB: setiap jawaban harus menyebut salah satu — SEHAT / PERHATIAN / KRITIS — [1 kalimat alasan]"
   - "HANYA flag SR yang benar-benar di bawah 98%. Nilai 99.x% adalah SEHAT, jangan sebut sebagai 'di bawah threshold'."

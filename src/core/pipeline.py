@@ -58,7 +58,7 @@ from src.tools.analytics_tools import get_distribution
 from src.utils.context_distiller import distill_context
 from src.utils.date_range import get_latest_available_date
 from src.utils.exceptions import QueryExecutionError
-from src.utils.thresholds import get_auto_drilldown_threshold
+from src.utils.thresholds import get_auto_drilldown_dimensions, get_auto_drilldown_threshold
 
 # Maximum retries for SQL generation when PostgreSQL returns an execution error
 _SQL_RETRY_LIMIT = 2
@@ -454,12 +454,18 @@ class TextToSQLPipeline:
         - query_result has no date + trx columns, or fewer than 2 rows
         - no row's DoD drop exceeds the threshold
         """
-        # Skip only when a partner get_distribution already exists (drill-down done).
-        # Presence of other tool_results (e.g. get_trend) does NOT block drill-down.
-        if any(
-            tr.tool_name == "get_distribution" and tr.dimension == "partner"
-            for tr in state.tool_results
-        ):
+        # Compute which dimensions still need to be fetched.
+        # Dimensions already present (from AnalyticsAgent or a prior drill-down call)
+        # are skipped individually — presence of get_trend or other tools does not block.
+        existing_dims = {
+            tr.dimension for tr in state.tool_results
+            if tr.tool_name == "get_distribution"
+        }
+        needed_dims = [
+            d for d in get_auto_drilldown_dimensions()
+            if d not in existing_dims
+        ]
+        if not needed_dims:
             return state
 
         if _BRIEF_MODE_RE.search(state.query or ""):
@@ -503,33 +509,34 @@ class TextToSQLPipeline:
         if engine is None:
             return state
 
-        try:
-            result = get_distribution(engine, worst_date, worst_date, dimension="partner", top_n=10)
-            state.tool_results.append(ToolCallResult(
-                tool_name="get_distribution",
-                data=result["data"],
-                row_count=result["row_count"],
-                sql_or_params=result["sql"],
-                description=(
-                    f"Auto drill-down: breakdown partner untuk {worst_date} "
-                    f"(DoD {worst_dod:.1f}%)"
-                ),
-                actual_entity_count=result.get("actual_entity_count", 0),
-                cumulative_trx_share_pct=result.get("cumulative_trx_share_pct", 0.0),
-                cumulative_rev_share_pct=result.get("cumulative_rev_share_pct", 0.0),
-                dimension=result.get("dimension", "partner"),
-            ))
-            state.auto_drilldown_triggered = True
-            self.query_executor.log(
-                f"Auto drill-down triggered: {worst_date} DoD={worst_dod:.1f}%, "
-                f"partner rows={result['row_count']}"
-            )
-        except Exception as exc:
-            # Non-fatal: log and continue, main result is unaffected
-            self.query_executor.log(
-                f"Auto drill-down failed (non-fatal): {exc}",
-                level="warning",
-            )
+        for dim in needed_dims:
+            try:
+                result = get_distribution(engine, worst_date, worst_date, dimension=dim, top_n=10)
+                state.tool_results.append(ToolCallResult(
+                    tool_name="get_distribution",
+                    data=result["data"],
+                    row_count=result["row_count"],
+                    sql_or_params=result["sql"],
+                    description=(
+                        f"Auto drill-down: breakdown {dim} untuk {worst_date} "
+                        f"(DoD {worst_dod:.1f}%)"
+                    ),
+                    actual_entity_count=result.get("actual_entity_count", 0),
+                    cumulative_trx_share_pct=result.get("cumulative_trx_share_pct", 0.0),
+                    cumulative_rev_share_pct=result.get("cumulative_rev_share_pct", 0.0),
+                    dimension=dim,
+                ))
+                state.auto_drilldown_triggered = True
+                self.query_executor.log(
+                    f"Auto drill-down triggered: {worst_date} DoD={worst_dod:.1f}%, "
+                    f"dim={dim} rows={result['row_count']}"
+                )
+            except Exception as exc:
+                # Non-fatal: log and continue, other dimensions still attempted
+                self.query_executor.log(
+                    f"Auto drill-down failed for dim={dim} (non-fatal): {exc}",
+                    level="warning",
+                )
 
         return state
 

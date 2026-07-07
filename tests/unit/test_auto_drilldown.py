@@ -126,10 +126,10 @@ class TestAutoDrilldownScenarios:
         assert result.tool_results == []
         assert result.auto_drilldown_triggered is False
 
-    # ── (b) DoD above threshold → drill-down triggered ────────────────────────
+    # ── (b) DoD above threshold → drill-down triggered for all needed dims ───
 
     def test_above_threshold_drilldown_called(self):
-        """DoD −37.7% > threshold 30% → get_distribution called, ToolCallResult appended."""
+        """DoD −37.7% > threshold 30% → get_distribution called for partner AND channel."""
         pipeline = _make_pipeline_stub()
         state = AgentState(query="kapan saja penurunan transaksi terjadi di bulan Juni?")
         state.query_result = _DAILY_ROWS_WITH_ANOMALY
@@ -137,67 +137,88 @@ class TestAutoDrilldownScenarios:
         with patch("src.core.pipeline.get_distribution", return_value=_DIST_RESULT) as mock_dist:
             result = pipeline._run_auto_drilldown(state)
 
-        mock_dist.assert_called_once()
-        call_kwargs = mock_dist.call_args
-        # Worst day must be 2026-06-30
-        assert "2026-06-30" in call_kwargs.args or call_kwargs.kwargs.get("period_start") == "2026-06-30"
-        assert len(result.tool_results) == 1
-        tr = result.tool_results[0]
-        assert isinstance(tr, ToolCallResult)
-        assert tr.tool_name == "get_distribution"
-        assert tr.dimension == "partner"
-        assert "2026-06-30" in tr.description
+        # Two calls: one for partner, one for channel
+        assert mock_dist.call_count == 2
+        called_dims = [c.kwargs.get("dimension") or c.args[3] for c in mock_dist.call_args_list]
+        assert "partner" in called_dims
+        assert "channel" in called_dims
+        # Worst day must be 2026-06-30 in both calls
+        for c in mock_dist.call_args_list:
+            period_start = c.kwargs.get("period_start") or c.args[1]
+            assert "2026-06-30" in str(period_start)
+        assert len(result.tool_results) == 2
+        dims_in_results = {tr.dimension for tr in result.tool_results}
+        assert dims_in_results == {"partner", "channel"}
         assert result.auto_drilldown_triggered is True
 
-    # ── (c) partner get_distribution already in tool_results → skip ──────────
+    # ── (c) both dimensions already present → skip entirely ──────────────────
 
-    def test_skip_when_partner_drilldown_exists(self):
-        """Partner get_distribution already present → drill-down must be skipped."""
+    def test_skip_when_both_dims_exist(self):
+        """Both partner and channel already in tool_results → no calls made."""
         pipeline = _make_pipeline_stub()
         state = AgentState(query="kapan saja penurunan transaksi terjadi di bulan Juni?")
         state.query_result = _DAILY_ROWS_WITH_ANOMALY
         state.tool_results = [
             ToolCallResult(
-                tool_name="get_distribution",
-                data=[],
-                row_count=0,
-                sql_or_params="SELECT ...",
-                description="partner breakdown already present",
-                dimension="partner",
-            )
+                tool_name="get_distribution", data=[], row_count=0,
+                sql_or_params="", description="partner", dimension="partner",
+            ),
+            ToolCallResult(
+                tool_name="get_distribution", data=[], row_count=0,
+                sql_or_params="", description="channel", dimension="channel",
+            ),
         ]
 
         with patch("src.core.pipeline.get_distribution") as mock_dist:
             result = pipeline._run_auto_drilldown(state)
 
         mock_dist.assert_not_called()
-        assert len(result.tool_results) == 1  # unchanged
+        assert len(result.tool_results) == 2  # unchanged
         assert result.auto_drilldown_triggered is False
 
-    def test_not_skipped_when_only_get_trend_exists(self):
-        """get_trend in tool_results (AnalyticsAgent path) must NOT block drill-down."""
+    def test_partial_skip_when_only_partner_exists(self):
+        """Partner already present → only channel is fetched, not partner again."""
         pipeline = _make_pipeline_stub()
         state = AgentState(query="kapan saja penurunan transaksi terjadi di bulan Juni?")
-        # Simulate AnalyticsAgent: query_result = last tool's data (get_trend rows)
-        state.query_result = [
-            {"period": "2026-06-29", "total_trx": 950480},
-            {"period": "2026-06-30", "total_trx": 592437},  # -37.7%
-        ]
+        state.query_result = _DAILY_ROWS_WITH_ANOMALY
         state.tool_results = [
             ToolCallResult(
-                tool_name="get_trend",
-                data=state.query_result,
-                row_count=2,
-                sql_or_params="SELECT ...",
-                description="Trend daily all 2026-06-01→2026-06-30",
+                tool_name="get_distribution", data=[], row_count=0,
+                sql_or_params="", description="partner already present", dimension="partner",
             )
         ]
 
         with patch("src.core.pipeline.get_distribution", return_value=_DIST_RESULT) as mock_dist:
             result = pipeline._run_auto_drilldown(state)
 
-        mock_dist.assert_called_once()
-        assert len(result.tool_results) == 2  # get_trend + new get_distribution
+        # Only channel should be fetched
+        assert mock_dist.call_count == 1
+        called_dim = mock_dist.call_args.kwargs.get("dimension") or mock_dist.call_args.args[3]
+        assert called_dim == "channel"
+        assert len(result.tool_results) == 2  # original partner + new channel
+        assert result.auto_drilldown_triggered is True
+
+    def test_not_skipped_when_only_get_trend_exists(self):
+        """get_trend in tool_results (AnalyticsAgent path) must NOT block drill-down."""
+        pipeline = _make_pipeline_stub()
+        state = AgentState(query="kapan saja penurunan transaksi terjadi di bulan Juni?")
+        state.query_result = [
+            {"period": "2026-06-29", "total_trx": 950480},
+            {"period": "2026-06-30", "total_trx": 592437},  # -37.7%
+        ]
+        state.tool_results = [
+            ToolCallResult(
+                tool_name="get_trend", data=state.query_result, row_count=2,
+                sql_or_params="SELECT ...", description="Trend daily all 2026-06-01→2026-06-30",
+            )
+        ]
+
+        with patch("src.core.pipeline.get_distribution", return_value=_DIST_RESULT) as mock_dist:
+            result = pipeline._run_auto_drilldown(state)
+
+        # Both partner and channel fetched (get_trend does not count as get_distribution)
+        assert mock_dist.call_count == 2
+        assert len(result.tool_results) == 3  # get_trend + partner + channel
         assert result.auto_drilldown_triggered is True
 
     # ── edge cases ────────────────────────────────────────────────────────────
