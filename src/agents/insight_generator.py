@@ -259,6 +259,8 @@ class InsightGenerator(LLMBaseAgent):
                         _req_match = re.search(r'\b(\d{2,5})\b', state.query or "")
                         if _req_match:
                             _req_n = int(_req_match.group(1))
+                            if 2000 <= _req_n <= 2099:
+                                continue  # year digit in query, not a requested row count
                             if _req_n != _tr.row_count and str(_req_n) in insights:
                                 self.log(
                                     f"Insight may use user's query number ({_req_n}) "
@@ -324,23 +326,20 @@ class InsightGenerator(LLMBaseAgent):
 
         response_length = (state.layout_plan or {}).get("response_length", "standard")
         has_context     = bool(state.context_snapshot)
-        # For brief: strip partner/product/channel breakdown so the LLM isn't tempted to
-        # pull that data into extra sections beyond the direct answer.
-        _ctx = (
-            self._trim_context_for_brief(state.context_snapshot)
-            if response_length == "brief" and state.context_snapshot
-            else state.context_snapshot
-        )
+        # Apply channel-dimension partner strip first, then brief trim on top.
+        _ctx = self._ctx_for_segment(state)
+        if response_length == "brief" and _ctx:
+            _ctx = self._trim_context_for_brief(_ctx)
 
-        history_block  = self._build_history_block(state.conversation_history)
-        context_block  = f"\n{_ctx}\n" if _ctx else ""
-        layout_block   = self._build_layout_block(state.layout_plan)
-        # Use segment from IntentClassifier if available, fallback to keyword detection
         segment        = (
             (state.intent or {}).get("segment")
             if isinstance(state.intent, dict)
             else None
         ) or self._detect_segment(state.query)
+
+        history_block  = self._build_history_block(state.conversation_history)
+        context_block  = f"\n{_ctx}\n" if _ctx else ""
+        layout_block   = self._build_layout_block(state.layout_plan)
         segment_guide             = self._build_segment_guide(segment)
         business_thresholds_block = render_thresholds_block()
         intent_category = (
@@ -456,7 +455,8 @@ METODOLOGI ANALISIS — ikuti urutan ini:
         """
         history_block             = self._build_history_block(state.conversation_history)
         tools_block               = self._build_tool_results_block(state.tool_results)
-        context_block             = f"\n{state.context_snapshot}\n" if state.context_snapshot else ""
+        _ctx                      = self._ctx_for_segment(state)
+        context_block             = f"\n{_ctx}\n" if _ctx else ""
         layout_block              = self._build_layout_block(state.layout_plan)
         business_thresholds_block = render_thresholds_block()
 
@@ -566,7 +566,8 @@ FORMAT OUTPUT — gunakan markdown untuk struktur yang jelas:
         """Build insight prompt that synthesises all step results."""
         history_block = self._build_history_block(state.conversation_history)
         steps_block   = self._build_steps_block(state.step_results)
-        context_block = f"\n{state.context_snapshot}\n" if state.context_snapshot else ""
+        _ctx          = self._ctx_for_segment(state)
+        context_block = f"\n{_ctx}\n" if _ctx else ""
         layout_block              = self._build_layout_block(state.layout_plan)
         business_thresholds_block = render_thresholds_block()
 
@@ -670,6 +671,35 @@ SYNTHESIS RULES:
                     break
             lines.append(line)
         return "\n".join(lines)
+
+    def _strip_partner_section(self, ctx: str) -> str:
+        """Remove the 'Top 5 partner' block from context_snapshot for channel queries.
+
+        Partner MoM data (e.g. 'dana ↓5.6% [PERHATIAN]') bleeds into channel dimension
+        answers when the same snapshot is injected unchanged — the LLM reports partner
+        names as channels needing attention. Channel queries only need the channel
+        distribution section; partner detail is irrelevant and harmful.
+        """
+        return re.sub(r"Top 5 partner bulan ini:.*?(?:\n\n|$)", "", ctx, flags=re.DOTALL)
+
+    def _ctx_for_segment(self, state: AgentState) -> str:
+        """Return context_snapshot with partner section stripped when segment is 'channels'.
+
+        Single call site used by ALL four prompt builders so the same BUG 1 fix applies
+        regardless of which prompt path (single-step, multi-step, tool-results, synthesis)
+        the pipeline takes.
+        """
+        ctx = state.context_snapshot or ""
+        if not ctx:
+            return ctx
+        segment = (
+            (state.intent or {}).get("segment")
+            if isinstance(state.intent, dict)
+            else None
+        ) or self._detect_segment(state.query)
+        if segment == "channels":
+            ctx = self._strip_partner_section(ctx)
+        return ctx
 
     def _build_single_elaboration(self, response_length: str, has_context: bool) -> str:
         """Return the elaboration instruction block for single-step prompts."""
@@ -883,7 +913,8 @@ SYNTHESIS RULES:
         exclusively from prior conversation turns.
         """
         history_block = self._build_synthesis_history_block(state.conversation_history)
-        context_block = f"\n{state.context_snapshot}\n" if state.context_snapshot else ""
+        _ctx          = self._ctx_for_segment(state)
+        context_block = f"\n{_ctx}\n" if _ctx else ""
         thresholds    = render_thresholds_block()
         segment = (
             (state.intent or {}).get("segment")
