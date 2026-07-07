@@ -406,3 +406,101 @@ class TestStripPartnerSection:
         assert "dana" not in prompt
         assert "gopay" not in prompt
         assert "Distribusi channel" in prompt
+
+
+# ========================================
+# Test: BUG 2 — _find_missing_kritis_entities + KRITIS guard
+# ========================================
+
+class TestFindMissingKritisEntities:
+    """_find_missing_kritis_entities must return KRITIS entities absent from insight text."""
+
+    def _gen(self):
+        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            return InsightGenerator()
+
+    def test_returns_unlisted_kritis_entity(self):
+        """KRITIS entity not mentioned in insights must appear in result."""
+        rows = [
+            {"partner_group": "dana", "total_trx": 6000000, "success_rate_pct": Decimal("99.5")},
+            {"partner_group": "telkomsel_wallet", "total_trx": 8116, "success_rate_pct": Decimal("92.87")},
+        ]
+        missing = self._gen()._find_missing_kritis_entities(rows, "dana performa baik.")
+        assert len(missing) == 1
+        assert missing[0][0] == "telkomsel_wallet"
+        assert abs(missing[0][1] - 92.87) < 0.01
+
+    def test_not_missing_when_mentioned_in_insights(self):
+        """Entity whose name appears in insights must not be flagged."""
+        rows = [{"partner_group": "telkomsel_wallet", "success_rate_pct": Decimal("92.87")}]
+        missing = self._gen()._find_missing_kritis_entities(
+            rows, "telkomsel_wallet berstatus KRITIS dengan SR 92.87%."
+        )
+        assert missing == []
+
+    def test_noop_when_no_sr_column(self):
+        """Result without SR column must return empty list."""
+        rows = [{"partner_group": "dana", "total_trx": 100}]
+        assert self._gen()._find_missing_kritis_entities(rows, "dana ok.") == []
+
+    def test_noop_when_sr_above_threshold(self):
+        """Entities with SR >= 95% must not appear in result."""
+        rows = [
+            {"partner_group": "dana", "success_rate_pct": Decimal("99.9")},
+            {"partner_group": "finnet", "success_rate_pct": Decimal("95.0")},
+        ]
+        assert self._gen()._find_missing_kritis_entities(rows, "no one mentioned.") == []
+
+    def test_case_insensitive_match(self):
+        """Match must be case-insensitive (insight uses title case, result uses lowercase)."""
+        rows = [{"partner_group": "telkomsel_wallet", "success_rate_pct": Decimal("92.87")}]
+        missing = self._gen()._find_missing_kritis_entities(
+            rows, "Telkomsel_Wallet perlu perhatian."
+        )
+        assert missing == []
+
+
+class TestKritisGuardInExecute:
+    """execute() must append KRITIS section when recommendation result has unlisted KRITIS entity."""
+
+    def _gen(self):
+        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            return InsightGenerator()
+
+    def test_kritis_entity_appended_when_missing_from_llm_output(self):
+        """telkomsel_wallet KRITIS must appear in final insights even when LLM omits it."""
+        gen = self._gen()
+        state = AgentState(query="partner mana yang perlu diprioritaskan?", database="financial_db")
+        state.intent = {"category": "recommendation", "segment": "partners"}
+        state.query_result = [
+            {"partner_group": "dana", "total_trx": 6000000, "success_rate_pct": Decimal("99.5")},
+            {"partner_group": "telkomsel_wallet", "total_trx": 8116, "success_rate_pct": Decimal("92.87")},
+        ]
+        state.row_count = 2
+        state.validated_sql = "SELECT partner_group, success_rate_pct FROM ..."
+
+        with patch.object(gen, "_call_llm", return_value="dana performa baik."):
+            state = gen.run(state)
+
+        assert "telkomsel_wallet" in state.insights.lower()
+        assert "KRITIS" in state.insights
+        assert "92.87" in state.insights
+
+    def test_no_duplication_when_kritis_already_mentioned(self):
+        """If LLM already mentions the KRITIS entity, guard must not append a duplicate."""
+        gen = self._gen()
+        state = AgentState(query="partner mana yang perlu diprioritaskan?", database="financial_db")
+        state.intent = {"category": "recommendation", "segment": "partners"}
+        state.query_result = [
+            {"partner_group": "telkomsel_wallet", "total_trx": 8116, "success_rate_pct": Decimal("92.87")},
+        ]
+        state.row_count = 1
+        state.validated_sql = "SELECT ..."
+        llm_output = "telkomsel_wallet berstatus KRITIS dengan SR 92.87%."
+
+        with patch.object(gen, "_call_llm", return_value=llm_output):
+            state = gen.run(state)
+
+        # Guard must NOT fire — count occurrences of the entity name
+        count = state.insights.lower().count("telkomsel_wallet")
+        assert count == 1, f"Expected 1 occurrence, got {count}"

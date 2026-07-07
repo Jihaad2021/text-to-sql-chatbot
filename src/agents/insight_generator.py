@@ -251,6 +251,29 @@ class InsightGenerator(LLMBaseAgent):
             state.insights = insights
             state.insights_sections = self._parse_insight_sections(insights)
 
+            # BUG 2 guard: deterministically append any KRITIS entities that the LLM
+            # omitted from a recommendation insight — safety net so critical partners/
+            # channels are never silently missing from the output.
+            if (
+                isinstance(state.intent, dict)
+                and state.intent.get("category") == "recommendation"
+                and state.query_result
+            ):
+                missing_kritis = self._find_missing_kritis_entities(
+                    state.query_result, insights
+                )
+                if missing_kritis:
+                    lines = ["\n\n## 🔴 KRITIS — Entitas Berikut Belum Dibahas"]
+                    for entity, sr in missing_kritis:
+                        lines.append(f"- **{entity}**: SR {sr:.2f}% — di bawah ambang KRITIS (95%)")
+                    kritis_block = "\n".join(lines)
+                    state.insights = insights + kritis_block
+                    self.log(
+                        f"KRITIS guard appended {len(missing_kritis)} missing entity(ies): "
+                        + ", ".join(e for e, _ in missing_kritis),
+                        level="warning",
+                    )
+
             # FIX 5 monitoring: warn when insight may use user's raw query number
             # instead of actual row_count from tool results.
             if state.tool_results:
@@ -671,6 +694,39 @@ SYNTHESIS RULES:
                     break
             lines.append(line)
         return "\n".join(lines)
+
+    # ── BUG 2: deterministic KRITIS entity guard ──────────────────────────
+    # Column names to probe for success rate and entity name in query_result rows.
+    _SR_COLS: tuple[str, ...] = ("success_rate_pct", "avg_success_rate", "sr")
+    _ENTITY_COLS: tuple[str, ...] = ("partner_group", "channel", "product_name")
+
+    def _find_missing_kritis_entities(
+        self,
+        query_result: list[dict],
+        insights: str,
+    ) -> list[tuple[str, float]]:
+        """Return (entity_name, sr) pairs that are KRITIS (<95%) but absent from insights."""
+        missing: list[tuple[str, float]] = []
+        insights_lower = insights.lower()
+        for row in query_result:
+            sr_val: float | None = None
+            for col in self._SR_COLS:
+                if col in row and row[col] is not None:
+                    try:
+                        sr_val = float(row[col])
+                    except (TypeError, ValueError):
+                        pass
+                    break
+            if sr_val is None or sr_val >= 95.0:
+                continue
+            entity: str | None = None
+            for col in self._ENTITY_COLS:
+                if col in row and row[col]:
+                    entity = str(row[col])
+                    break
+            if entity and entity.lower() not in insights_lower:
+                missing.append((entity, sr_val))
+        return missing
 
     def _strip_partner_section(self, ctx: str) -> str:
         """Remove the 'Top 5 partner' block from context_snapshot for channel queries.
