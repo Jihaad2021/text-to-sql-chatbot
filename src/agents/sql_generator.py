@@ -36,7 +36,6 @@ from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.exceptions import SQLGenerationError
-from src.utils.financial_domain import DATA_END_DATE, DATA_START_DATE
 
 # Maximum rows per previous step shown in context to avoid prompt overflow
 _PREV_STEP_ROW_PREVIEW = 5

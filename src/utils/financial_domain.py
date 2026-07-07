@@ -77,24 +77,6 @@ CHANNEL_TOTAL_REV_SQL = (
 )
 
 
-# ── SUCCESS RATE THRESHOLDS ───────────────────────────────────────────────────
-SR_ALERT    = 80.0   # Below this → ALERT (merah/red)
-SR_WATCH    = 85.0   # Below this → Watch (kuning/amber)
-SR_GOOD     = 88.0   # Above this → Good (hijau/green)
-SR_EXCELLENT = 95.0  # Above this → Excellent
-
-
-def classify_sr(sr_value: float) -> str:
-    """Classify a success rate value into a business status label."""
-    if sr_value < SR_ALERT:
-        return "ALERT"
-    if sr_value < SR_WATCH:
-        return "Watch"
-    if sr_value >= SR_EXCELLENT:
-        return "Excellent"
-    return "Normal"
-
-
 # ── WEIGHTED SR FORMULA ───────────────────────────────────────────────────────
 # Use this instead of AVG(success_rate_pct) to get accurate cross-group SR.
 WEIGHTED_SR_SQL = "ROUND(SUM(success_trx) / NULLIF(SUM(total_trx), 0) * 100, 2)"
@@ -118,7 +100,3 @@ PEAK_HOURS         = [18, 19, 20, 21]   # Jam puncak transaksi
 BUSINESS_HOURS     = (8, 22)            # Jam operasional (start, end inclusive)
 NIGHT_HOURS_END    = 6                  # Jam malam: 0–6
 
-
-# ── DATA RANGE ────────────────────────────────────────────────────────────────
-DATA_START_DATE = "2026-03-01"
-DATA_END_DATE   = "2026-06-02"
