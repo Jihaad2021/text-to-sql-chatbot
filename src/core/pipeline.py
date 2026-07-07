@@ -56,7 +56,7 @@ from src.core.query_cache import QueryCache, build_snapshot, restore_snapshot
 from src.models.agent_state import AgentState, ExecutionStep, StepResult, ToolCallResult
 from src.tools.analytics_tools import get_distribution
 from src.utils.context_distiller import distill_context
-from src.utils.date_range import get_latest_available_date
+from src.utils.date_range import get_earliest_available_date, get_latest_available_date
 from src.utils.exceptions import QueryExecutionError
 from src.utils.thresholds import get_auto_drilldown_dimensions, get_auto_drilldown_threshold
 
@@ -174,7 +174,8 @@ class TextToSQLPipeline:
         if _engine:
             self.baseline = BaselineCache(_engine)
             self.context_snapshot = build_context_snapshot(_engine, self.baseline)
-            self.data_end_date = get_latest_available_date(_engine)
+            self.data_end_date   = get_latest_available_date(_engine)
+            self.data_start_date = get_earliest_available_date(_engine)
         else:
             self.baseline = BaselineCache.__new__(BaselineCache)
             self.baseline.partner = {}
@@ -182,7 +183,8 @@ class TextToSQLPipeline:
             self.baseline.overall = {}
             self.baseline.period = {}
             self.context_snapshot = ""
-            self.data_end_date = None
+            self.data_end_date   = None
+            self.data_start_date = None
 
     @property
     def agents(self) -> list[BaseAgent]:
@@ -224,6 +226,7 @@ class TextToSQLPipeline:
         # Inject pre-computed context so all agents have business baseline
         state.context_snapshot = self.context_snapshot
         state.data_end_date    = self.data_end_date
+        state.data_start_date  = self.data_start_date
 
         # ── Cache check ──────────────────────────────────────────
         if Config.CACHE_TTL_SECONDS > 0:

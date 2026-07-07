@@ -20,38 +20,36 @@ Writes to state:
 """
 
 import json
+import re
 from datetime import date, datetime
 
 from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
+from src.utils.date_range import get_data_year
 
 _TABLES = ", ".join(sorted(Config.ALLOWED_TABLES))
 
-_MONTH_MAP = {
-    "januari": "2026-01", "jan": "2026-01",
-    "februari": "2026-02", "feb": "2026-02",
-    "maret": "2026-03", "mar": "2026-03",
-    "april": "2026-04", "apr": "2026-04",
-    "mei": "2026-05", "may": "2026-05",
-    "juni": "2026-06", "jun": "2026-06",
-    "juli": "2026-07", "jul": "2026-07",
-    "agustus": "2026-08", "aug": "2026-08",
-    "september": "2026-09", "sep": "2026-09",
-    "oktober": "2026-10", "oct": "2026-10",
-    "november": "2026-11", "nov": "2026-11",
-    "desember": "2026-12", "dec": "2026-12",
-}
+# Month name tokens (Indonesian + English abbreviations) used for bare-month detection.
+# Values are intentionally absent — only the keys matter for the regex pattern.
+_MONTH_NAMES: frozenset[str] = frozenset({
+    "januari", "jan", "februari", "feb", "maret", "mar",
+    "april", "apr", "mei", "may", "juni", "jun",
+    "juli", "jul", "agustus", "aug", "september", "sep",
+    "oktober", "oct", "november", "nov", "desember", "dec",
+})
+
+# Compiled once from the stable set of month name tokens.
+# Year injection is done at call time via the `year` parameter.
+_MONTH_PATTERN = re.compile(
+    r"\b(" + "|".join(sorted(_MONTH_NAMES, key=len, reverse=True)) + r")\b(?!\s+20\d{2})",
+    re.IGNORECASE,
+)
 
 
-def _inject_year(query: str) -> str:
-    """Add '2026' after bare month names that have no year attached."""
-    import re
-    pattern = re.compile(
-        r"\b(" + "|".join(_MONTH_MAP) + r")\b(?!\s+20\d{2})",
-        re.IGNORECASE,
-    )
-    return pattern.sub(lambda m: f"{m.group(0)} 2026", query)
+def _inject_year(query: str, year: int) -> str:
+    """Append `year` after bare month names that have no year attached."""
+    return _MONTH_PATTERN.sub(lambda m: f"{m.group(0)} {year}", query)
 
 
 def _build_history_block(history: list[dict]) -> str:
@@ -70,7 +68,7 @@ def _build_history_block(history: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _build_prompt(tables: str, query: str, today: str, history: list[dict]) -> str:
+def _build_prompt(tables: str, query: str, today: str, data_year: int, history: list[dict]) -> str:
     history_block = _build_history_block(history)
     return f"""\
 Kamu adalah preprocessor pertanyaan untuk chatbot analytics data keuangan Telkomsel.
@@ -81,13 +79,13 @@ Entitas kunci:
 - partner: gopay, ovo, dana, shopeepay, linkaja, qris, indomaret, tsel_wallet, finnet
 - channel codes: i1=MyTelkomsel App, f0/f4/f5=UMB, b0/b3/a0=WEC, ig=MyTelkomsel Basic
 - metrik: SR/success rate → kolom success_rate_pct, MoM → perbandingan bulan ini vs bulan lalu, ARPU → total_revenue/unique_users
-Tanggal hari ini: {today}. Semua data ada di tahun 2026.
+Tanggal hari ini: {today}. Semua data ada di tahun {data_year}.
 {history_block}
 Tugas: tulis ulang pertanyaan berikut agar lebih presisi untuk SQL generation.
 Terapkan HANYA aturan yang relevan:
 
 0. REFERENSI KONTEKSTUAL — Jika pertanyaan menggunakan kata "ini", "itu", "tadi", "tersebut", "yang sama", atau merujuk implisit ke pertanyaan/hasil sebelumnya, gunakan KONTEKS PERCAKAPAN untuk mengganti referensi tersebut dengan entitas eksplisit.
-   Contoh: (sebelumnya tanya "top 10 produk bulan mei") lalu "filter ini per channel" → "filter 10 produk dengan penjualan tertinggi bulan mei 2026 per channel"
+   Contoh: (sebelumnya tanya "top 10 produk bulan mei") lalu "filter ini per channel" → "filter 10 produk dengan penjualan tertinggi bulan mei {data_year} per channel"
 
 1. NAMA ENTITAS FUZZY — Jika nama produk, partner, atau entitas mungkin tidak persis sama di database, tambahkan catatan gunakan ILIKE.
    Contoh: "produk Surprise Deal Nonton" → "produk yang mengandung 'Surprise Deal Nonton' (gunakan ILIKE '%Surprise Deal Nonton%')"
@@ -114,10 +112,10 @@ Aturan tambahan:
 - Jika pertanyaan sudah jelas dan spesifik, kembalikan apa adanya dengan was_rewritten: false.
 
 Selain rewrite, identifikasi TANGGAL AWAL PERIODE yang diminta user:
-- "bulan ini" → hari pertama bulan dari {today} (e.g. "2026-07-01")
+- "bulan ini" → hari pertama bulan dari {today} (e.g. "{data_year}-07-01")
 - "bulan lalu" → hari pertama bulan sebelumnya
-- nama bulan spesifik → hari pertama bulan itu (e.g. "juni 2026" → "2026-06-01")
-- "tahun ini" / "YTD" → "2026-01-01"
+- nama bulan spesifik → hari pertama bulan itu (e.g. "juni {data_year}" → "{data_year}-06-01")
+- "tahun ini" / "YTD" → "{data_year}-01-01"
 - "kuartal ini" → hari pertama kuartal berjalan
 - pertanyaan tanpa periode waktu / tidak relevan → null
 
@@ -143,8 +141,9 @@ class QueryRewriter(LLMBaseAgent):
 
     def execute(self, state: AgentState) -> AgentState:
         state.original_query = state.query
-        # Deterministically inject year before LLM sees the query
-        state.query = _inject_year(state.query)
+        data_year = get_data_year(state.data_end_date)
+        # Deterministically inject data year before LLM sees the query
+        state.query = _inject_year(state.query, data_year)
 
         try:
             today  = date.today().strftime("%Y-%m-%d")
@@ -152,6 +151,7 @@ class QueryRewriter(LLMBaseAgent):
                 tables=_TABLES,
                 query=state.query,
                 today=today,
+                data_year=data_year,
                 history=state.conversation_history,
             )
             raw    = self._call_llm(prompt, max_tokens=600, temperature=0)

@@ -35,6 +35,7 @@ import yaml
 from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
+from src.utils.date_range import get_data_year
 from src.utils.exceptions import SQLGenerationError
 
 # Maximum rows per previous step shown in context to avoid prompt overflow
@@ -160,13 +161,15 @@ QUERY TYPE: {state.intent.get('category', '')}
 
         today = date.today().strftime("%Y-%m-%d")
         current_month_start = date.today().replace(day=1).strftime("%Y-%m-%d")
+        data_year = get_data_year(state.data_end_date)
+        prev_years = ", ".join(str(y) for y in range(data_year - 3, data_year))
 
         return f"""You are a senior PostgreSQL data engineer for Telkomsel's financial payment database.
 Convert natural language questions into correct PostgreSQL SQL queries.
 
 DATE RULES:
-- TODAY IS: {today}. ALL DATA IS YEAR 2026 — NEVER use 2023, 2024, or 2025.
-- "bulan ini" → {current_month_start} to {today}. Month name without a year → assume 2026.
+- TODAY IS: {today}. ALL DATA IS YEAR {data_year} — NEVER use {prev_years}.
+- "bulan ini" → {current_month_start} to {today}. Month name without a year → assume {data_year}.
 
 DOMAIN NOTES:
 - Linkaja has multiple name variants — always include ALL: ('linkaja', 'linkaja_wco', 'linkajawco', 'linkaja_app', 'linkaja_basic', 'linkaja_wec')

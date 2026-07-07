@@ -121,6 +121,9 @@ class AgentState:
     # MAX(date) from daily_master — injected by pipeline at startup, never None in prod
     data_end_date: date | None = None
 
+    # MIN(date) from daily_master — injected by pipeline at startup alongside data_end_date
+    data_start_date: date | None = None
+
     # Set by QueryRewriter when the resolved period starts after data_end_date.
     # InsightGenerator skips LLM and returns a template message when True.
     query_out_of_range: bool = False

@@ -39,19 +39,23 @@ _MONTH_ID = [
 _THRESHOLDS_BLOCK = _render_thresholds()
 
 
-def _data_range_line(data_end_date: date | None) -> str:
-    """Build a human-readable data range line from data_end_date."""
+def _data_range_line(data_end_date: date | None, data_start_date: date | None = None) -> str:
+    """Build a human-readable data range line from start and end dates."""
     if data_end_date is None:
-        return "Data tersedia: Maret 2026 – Juni 2026."
+        return "Data tersedia: (rentang tidak diketahui — DB tidak terjangkau)."
     end_str = f"{_MONTH_ID[data_end_date.month]} {data_end_date.year}"
-    return f"Data tersedia: Maret 2026 – {end_str} (s.d. {data_end_date.isoformat()})."
+    if data_start_date is not None:
+        start_str = f"{_MONTH_ID[data_start_date.month]} {data_start_date.year}"
+    else:
+        start_str = f"(awal data) {data_end_date.year}"
+    return f"Data tersedia: {start_str} – {end_str} (s.d. {data_end_date.isoformat()})."
 
 
-def _build_system_prompt(data_end_date: date | None) -> str:
+def _build_system_prompt(data_end_date: date | None, data_start_date: date | None = None) -> str:
     return f"""Kamu adalah analis data senior untuk platform pembayaran digital Telkomsel.
 Gunakan tools yang tersedia untuk menjawab pertanyaan analitik secara sistematis.
 
-{_data_range_line(data_end_date)}
+{_data_range_line(data_end_date, data_start_date)}
 Partner: QRIS, Dana, GoPay, OVO, Finnet, ShopeePay, LinkAja, Indomaret, Telkomsel Wallet.
 Channel: i1, a0, b0, b3, f0, f4, f5, ig.
 
@@ -78,8 +82,8 @@ Strategi investigasi setelah tool pertama:
 {_THRESHOLDS_BLOCK}
 
 PERIODE PARSIAL — sebutkan jika bulan sedang berjalan:
-- Jika data periode yang dianalisis belum bulan penuh (misalnya Juni 2026 baru 20 hari),
-  SELALU sebutkan: "data Juni mencakup X hari pertama" agar perbandingan tidak menyesatkan.
+- Jika data periode yang dianalisis belum bulan penuh (misalnya {_MONTH_ID[data_end_date.month] if data_end_date else "bulan terakhir"} baru 20 hari),
+  SELALU sebutkan: "data bulan itu mencakup X hari pertama" agar perbandingan tidak menyesatkan.
 - Perbandingan bulan parsial vs bulan penuh harus dinormalisasi per hari (rata-rata harian).
 
 Dalam insight final (setelah semua tools selesai):
@@ -125,7 +129,7 @@ class AnalyticsAgent(LLMBaseAgent):
                 message=f"No engine available for database '{state.database}'",
             )
 
-        system_prompt = _build_system_prompt(state.data_end_date)
+        system_prompt = _build_system_prompt(state.data_end_date, state.data_start_date)
         if state.context_snapshot:
             system_prompt = f"{system_prompt}\n\n{state.context_snapshot}"
 
