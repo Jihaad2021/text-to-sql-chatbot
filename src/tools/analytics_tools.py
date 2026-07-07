@@ -97,22 +97,29 @@ def compare_periods(
         table, group_col = "daily_master", "partner_group"
         sr_agg = "ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)"
 
+    # Same COALESCE normalization as get_distribution: merge NULL/string-'NULL'/empty
+    # product_name rows into one '[Tidak Teridentifikasi]' entity.
+    if dimension == "product":
+        entity_expr = f"COALESCE(NULLIF(NULLIF({group_col}, 'NULL'), ''), '[Tidak Teridentifikasi]')"
+    else:
+        entity_expr = group_col
+
     sql = f"""
 WITH period_a AS (
-    SELECT {group_col} AS entity,
+    SELECT {entity_expr} AS entity,
            SUM(total_trx) AS trx_a, SUM(total_revenue) AS rev_a,
            {sr_agg} AS sr_a
     FROM {table}
     WHERE date >= '{period_a_start}' AND date <= '{period_a_end}'
-    GROUP BY {group_col}
+    GROUP BY {entity_expr}
 ),
 period_b AS (
-    SELECT {group_col} AS entity,
+    SELECT {entity_expr} AS entity,
            SUM(total_trx) AS trx_b, SUM(total_revenue) AS rev_b,
            {sr_agg} AS sr_b
     FROM {table}
     WHERE date >= '{period_b_start}' AND date <= '{period_b_end}'
-    GROUP BY {group_col}
+    GROUP BY {entity_expr}
 )
 SELECT
     COALESCE(a.entity, b.entity)                                                              AS entity,
@@ -158,23 +165,30 @@ def detect_anomaly(
         sr_target_expr = "ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)"
         sr_daily_expr  = "ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS daily_sr"
 
+    # Same COALESCE normalization as get_distribution: merge NULL/string-'NULL'/empty
+    # product_name rows into one '[Tidak Teridentifikasi]' entity.
+    if dimension == "product":
+        entity_expr = f"COALESCE(NULLIF(NULLIF({group_col}, 'NULL'), ''), '[Tidak Teridentifikasi]')"
+    else:
+        entity_expr = group_col
+
     sql = f"""
 WITH target AS (
-    SELECT {group_col} AS entity,
+    SELECT {entity_expr} AS entity,
            SUM(total_trx)     AS trx_target,
            SUM(total_revenue) AS rev_target,
            {sr_target_expr}   AS sr_target
     FROM {table}
     WHERE date::date = '{target_date}'::date
-    GROUP BY {group_col}
+    GROUP BY {entity_expr}
 ),
 baseline AS (
-    SELECT {group_col} AS entity,
+    SELECT entity,
            ROUND(AVG(daily_trx)::numeric, 2) AS trx_baseline_avg,
            ROUND(AVG(daily_rev)::numeric, 2) AS rev_baseline_avg,
            ROUND(AVG(daily_sr)::numeric,  2) AS sr_baseline_avg
     FROM (
-        SELECT {group_col},
+        SELECT {entity_expr} AS entity,
                date,
                SUM(total_trx)     AS daily_trx,
                SUM(total_revenue) AS daily_rev,
@@ -182,9 +196,9 @@ baseline AS (
         FROM {table}
         WHERE date::date > ('{target_date}'::date - INTERVAL '7 days')
           AND date::date < '{target_date}'::date
-        GROUP BY {group_col}, date
+        GROUP BY {entity_expr}, date
     ) d
-    GROUP BY {group_col}
+    GROUP BY entity
 )
 SELECT
     t.entity,
