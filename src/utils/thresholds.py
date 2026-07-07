@@ -40,9 +40,16 @@ def get_auto_drilldown_threshold() -> float:
     return float(_load().get("auto_drilldown_dod_threshold", 30))
 
 
-def render_thresholds_block() -> str:
+def render_thresholds_block(exclude_metrics: frozenset[str] | None = None) -> str:
     """
-    Render the full thresholds table + verdict notes as a single string.
+    Render the thresholds table + verdict notes as a single string.
+
+    Args:
+        exclude_metrics: Optional set of metric names to omit from the table.
+            Use this for segments where specific thresholds are not applicable
+            (e.g. exclude {"MoM Volume Growth", "Perubahan transaksi"} for product
+            dimension, where individual-product volatility makes those thresholds
+            meaningless — see config/business_thresholds.yaml for rationale).
 
     Output (inject via {business_thresholds_block} in any f-string prompt):
 
@@ -57,14 +64,22 @@ def render_thresholds_block() -> str:
     is only between rows, not within them — safe for all markdown renderers.
     """
     data = _load()
+    excluded = exclude_metrics or frozenset()
     lines: list[str] = [
         "BUSINESS THRESHOLDS:",
         "| Metrik                | SEHAT (Hijau) | PERHATIAN (Kuning) | KRITIS (Merah) |",
         "|---|---|---|---|",
     ]
     for t in data["thresholds"]:
-        lines.append(
-            f"| {t['metric']:<21} | {t['sehat']:<13} | {t['perhatian']:<18} | {t['kritis']:<14} |"
-        )
-    lines.extend(data.get("notes", []))
+        if t["metric"] not in excluded:
+            lines.append(
+                f"| {t['metric']:<21} | {t['sehat']:<13} | {t['perhatian']:<18} | {t['kritis']:<14} |"
+            )
+    # Skip "VERDICT WAJIB" note when volume-growth metrics are excluded (product segment):
+    # the note would otherwise override the product threshold exception.
+    skip_verdict_note = bool(excluded)
+    for note in data.get("notes", []):
+        if skip_verdict_note and note.startswith("VERDICT WAJIB"):
+            continue
+        lines.append(note)
     return "\n".join(lines)
