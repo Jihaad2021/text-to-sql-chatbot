@@ -26,8 +26,13 @@ from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState, ToolCallResult
 from src.tools.tool_registry import TOOL_DEFINITIONS, execute_tool, to_anthropic_tools
+from src.utils.domain_entities import render_partner_display_block, render_channel_codes_flat
 from src.utils.exceptions import LLMCallError
 from src.utils.thresholds import render_thresholds_block as _render_thresholds
+
+# Domain entity constants — computed once at import from domain_entities.yaml.
+_PARTNER_DISPLAY    = render_partner_display_block()
+_CHANNEL_CODES_FLAT = render_channel_codes_flat()
 
 _MAX_TOOL_ITERATIONS = 8
 
@@ -56,8 +61,8 @@ def _build_system_prompt(data_end_date: date | None, data_start_date: date | Non
 Gunakan tools yang tersedia untuk menjawab pertanyaan analitik secara sistematis.
 
 {_data_range_line(data_end_date, data_start_date)}
-Partner: QRIS, Dana, GoPay, OVO, Finnet, ShopeePay, LinkAja, Indomaret, Telkomsel Wallet.
-Channel: i1, a0, b0, b3, f0, f4, f5, ig.
+Partner: {_PARTNER_DISPLAY}.
+Channel: {_CHANNEL_CODES_FLAT}.
 
 ⚠️ ATURAN WAJIB — TIDAK BOLEH DILANGGAR:
 1. Kamu HARUS memanggil minimal 1 tool sebelum memberikan jawaban apapun.

@@ -1,0 +1,114 @@
+partners:
+- canonical: dana
+  display: Dana
+  variants:
+  - dana
+  - dana_wec
+  keywords:
+  - dana
+- canonical: finnet
+  display: Finnet
+  variants:
+  - finnet
+  - finnet_cc
+  - finnet_va
+  keywords:
+  - finnet
+- canonical: gopay
+  display: GoPay
+  variants:
+  - gopay
+  - gopay_basic
+  - gopay_wec
+  keywords:
+  - gopay
+- canonical: indomaret
+  display: Indomaret
+  variants:
+  - indomaret
+  keywords:
+  - indomaret
+- canonical: linkaja
+  display: LinkAja
+  variants:
+  - linkaja
+  - linkaja_app
+  - linkaja_basic
+  - linkaja_wec
+  - linkajawco
+  - linkaja_wco
+  keywords:
+  - linkaja
+- canonical: ovo
+  display: OVO
+  variants:
+  - ovo
+  - ovo_wec
+  keywords:
+  - ovo
+- canonical: qris
+  display: QRIS
+  variants:
+  - qris
+  keywords:
+  - qris
+- canonical: shopeepay
+  display: ShopeePay
+  variants:
+  - shopeepay
+  - shopeepay_basic
+  - shopeepay_wec
+  keywords:
+  - shopeepay
+- canonical: telkomsel_wallet
+  display: Telkomsel Wallet
+  variants:
+  - telkomsel_wallet
+  - tsel_wallet
+  keywords:
+  - telkomsel_wallet
+  - tsel_wallet
+channel_groups:
+- group: App
+  label: MyTelkomsel App
+  codes:
+  - i1
+  keywords:
+  - MyTelkomsel App
+  - aplikasi mytelkomsel
+- group: UMB
+  label: UMB
+  codes:
+  - f0
+  - f4
+  - f5
+  keywords:
+  - UMB
+- group: WEC
+  label: WEC
+  codes:
+  - b0
+  - b3
+  - a0
+  keywords:
+  - WEC
+- group: Basic
+  label: MyTelkomsel Basic
+  codes:
+  - ig
+  keywords:
+  - MyTelkomsel Basic
+  - basic
+product_categories:
+- name: recharge
+  has_product_id: true
+  has_product_name: false
+- name: topup
+  has_product_id: false
+  has_product_name: false
+- name: paybill
+  has_product_id: false
+  has_product_name: false
+- name: package
+  has_product_id: true
+  has_product_name: true

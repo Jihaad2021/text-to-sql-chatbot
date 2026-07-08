@@ -77,6 +77,12 @@ import os
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
+from src.utils.domain_entities import get_partner_keywords, get_channel_keywords
+
+# Domain entity keyword sets for segment detection fallback — computed once at import.
+# Base keywords (non-entity) kept here; partner/channel names come from domain_entities.yaml.
+_PARTNER_SEGMENT_KW = frozenset({"partner", "mitra"} | get_partner_keywords())
+_CHANNEL_SEGMENT_KW = frozenset({"channel", "saluran", "kanal"} | get_channel_keywords())
 
 # Cheap default models per provider — planner doesn't need full reasoning power
 _CHEAP_MODELS: dict[str, str] = {
@@ -292,11 +298,11 @@ class ResponsePlanner(LLMBaseAgent):
             segment = intent_segment.upper()
         else:
             q_lower = (state.query or "").lower()
-            if any(w in q_lower for w in ("partner", "gopay", "dana", "ovo", "linkaja")):
+            if any(w in q_lower for w in _PARTNER_SEGMENT_KW):
                 segment = "PARTNERS"
             elif any(w in q_lower for w in ("produk", "product", "pulsa", "internet", "paket", "konten")):
                 segment = "PRODUCTS"
-            elif any(w in q_lower for w in ("channel", "saluran", "umb", "mytelkomsel", "wec")):
+            elif any(w in q_lower for w in _CHANNEL_SEGMENT_KW):
                 segment = "CHANNELS"
             elif any(w in q_lower for w in ("transaksi", "volume", "revenue", "sr", "user", "arpu")):
                 segment = "TRANSACTIONS"

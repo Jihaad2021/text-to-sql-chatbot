@@ -36,7 +36,13 @@ from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.date_range import get_data_year
+from src.utils.domain_entities import get_partner_variants, get_partner_canonical_list, render_partner_list_block
 from src.utils.exceptions import SQLGenerationError
+
+# Domain entity constants — computed once at import from domain_entities.yaml.
+_LINKAJA_VARIANTS = ", ".join(f"'{v}'" for v in get_partner_variants("linkaja"))
+_PARTNER_LIST     = render_partner_list_block()
+_PARTNER_COUNT    = len(get_partner_canonical_list())
 
 # Maximum rows per previous step shown in context to avoid prompt overflow
 _PREV_STEP_ROW_PREVIEW = 5
@@ -172,7 +178,7 @@ DATE RULES:
 - "bulan ini" → {current_month_start} to {today}. Month name without a year → assume {data_year}.
 
 DOMAIN NOTES:
-- Linkaja has multiple name variants — always include ALL: ('linkaja', 'linkaja_wco', 'linkajawco', 'linkaja_app', 'linkaja_basic', 'linkaja_wec')
+- Linkaja has multiple name variants — always include ALL: ({_LINKAJA_VARIANTS})
 - tsel_wallet (financial_internal/product_summary) = telkomsel_wallet (daily_master/channel_payment)
 - Success rate: ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)
 - Anomali/spike: pct_change = ROUND((current - baseline)::numeric / NULLIF(baseline, 0) * 100, 2); flag >30% significant, >50% extreme; ORDER BY ABS(pct_change) DESC.
@@ -192,7 +198,7 @@ POSTGRESQL TYPE RULES:
 9. Use COUNT(DISTINCT column) when counting unique entities.
 
 PARTNER COLUMN RULE — MANDATORY:
-10. In daily_master, use partner_group (9 brands: gopay, dana, ovo, qris, finnet, linkaja, shopeepay, indomaret, telkomsel_wallet), NEVER bare partner (25 sub-channel rows), for GROUP BY / SELECT / WHERE.
+10. In daily_master, use partner_group ({_PARTNER_COUNT} brands: {_PARTNER_LIST}), NEVER bare partner (25 sub-channel rows), for GROUP BY / SELECT / WHERE.
     WRONG: GROUP BY partner — CORRECT: GROUP BY partner_group
     EXCEPTION: use partner only when question explicitly asks about sub-channels (paybill, wec, basic).
 

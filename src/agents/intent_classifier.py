@@ -34,6 +34,11 @@ from datetime import date
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
+from src.utils.domain_entities import render_partner_list_block, render_channel_group_labels_block
+
+# Domain entity constants — computed once at import from domain_entities.yaml.
+_PARTNER_LIST         = render_partner_list_block()
+_CHANNEL_GROUP_LABELS = render_channel_group_labels_block()
 
 # ── Deterministic root_cause override — three-step check ─────────────────────
 #
@@ -253,8 +258,8 @@ INTENT RULES:
 SEGMENT RULES:
 - "transactions" if query is about overall volume, revenue, SR, ARPU, user count, daily/weekly/period trends
 - "products" if query mentions specific products, product names, portfolio, produk, paket, pulsa, konten
-- "partners" if query mentions partners (gopay, dana, ovo, linkaja, telkomsel) or ekosistem partner
-- "channels" if query mentions channel, saluran, UMB, MyTelkomsel, WEC
+- "partners" if query mentions partners ({_PARTNER_LIST}) or ekosistem partner
+- "channels" if query mentions channel, saluran, {_CHANNEL_GROUP_LABELS}
 - "general" for cross-segment, root cause across dimensions, or unclear segment
 
 EXAMPLES — kasus batas yang sering salah diklasifikasi (gunakan sebagai referensi):

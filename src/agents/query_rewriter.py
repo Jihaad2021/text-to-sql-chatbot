@@ -27,8 +27,19 @@ from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.date_range import get_data_year
+from src.utils.domain_entities import (
+    render_partner_list_block,
+    render_channel_list_block,
+    render_channel_rewrite_rules,
+)
 
 _TABLES = ", ".join(sorted(Config.ALLOWED_TABLES))
+
+# Domain entity constants — computed once at import from domain_entities.yaml.
+# To add a partner/channel: edit config/domain_entities.yaml and restart.
+_PARTNER_LIST   = render_partner_list_block()
+_CHANNEL_LIST   = render_channel_list_block()
+_CHANNEL_RULES  = render_channel_rewrite_rules()
 
 # Month name tokens (Indonesian + English abbreviations) used for bare-month detection.
 # Values are intentionally absent — only the keys matter for the regex pattern.
@@ -76,8 +87,8 @@ Kamu adalah preprocessor pertanyaan untuk chatbot analytics data keuangan Telkom
 Database: financial_db
 Tabel tersedia: {tables}
 Entitas kunci:
-- partner: gopay, ovo, dana, shopeepay, linkaja, qris, indomaret, tsel_wallet, finnet
-- channel codes: i1=MyTelkomsel App, f0/f4/f5=UMB, b0/b3/a0=WEC, ig=MyTelkomsel Basic
+- partner: {_PARTNER_LIST}
+- channel codes: {_CHANNEL_LIST}
 - metrik: SR/success rate → kolom success_rate_pct, MoM → perbandingan bulan ini vs bulan lalu, ARPU → total_revenue/unique_users
 Tanggal hari ini: {today}. Semua data ada di tahun {data_year}.
 {history_block}
@@ -98,10 +109,7 @@ Terapkan HANYA aturan yang relevan:
 4. PERIOD WAKTU HILANG — Jika pertanyaan jelas bersifat time-series tetapi tidak menyebut periode → tambahkan "(gunakan rentang data yang tersedia)".
 
 5. NAMA CHANNEL HUMAN-READABLE — Jika user menyebut nama channel dalam bentuk manusia, ganti dengan kode database:
-   "MyTelkomsel App" atau "aplikasi mytelkomsel" → channel = 'i1'
-   "UMB" → channel IN ('f0','f4','f5')
-   "WEC" → channel IN ('b0','b3','a0')
-   "MyTelkomsel Basic" atau "basic" → channel = 'ig'
+{_CHANNEL_RULES}
 
 6. PARTNER GROUP — Jika pertanyaan menyebut partner (gopay, dana, finnet, dll.), performa partner, ranking partner, atau perbandingan partner: tambahkan di awal rewritten query: "Gunakan kolom partner_group (bukan partner) di daily_master."
    Pengecualian: jika user eksplisit menyebut sub-channel seperti paybill, wec, basic → pakai kolom partner.

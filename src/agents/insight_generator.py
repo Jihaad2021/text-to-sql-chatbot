@@ -34,7 +34,11 @@ from datetime import datetime
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
+from src.utils.domain_entities import get_partner_keywords, get_channel_keywords, render_channel_groups_block
 from src.utils.thresholds import render_thresholds_block
+
+# Domain entity constants — computed once at import from domain_entities.yaml.
+_CHANNEL_GROUPS_BLOCK = render_channel_groups_block()
 
 _MONTH_ID = [
     "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -930,12 +934,13 @@ SYNTHESIS RULES:
 
         return "\n".join(lines) + "\n"
 
-    # Segment keywords for detection
-    _PARTNER_KW  = {"partner", "gopay", "dana", "ovo", "linkaja", "ekosistem partner", "mitra"}
-    _PRODUCT_KW  = {"produk", "product", "pulsa", "paket", "internet", "konten", "portfolio produk"}
-    _CHANNEL_KW  = {"channel", "saluran", "umb", "mytelkomsel", "wec", "kanal"}
-    _TXNKW       = {"transaksi", "volume", "revenue", "pendapatan", "sr", "success rate",
-                    "arpu", "user", "pengguna", "harian", "mingguan", "tren", "anomali"}
+    # Segment keywords for detection — partner/channel names from domain_entities.yaml.
+    # Base non-entity keywords kept here; entity names injected from module-level helpers.
+    _PARTNER_KW  = frozenset({"partner", "ekosistem partner", "mitra"} | get_partner_keywords())
+    _PRODUCT_KW  = frozenset({"produk", "product", "pulsa", "paket", "internet", "konten", "portfolio produk"})
+    _CHANNEL_KW  = frozenset({"channel", "saluran", "kanal"} | get_channel_keywords())
+    _TXNKW       = frozenset({"transaksi", "volume", "revenue", "pendapatan", "sr", "success rate",
+                    "arpu", "user", "pengguna", "harian", "mingguan", "tren", "anomali"})
 
     def _detect_segment(self, query: str) -> str:
         q = (query or "").lower()
@@ -987,7 +992,7 @@ SYNTHESIS RULES:
             ),
             "channels": (
                 "POLA JAWABAN — CHANNEL:\n"
-                "- Analisis per group lebih informatif: MyTelkomsel App (i1), UMB (f0/f4/f5), WEC (b0/b3/a0), Basic (ig).\n"
+                f"- Analisis per group lebih informatif: {_CHANNEL_GROUPS_BLOCK}.\n"
                 "- Konsentrasi: satu group >60% = risiko ketergantungan tinggi.\n"
                 "- Efisiensi: revenue/trx tinggi + share rendah = value-driven; share tinggi + rev/trx rendah = volume-driven.\n"
                 "- Template pembuka: \"Channel [nama] mendominasi [X]% share — Verdict: [SEHAT/PERHATIAN/KRITIS]\"\n\n"
