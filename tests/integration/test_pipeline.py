@@ -19,6 +19,7 @@ from src.agents.insight_generator import InsightGenerator
 from src.agents.intent_classifier import IntentClassifier
 from src.agents.query_executor import QueryExecutor
 from src.agents.query_planner import QueryPlanner
+from src.agents.query_rewriter import QueryRewriter
 from src.agents.retrieval_evaluator import RetrievalEvaluator
 from src.agents.schema_retriever import SchemaRetriever
 from src.agents.sql_generator import SQLGenerator
@@ -111,24 +112,26 @@ _MOCK_PLAN_SINGLE = (
 @pytest.fixture
 def pipeline(mock_engine, mock_collection):
     """Fully mocked TextToSQLPipeline — no real LLM or DB calls."""
-    with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-        with patch.object(QueryPlanner, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-            with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-                with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-                    with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-                        with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
-                            with patch.object(QueryExecutor, "_create_engines", return_value={"financial_db": mock_engine}):
-                                with patch("builtins.open", side_effect=FileNotFoundError):
-                                    return TextToSQLPipeline(
-                                        intent_classifier=IntentClassifier(),
-                                        query_planner=QueryPlanner(),
-                                        schema_retriever=_make_mock_retriever(mock_collection),
-                                        retrieval_evaluator=RetrievalEvaluator(),
-                                        sql_generator=SQLGenerator(),
-                                        sql_validator=SQLValidator(enable_ai_validation=False),
-                                        query_executor=QueryExecutor(),
-                                        insight_generator=InsightGenerator(),
-                                    )
+    with patch.object(QueryRewriter, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+        with patch.object(IntentClassifier, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            with patch.object(QueryPlanner, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                with patch.object(RetrievalEvaluator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                    with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                        with patch.object(SQLValidator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                            with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+                                with patch.object(QueryExecutor, "_create_engines", return_value={"financial_db": mock_engine}):
+                                    with patch("builtins.open", side_effect=FileNotFoundError):
+                                        return TextToSQLPipeline(
+                                            query_rewriter=QueryRewriter(),
+                                            intent_classifier=IntentClassifier(),
+                                            query_planner=QueryPlanner(),
+                                            schema_retriever=_make_mock_retriever(mock_collection),
+                                            retrieval_evaluator=RetrievalEvaluator(),
+                                            sql_generator=SQLGenerator(),
+                                            sql_validator=SQLValidator(enable_ai_validation=False),
+                                            query_executor=QueryExecutor(),
+                                            insight_generator=InsightGenerator(),
+                                        )
 
 
 # ========================================
@@ -184,7 +187,7 @@ class TestCompletePipeline:
                             state = pipeline.run(state)
 
         expected_agents = [
-            "intent_classifier", "query_planner", "schema_retriever",
+            "query_rewriter", "intent_classifier", "query_planner", "schema_retriever",
             "retrieval_evaluator", "sql_generator", "sql_validator",
             "query_executor", "insight_generator",
         ]
@@ -378,14 +381,15 @@ class TestErrorFeedbackLoop:
 
 class TestPipelineStructure:
 
-    def test_agents_property_returns_all_eight(self, pipeline):
-        """pipeline.agents should expose all 8 agents in order."""
-        assert len(pipeline.agents) == 8
+    def test_agents_property_returns_all_ten(self, pipeline):
+        """pipeline.agents should expose all 10 agents in order."""
+        assert len(pipeline.agents) == 10
 
     def test_agents_property_order(self, pipeline):
         """Agents should be in pipeline execution order."""
         names = [a.name for a in pipeline.agents]
         assert names == [
+            "query_rewriter",
             "intent_classifier",
             "query_planner",
             "schema_retriever",
@@ -393,5 +397,6 @@ class TestPipelineStructure:
             "sql_generator",
             "sql_validator",
             "query_executor",
+            "response_planner",
             "insight_generator",
         ]
