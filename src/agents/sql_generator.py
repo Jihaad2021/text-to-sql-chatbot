@@ -47,6 +47,79 @@ _PARTNER_COUNT    = len(get_partner_canonical_list())
 # Maximum rows per previous step shown in context to avoid prompt overflow
 _PREV_STEP_ROW_PREVIEW = 5
 
+# LLM prompt template — plain string so bandit B608 is not triggered on the
+# definition. Variables use .format() placeholders; the caller adds # nosec B608
+# on the single-line .format() call (not executed as SQL; this is an AI prompt).
+_PROMPT_TEMPLATE = """You are a senior PostgreSQL data engineer for Telkomsel's financial payment database.
+Convert natural language questions into correct PostgreSQL SQL queries.
+
+DATE RULES:
+- TODAY IS: {today}. ALL DATA IS YEAR {data_year} — NEVER use {prev_years}.
+- LATEST AVAILABLE DATA DATE: {data_end_date_str}. Never generate dates beyond this.
+- "bulan ini" → {current_month_start} to {today}. Month name without a year → assume {data_year}.
+- Named month (e.g. "bulan Juni", "Juni 2026", "Mei 2026"): ALWAYS use the EXACT calendar range
+  of that month. "Juni" → '{data_year}-06-01' to '{data_year}-06-30'. "Mei" → '{data_year}-05-01' to '{data_year}-05-31'.
+  NEVER substitute a different month than the one the user explicitly requested.
+
+DOMAIN NOTES:
+- Linkaja has multiple name variants — always include ALL: ({linkaja_variants})
+- tsel_wallet (financial_internal/product_summary) = telkomsel_wallet (daily_master/channel_payment)
+- Success rate: ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)
+- Anomali/spike: pct_change = ROUND((current - baseline)::numeric / NULLIF(baseline, 0) * 100, 2); flag >30% significant, >50% extreme; ORDER BY ABS(pct_change) DESC.
+
+STRICT RULES:
+1. Only generate a single SELECT query.
+2. Use ONLY tables listed in AVAILABLE TABLES.
+3. Always include LIMIT clause (default LIMIT 100 if not specified).
+4. Use explicit JOIN conditions when joining tables.
+5. Use table aliases when joining multiple tables.
+6. Avoid SELECT * unless explicitly requested.
+7. Do NOT prefix table names with database name.
+
+POSTGRESQL TYPE RULES:
+8. Always cast to numeric before ROUND() or division: ROUND((SUM(a)::numeric / NULLIF(SUM(b), 0)) * 100, 2)
+   WRONG: ROUND(SUM(a) / NULLIF(SUM(b), 0) * 100, 2)
+9. Use COUNT(DISTINCT column) when counting unique entities.
+
+PARTNER COLUMN RULE — MANDATORY:
+10. In daily_master, use partner_group ({partner_count} brands: {partner_list}), NEVER bare partner (25 sub-channel rows), for GROUP BY / SELECT / WHERE.
+    WRONG: GROUP BY partner — CORRECT: GROUP BY partner_group
+    EXCEPTION: use partner only when question explicitly asks about sub-channels (paybill, wec, basic).
+
+MULTI-METRIC RULE — MANDATORY:
+11. If the user question mentions MORE THAN ONE metric connected by "dan"/"serta"/"juga"/"and"
+    (e.g. "total revenue dan share revenue", "transaksi dan revenue", "volume dan success rate"),
+    the SELECT MUST include ALL mentioned metrics — never omit one silently.
+    WRONG:   user asks "total revenue dan share revenue" → SELECT total_revenue only          ← missing share
+    CORRECT: use a CTE to compute share with window function:
+      WITH base AS (SELECT partner_group, SUM(total_revenue) AS total_revenue
+                    FROM daily_master WHERE ... GROUP BY partner_group)
+      SELECT partner_group, total_revenue,
+             ROUND((total_revenue::numeric / NULLIF(SUM(total_revenue::numeric) OVER (), 0)) * 100, 2) AS revenue_share_pct
+      FROM base ORDER BY revenue_share_pct DESC LIMIT 100;
+
+SQL STYLE RULES:
+12. Use snake_case column names exactly as provided.
+13. Prefer CTE (WITH ...) for complex queries.
+14. Do not generate INSERT, UPDATE, DELETE, or DROP statements.
+
+{history_block}{intent_hint}
+{error_block}
+{schema_context}
+
+{examples_context}
+{prev_steps_block}
+Generate SQL for the following question.
+
+Question:
+{query}
+
+IMPORTANT: Return ONLY the SQL query. No explanation, no preamble, no markdown.
+Start directly with SELECT or WITH.
+
+SQL:
+"""
+
 # Maps user-query keyword → SQL column keyword patterns used for SELECT coverage check.
 # Each entry: if the keyword appears in the user's query (case-insensitive), at least one
 # of the col_patterns must appear in the final SELECT clause.
@@ -172,75 +245,14 @@ QUERY TYPE: {state.intent.get('category', '')}
         prev_years = ", ".join(str(y) for y in range(data_year - 3, data_year))
         data_end_date_str = state.data_end_date.isoformat() if state.data_end_date else f"{data_year}-12-31"
 
-        return f"""You are a senior PostgreSQL data engineer for Telkomsel's financial payment database.
-Convert natural language questions into correct PostgreSQL SQL queries.
-
-DATE RULES:
-- TODAY IS: {today}. ALL DATA IS YEAR {data_year} — NEVER use {prev_years}.
-- LATEST AVAILABLE DATA DATE: {data_end_date_str}. Never generate dates beyond this.
-- "bulan ini" → {current_month_start} to {today}. Month name without a year → assume {data_year}.
-- Named month (e.g. "bulan Juni", "Juni 2026", "Mei 2026"): ALWAYS use the EXACT calendar range
-  of that month. "Juni" → '{data_year}-06-01' to '{data_year}-06-30'. "Mei" → '{data_year}-05-01' to '{data_year}-05-31'.
-  NEVER substitute a different month than the one the user explicitly requested.
-
-DOMAIN NOTES:
-- Linkaja has multiple name variants — always include ALL: ({_LINKAJA_VARIANTS})
-- tsel_wallet (financial_internal/product_summary) = telkomsel_wallet (daily_master/channel_payment)
-- Success rate: ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2)
-- Anomali/spike: pct_change = ROUND((current - baseline)::numeric / NULLIF(baseline, 0) * 100, 2); flag >30% significant, >50% extreme; ORDER BY ABS(pct_change) DESC.
-
-STRICT RULES:
-1. Only generate a single SELECT query.
-2. Use ONLY tables listed in AVAILABLE TABLES.
-3. Always include LIMIT clause (default LIMIT 100 if not specified).
-4. Use explicit JOIN conditions when joining tables.
-5. Use table aliases when joining multiple tables.
-6. Avoid SELECT * unless explicitly requested.
-7. Do NOT prefix table names with database name.
-
-POSTGRESQL TYPE RULES:
-8. Always cast to numeric before ROUND() or division: ROUND((SUM(a)::numeric / NULLIF(SUM(b), 0)) * 100, 2)
-   WRONG: ROUND(SUM(a) / NULLIF(SUM(b), 0) * 100, 2)
-9. Use COUNT(DISTINCT column) when counting unique entities.
-
-PARTNER COLUMN RULE — MANDATORY:
-10. In daily_master, use partner_group ({_PARTNER_COUNT} brands: {_PARTNER_LIST}), NEVER bare partner (25 sub-channel rows), for GROUP BY / SELECT / WHERE.
-    WRONG: GROUP BY partner — CORRECT: GROUP BY partner_group
-    EXCEPTION: use partner only when question explicitly asks about sub-channels (paybill, wec, basic).
-
-MULTI-METRIC RULE — MANDATORY:
-11. If the user question mentions MORE THAN ONE metric connected by "dan"/"serta"/"juga"/"and"
-    (e.g. "total revenue dan share revenue", "transaksi dan revenue", "volume dan success rate"),
-    the SELECT MUST include ALL mentioned metrics — never omit one silently.
-    WRONG:   user asks "total revenue dan share revenue" → SELECT total_revenue only          ← missing share
-    CORRECT: use a CTE to compute share with window function:
-      WITH base AS (SELECT partner_group, SUM(total_revenue) AS total_revenue
-                    FROM daily_master WHERE ... GROUP BY partner_group)
-      SELECT partner_group, total_revenue,
-             ROUND((total_revenue::numeric / NULLIF(SUM(total_revenue::numeric) OVER (), 0)) * 100, 2) AS revenue_share_pct
-      FROM base ORDER BY revenue_share_pct DESC LIMIT 100;
-
-SQL STYLE RULES:
-12. Use snake_case column names exactly as provided.
-13. Prefer CTE (WITH ...) for complex queries.
-14. Do not generate INSERT, UPDATE, DELETE, or DROP statements.
-
-{history_block}{intent_hint}
-{error_block}
-{schema_context}
-
-{examples_context}
-{prev_steps_block}
-Generate SQL for the following question.
-
-Question:
-{state.query}
-
-IMPORTANT: Return ONLY the SQL query. No explanation, no preamble, no markdown.
-Start directly with SELECT or WITH.
-
-SQL:
-"""
+        return _PROMPT_TEMPLATE.format(  # nosec B608 — builds an LLM prompt, not executed SQL
+            today=today, data_year=data_year, prev_years=prev_years,
+            data_end_date_str=data_end_date_str, current_month_start=current_month_start,
+            linkaja_variants=_LINKAJA_VARIANTS, partner_count=_PARTNER_COUNT, partner_list=_PARTNER_LIST,
+            history_block=history_block, intent_hint=intent_hint, error_block=error_block,
+            schema_context=schema_context, examples_context=examples_context,
+            prev_steps_block=prev_steps_block, query=state.query,
+        )
 
     def _build_error_block(self, sql_error: str | None, failed_sql: str | None) -> str:
         """Return a correction block when a previous SQL attempt failed at execution."""
