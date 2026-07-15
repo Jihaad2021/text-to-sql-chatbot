@@ -1,0 +1,12 @@
+# Normalize line endings to LF on all platforms.
+# Windows users with core.autocrlf=true won't get CRLF-converted Python/YAML files.
+* text=auto eol=lf
+
+# Binary files — never convert
+*.pkl    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.ico    binary
+*.woff   binary
+*.woff2  binary

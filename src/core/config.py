@@ -6,10 +6,14 @@ os.getenv() directly (except this module and startup.py).
 """
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Project root is two levels above this file (src/core/config.py → project root)
+_ROOT = Path(__file__).parent.parent.parent
 
 
 class Config:
@@ -28,10 +32,12 @@ class Config:
     POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 min
 
     # ── Schema Retriever ──────────────────────────────────────────
-    CHROMA_PATH = os.getenv("CHROMA_PATH", "./chroma_db")
-    EXAMPLES_PATH = os.getenv("FEW_SHOT_EXAMPLES_PATH", "config/few_shot_examples.yaml")
-    BM25_INDEX_FILE = os.getenv("BM25_INDEX_FILE", "data/bm25_index.pkl")
-    GRAPH_INDEX_FILE = os.getenv("GRAPH_INDEX_FILE", "data/schema_graph.json")
+    # Env-var overrides take precedence; defaults are resolved relative to the
+    # project root so the app works regardless of the working directory at launch.
+    CHROMA_PATH = os.getenv("CHROMA_PATH") or str(_ROOT / "chroma_db")
+    EXAMPLES_PATH = os.getenv("FEW_SHOT_EXAMPLES_PATH") or str(_ROOT / "config" / "few_shot_examples.yaml")
+    BM25_INDEX_FILE = os.getenv("BM25_INDEX_FILE") or str(_ROOT / "data" / "bm25_index.pkl")
+    GRAPH_INDEX_FILE = os.getenv("GRAPH_INDEX_FILE") or str(_ROOT / "data" / "schema_graph.json")
     TOP_K_RETRIEVAL = int(os.getenv("TOP_K_RETRIEVAL", "5"))
 
     # RRF (Reciprocal Rank Fusion) constant.

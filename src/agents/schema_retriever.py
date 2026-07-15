@@ -116,7 +116,7 @@ class SchemaRetriever(BaseAgent):
                 self.log(f"Graph not found at {Config.GRAPH_INDEX_FILE}", level="warning")
                 return None
 
-            with open(Config.GRAPH_INDEX_FILE, "r") as f:
+            with open(Config.GRAPH_INDEX_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             G = nx.node_link_graph(data, directed=True)

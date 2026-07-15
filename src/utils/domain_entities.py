@@ -27,7 +27,7 @@ _CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "domain_entities
 @lru_cache(maxsize=None)
 def _load() -> dict:
     """Load and cache domain_entities.yaml. Call _load.cache_clear() in tests."""
-    with open(_CONFIG_PATH) as f:
+    with open(_CONFIG_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

@@ -371,7 +371,7 @@ SQL:
     def _load_examples(self, path: str) -> list[dict]:
         """Load few-shot examples from YAML."""
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 config = yaml.safe_load(f)
                 return config.get('examples', [])
         except FileNotFoundError:
