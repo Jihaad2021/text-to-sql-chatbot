@@ -11,16 +11,45 @@ Targets:
   src/utils/context_distiller.py  (14% → comprehensive)
 """
 
+import json
+import logging
+import sys
+import tempfile
 import time
 from datetime import date
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# ──────────────────────────────────────────────────────────────────────────────
-# financial_domain
-# ──────────────────────────────────────────────────────────────────────────────
-
+import src.core.token_logger as _tl
+from src.agents.retrieval_evaluator import RetrievalEvaluator
+from src.core.base_agent import BaseAgent
+from src.core.baseline_cache import BaselineCache
+from src.core.query_cache import QueryCache, build_snapshot, restore_snapshot
+from src.models.agent_state import AgentState
+from src.models.retrieved_table import RetrievedTable
+from src.tools.tool_registry import TOOL_DEFINITIONS, execute_tool, to_anthropic_tools
+from src.utils.context_distiller import (
+    _build_correlations,
+    _build_glossary,
+    _build_highlights,
+    _col_label,
+    _detect_trend,
+    _extract_numeric,
+    _fmt,
+    _is_date_col,
+    _is_numeric,
+    _pearson,
+    distill_context,
+)
+from src.utils.date_range import (
+    get_data_year,
+    get_earliest_available_date,
+    get_latest_available_date,
+    get_product_count,
+)
+from src.utils.exceptions import AgentExecutionError
 from src.utils.financial_domain import (
     CHANNEL_CODES,
     CHANNEL_TOTAL_REV_SQL,
@@ -34,6 +63,11 @@ from src.utils.financial_domain import (
     normalize_partner,
     partner_in_clause,
 )
+from src.utils.logger import _JsonFormatter, setup_logger
+
+# ──────────────────────────────────────────────────────────────────────────────
+# financial_domain
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 class TestFinancialDomain:
@@ -119,9 +153,6 @@ class TestFinancialDomain:
 # ──────────────────────────────────────────────────────────────────────────────
 # query_cache
 # ──────────────────────────────────────────────────────────────────────────────
-
-from src.core.query_cache import QueryCache, build_snapshot, restore_snapshot
-
 
 class TestQueryCache:
     def setup_method(self):
@@ -240,14 +271,6 @@ class TestBuildRestoreSnapshot:
 # date_range
 # ──────────────────────────────────────────────────────────────────────────────
 
-from src.utils.date_range import (
-    get_data_year,
-    get_earliest_available_date,
-    get_latest_available_date,
-    get_product_count,
-)
-
-
 def _make_engine_returning(value):
     mock_row = (value,)
     mock_result = MagicMock()
@@ -319,9 +342,6 @@ class TestDateRange:
 # ──────────────────────────────────────────────────────────────────────────────
 # baseline_cache
 # ──────────────────────────────────────────────────────────────────────────────
-
-from src.core.baseline_cache import BaselineCache
-
 
 def _make_baseline_engine():
     """Build a mock engine that returns valid data for all four _load_* queries."""
@@ -488,9 +508,6 @@ class TestBaselineCache:
 # token_logger (no-DB paths)
 # ──────────────────────────────────────────────────────────────────────────────
 
-import src.core.token_logger as _tl
-
-
 class TestTokenLoggerNoDB:
     def test_log_token_usage_no_engine_silent(self):
         with patch("src.core.token_logger._get_engine", return_value=None):
@@ -525,9 +542,6 @@ class TestTokenLoggerNoDB:
 # ──────────────────────────────────────────────────────────────────────────────
 # tool_registry
 # ──────────────────────────────────────────────────────────────────────────────
-
-from src.tools.tool_registry import TOOL_DEFINITIONS, execute_tool, to_anthropic_tools
-
 
 class TestToolRegistry:
     def test_to_anthropic_tools_length_matches(self):
@@ -591,22 +605,6 @@ class TestToolRegistry:
 # ──────────────────────────────────────────────────────────────────────────────
 # context_distiller
 # ──────────────────────────────────────────────────────────────────────────────
-
-from src.models.agent_state import AgentState
-from src.utils.context_distiller import (
-    _build_correlations,
-    _build_glossary,
-    _build_highlights,
-    _col_label,
-    _detect_trend,
-    _extract_numeric,
-    _fmt,
-    _is_date_col,
-    _is_numeric,
-    _pearson,
-    distill_context,
-)
-
 
 def _state_with(query_result, query="test query"):
     s = AgentState(query=query)
@@ -1024,21 +1022,12 @@ class TestContextDistillerEdgeCases:
         assert isinstance(result, str)
 
     def test_is_numeric_decimal_returns_true(self):
-        from decimal import Decimal
         assert _is_numeric(Decimal("3.14")) is True  # line 230: try: float(val); return True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # logger — JSON formatter exception branch, file handler path
 # ──────────────────────────────────────────────────────────────────────────────
-
-import json
-import logging
-import sys
-import tempfile
-
-from src.utils.logger import _JsonFormatter, setup_logger
-
 
 class TestLogger:
     def test_json_formatter_basic_output(self, monkeypatch):
@@ -1087,10 +1076,6 @@ class TestLogger:
 # ──────────────────────────────────────────────────────────────────────────────
 # base_agent — reset_metrics, get_info, __repr__, __str__, super().execute, error path
 # ──────────────────────────────────────────────────────────────────────────────
-
-from src.core.base_agent import BaseAgent
-from src.utils.exceptions import AgentExecutionError
-
 
 class _SimpleAgent(BaseAgent):
     def __init__(self):
@@ -1165,10 +1150,6 @@ class TestBaseAgentUtilities:
 # ──────────────────────────────────────────────────────────────────────────────
 # retrieval_evaluator — fallback when LLM excludes all tables (lines 71-75)
 # ──────────────────────────────────────────────────────────────────────────────
-
-from src.agents.retrieval_evaluator import RetrievalEvaluator
-from src.models.retrieved_table import RetrievedTable
-
 
 class TestRetrievalEvaluatorFallback:
     def test_fallback_when_all_tables_excluded(self):
