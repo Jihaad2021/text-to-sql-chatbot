@@ -1,133 +1,175 @@
 """
-Portability verification — poin 5.
+Domain entity portability verification — subprocess edition.
 
 Simulates adding a new partner "newpay" to domain_entities.yaml and verifies
-that ALL 5 agent prompt/detection functions pick it up WITHOUT any code changes.
+that ALL 6 agent prompt/detection functions pick it up WITHOUT any code changes.
+
+Strategy: subprocess isolation.
+  Each check runs in a FRESH Python process (verify_child.py) that imports all
+  agent modules AFTER the YAML has been modified on disk. Module-level constants
+  (_PARTNER_LIST, _PARTNER_DISPLAY, _PARTNER_SEGMENT_KW, InsightGenerator._PARTNER_KW)
+  are evaluated at import time in that fresh process — identical to a server restart.
+  This is the only approach that verifies end-to-end injection into actual LLM
+  prompt strings, not just intermediate helper function outputs.
+
+Why NOT the in-process approach (old verify_domain_portability.py):
+  _load.cache_clear() refreshes the YAML loader, but module-level constants in
+  agent files that were already imported are FROZEN and cannot be updated without
+  a process restart. The subprocess approach correctly simulates that restart.
 
 Usage:
     python scripts/verify_domain_portability.py
 
-Expected output:
-    [BEFORE] newpay appears in prompts: 0/6
-    Added "newpay" to domain_entities.yaml + cleared cache.
-    [AFTER]  newpay appears in prompts: 6/6
-    PASS — portability verified.
+Expected output (all 6 checks pass, 0 pass after cleanup):
+    [BEFORE — newpay NOT in YAML]
+      [--] query_rewriter   ...
+      → 0/6 checks passed
+    Added "newpay" to domain_entities.yaml. Spawning fresh child process...
+    [AFTER — newpay in YAML (fresh process)]
+      [OK] query_rewriter   ...
+      → 6/6 checks passed
+    Restored original domain_entities.yaml.
+    [CLEANUP — original YAML restored (fresh process)]
+      [--] query_rewriter   ...
+      → 0/6 checks passed
+    PASS — end-to-end portability verified via subprocess isolation.
 """
 
+import os
 import sys
-import yaml
+import json
+import subprocess
 from pathlib import Path
 
-# Allow running from repo root
-sys.path.insert(0, str(Path(__file__).parent.parent))
+YAML_PATH  = Path(__file__).parent.parent / "config" / "domain_entities.yaml"
+CHILD_PATH = Path(__file__).parent / "verify_child.py"
 
-from src.utils.domain_entities import (
-    _load,
-    render_partner_list_block,
-    render_partner_display_block,
-    get_partner_keywords,
-    get_partner_canonical_list,
+# Raw YAML block to insert. Uses list-item indentation that matches the
+# existing partners entries in domain_entities.yaml.
+NEWPAY_BLOCK = (
+    "- canonical: newpay\n"
+    "  display: NewPay\n"
+    "  variants:\n"
+    "  - newpay\n"
+    "  keywords:\n"
+    "  - newpay\n"
 )
 
-YAML_PATH = Path(__file__).parent.parent / "config" / "domain_entities.yaml"
-NEWPAY_ENTRY = {
-    "canonical": "newpay",
-    "display":   "NewPay",
-    "variants":  ["newpay"],
-    "keywords":  ["newpay"],
-}
 
+def _run_child(label: str) -> dict[str, dict]:
+    """Spawn verify_child.py in a fresh process and return its parsed JSON results."""
+    env = os.environ.copy()
+    # Ensure at least one API key env var is set so LLMBaseAgent.__init__ resolves
+    # a provider without raising. A dummy value is safe — no actual LLM call is made.
+    env.setdefault("ANTHROPIC_API_KEY", "sk-ant-verify-only-no-real-calls")
 
-def _check_prompts(label: str) -> dict[str, bool]:
-    """
-    Build each agent's entity constant and check if "newpay" appears.
-    Each check mirrors exactly what the agent computes at import time.
-    """
-    results = {}
+    result = subprocess.run(
+        [sys.executable, str(CHILD_PATH)],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(Path(__file__).parent.parent),
+    )
 
-    # 1. query_rewriter: render_partner_list_block() → "- partner: ..."
-    qr_partner_line = render_partner_list_block()
-    results["query_rewriter (partner list)"] = "newpay" in qr_partner_line
+    if result.returncode != 0 or not result.stdout.strip():
+        print(f"  Child process failed (returncode={result.returncode})")
+        if result.stderr:
+            print(f"  stderr:\n{result.stderr[:800]}")
+        return {}
 
-    # 2. intent_classifier: render_partner_list_block() → segment rules
-    ic_partner_line = render_partner_list_block()
-    results["intent_classifier (segment rule)"] = "newpay" in ic_partner_line
+    try:
+        data: dict[str, dict] = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        print(f"  Could not parse child JSON: {exc}")
+        print(f"  stdout[:300]: {result.stdout[:300]}")
+        return {}
 
-    # 3. sql_generator: render_partner_list_block() + count → PARTNER COLUMN RULE
-    partner_count = len(get_partner_canonical_list())
-    partner_list  = render_partner_list_block()
-    sg_rule = f"use partner_group ({partner_count} brands: {partner_list})"
-    results["sql_generator (partner_group rule)"] = "newpay" in sg_rule
+    passed = sum(1 for v in data.values() if v.get("pass"))
+    total  = len(data)
 
-    # 4. analytics_agent: render_partner_display_block() → "Partner: ..."
-    aa_partner_line = render_partner_display_block()
-    results["analytics_agent (Partner: line)"] = "NewPay" in aa_partner_line
-
-    # 5. response_planner: get_partner_keywords() → _PARTNER_SEGMENT_KW
-    rp_kw = frozenset({"partner", "mitra"} | get_partner_keywords())
-    results["response_planner (keyword detection)"] = "newpay" in rp_kw
-
-    # 6. insight_generator: get_partner_keywords() → _PARTNER_KW class attr
-    ig_kw = frozenset({"partner", "ekosistem partner", "mitra"} | get_partner_keywords())
-    results["insight_generator (_PARTNER_KW)"] = "newpay" in ig_kw
-
-    passed = sum(1 for v in results.values() if v)
     print(f"\n[{label}]")
-    for name, ok in results.items():
-        status = "OK" if ok else "--"
+    for name, info in data.items():
+        status = "OK" if info.get("pass") else "FAIL"
         print(f"  [{status}] {name}")
-    print(f"  → {passed}/{len(results)} checks passed")
-    return results
+        if "detail" in info:
+            print(f"         {info['detail']}")
+        if "error" in info:
+            print(f"         ERROR: {info['error']}")
+    print(f"  → {passed}/{total} checks passed")
+
+    return data
+
+
+def _insert_newpay(original: str) -> str:
+    """
+    Insert the newpay entry into the partners list in the raw YAML text.
+
+    We look for the `channel_groups:` root key (no leading spaces) as the
+    boundary marker — partners always precede it in domain_entities.yaml.
+    Raises RuntimeError if the marker is not found so the caller can bail
+    before writing a broken YAML to disk.
+    """
+    marker = "\nchannel_groups:"
+    if marker not in original:
+        raise RuntimeError(
+            "Insertion marker '\\nchannel_groups:' not found in YAML. "
+            "Cannot safely insert newpay block."
+        )
+    return original.replace(marker, "\n" + NEWPAY_BLOCK + "\nchannel_groups:", 1)
 
 
 def main() -> None:
-    # Back up original YAML text (preserves comments/formatting).
     original_yaml = YAML_PATH.read_text()
 
     try:
-        # ── BEFORE ────────────────────────────────────────────────────────────
-        before = _check_prompts("BEFORE — newpay NOT in YAML")
-        before_count = sum(1 for v in before.values() if v)
-        assert before_count == 0, f"Expected 0 before, got {before_count}"
+        # ── BEFORE: verify newpay is absent in a fresh process ────────────────
+        before = _run_child("BEFORE — newpay NOT in YAML")
+        before_count = sum(1 for v in before.values() if v.get("pass"))
+        if before_count != 0:
+            print(f"\nABORT: {before_count} checks unexpectedly passed BEFORE insertion.")
+            sys.exit(1)
 
-        # ── Add newpay — append entry to partners list in raw YAML text ────────
-        # Insert just before the channel_groups section so formatting is readable.
-        insert_block = (
-            "\n  - canonical: \"newpay\"\n"
-            "    display: \"NewPay\"\n"
-            "    variants: [\"newpay\"]\n"
-            "    keywords: [\"newpay\"]\n"
-        )
-        modified_yaml = original_yaml.replace(
-            "\n# Channel groups",
-            insert_block + "\n# Channel groups",
-            1,
-        )
+        # ── Inject newpay into the YAML on disk ───────────────────────────────
+        modified_yaml = _insert_newpay(original_yaml)
         YAML_PATH.write_text(modified_yaml)
-        _load.cache_clear()
-        print(f'\nAdded "newpay" entry to {YAML_PATH.name} + cleared cache.')
+        print(f'\nAdded "newpay" to {YAML_PATH.name}. Spawning fresh child process...')
 
-        # ── AFTER ─────────────────────────────────────────────────────────────
-        after = _check_prompts("AFTER — newpay in YAML")
-        after_count = sum(1 for v in after.values() if v)
+        # ── AFTER: fresh process imports agents with the new YAML ─────────────
+        after = _run_child("AFTER — newpay in YAML (fresh process)")
+        after_count = sum(1 for v in after.values() if v.get("pass"))
 
     finally:
-        # ── Cleanup: always restore original file ─────────────────────────────
+        # Always restore, even on exception or KeyboardInterrupt.
         YAML_PATH.write_text(original_yaml)
-        _load.cache_clear()
-        print(f'\nRestored original {YAML_PATH.name} + cleared cache.')
+        print(f'\nRestored original {YAML_PATH.name}.')
 
-    # ── Verify cleanup ─────────────────────────────────────────────────────────
-    cleanup = _check_prompts("CLEANUP — original YAML restored")
-    cleanup_count = sum(1 for v in cleanup.values() if v)
+    # ── CLEANUP: verify newpay is absent again in a fresh process ─────────────
+    print("Spawning cleanup verification (restored YAML)...")
+    cleanup = _run_child("CLEANUP — original YAML restored (fresh process)")
+    cleanup_count = sum(1 for v in cleanup.values() if v.get("pass"))
 
     # ── Final verdict ─────────────────────────────────────────────────────────
+    total = len(after)
     print()
-    if after_count == len(after) and cleanup_count == 0:
-        print(f"PASS — portability verified: {after_count}/{len(after)} checks passed after YAML edit.")
-        print("       All resolved to 0 after cleanup (no code changes needed).")
+    if after_count == total and cleanup_count == 0:
+        print("PASS — end-to-end portability verified via subprocess isolation.")
+        print(f"  {after_count}/{total} prompt-level checks pass with newpay in YAML.")
+        print(f"  {cleanup_count}/{total} pass after YAML restored (correct: none).")
+        print()
+        print("  Structural guarantee: module-level constants (_PARTNER_LIST,")
+        print("  _PARTNER_DISPLAY, _PARTNER_SEGMENT_KW, InsightGenerator._PARTNER_KW)")
+        print("  are all verified in a fresh process — equivalent to server restart.")
     else:
-        print(f"FAIL — after={after_count}/{len(after)}, cleanup={cleanup_count}/{len(cleanup)}")
+        print(f"FAIL — after={after_count}/{total}, cleanup={cleanup_count}/{total}")
+        # Print per-agent detail for failed AFTER checks
+        for name, info in after.items():
+            if not info.get("pass"):
+                err = info.get("error") or info.get("detail", "no detail")
+                print(f"  AFTER  FAIL: {name} — {err}")
+        for name, info in cleanup.items():
+            if info.get("pass"):
+                err = info.get("detail", "no detail")
+                print(f"  CLEANUP PASS (should be FAIL): {name} — {err}")
         sys.exit(1)
 
 

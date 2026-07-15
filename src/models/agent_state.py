@@ -154,6 +154,16 @@ class AgentState:
     # Conversational memory — passed in from client each request
     conversation_history: List[Dict[str, Any]] = field(default_factory=list)
 
+    # Quality tier — controls model selection for AnalyticsAgent and InsightGenerator only.
+    # "standard" → default env-var model (gpt-4o-mini).
+    # "deep"     → gpt-4.1-mini for those two agents.
+    # All other agents are unaffected by this field.
+    quality_tier: str = "standard"
+
+    # Per-request identifiers — set by main.py before pipeline.run(), used by token_logger.
+    request_id: str | None = None
+    session_id: str | None = None
+
     # Set by pipeline when auto drill-down was triggered for a DoD anomaly day
     auto_drilldown_triggered: bool = False
 

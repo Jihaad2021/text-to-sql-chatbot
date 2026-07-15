@@ -77,12 +77,13 @@ import os
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
+from src.utils.client_profile import get_client_platform
 from src.utils.domain_entities import get_partner_keywords, get_channel_keywords
 
-# Domain entity keyword sets for segment detection fallback — computed once at import.
-# Base keywords (non-entity) kept here; partner/channel names come from domain_entities.yaml.
+# Domain entity constants — computed once at import.
 _PARTNER_SEGMENT_KW = frozenset({"partner", "mitra"} | get_partner_keywords())
 _CHANNEL_SEGMENT_KW = frozenset({"channel", "saluran", "kanal"} | get_channel_keywords())
+_CLIENT_PLATFORM    = get_client_platform()
 
 # Cheap default models per provider — planner doesn't need full reasoning power
 _CHEAP_MODELS: dict[str, str] = {
@@ -152,9 +153,18 @@ class ResponsePlanner(LLMBaseAgent):
         try:
             prompt = self._build_prompt(state)
             raw    = self._call_llm(prompt, max_tokens=700, temperature=0)
+            self._record_token_usage(state, model=self.model)
             plan   = self._parse_plan(raw)
             plan   = self._enforce_chart_rules(state, plan)
             plan   = self._apply_anomaly_flag(state, plan)
+            # Force "detailed" for complex_analytics — LLM occasionally downgrades to
+            # "standard" despite the prompt instruction. This ensures PENUTUP WAJIB
+            # and the verdict closing guard both fire correctly.
+            if (
+                isinstance(getattr(state, "intent", None), dict)
+                and state.intent.get("category") == "complex_analytics"
+            ):
+                plan["response_length"] = "detailed"
             plan["needs_visual"] = self._compute_needs_visual(state, plan)
             state.layout_plan = plan
             self.log(
@@ -309,7 +319,7 @@ class ResponsePlanner(LLMBaseAgent):
             else:
                 segment = "GENERAL"
 
-        return f"""You are a response layout planner for a data analytics chatbot about Telkomsel's digital payment platform.
+        return f"""You are a response layout planner for a data analytics chatbot about {_CLIENT_PLATFORM}.
 Given the query, business segment, intent, and structured data shape, output a JSON layout plan.
 
 QUERY: "{state.query}"

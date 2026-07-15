@@ -83,3 +83,27 @@ def render_thresholds_block(exclude_metrics: frozenset[str] | None = None) -> st
             continue
         lines.append(note)
     return "\n".join(lines)
+
+
+def get_sr_verdict_boundaries() -> tuple[int, int]:
+    """Return (kritis_boundary_pct, sehat_boundary_pct) for Success Rate thresholds.
+
+    Reads the Success Rate entry from business_thresholds.yaml so that
+    _RECOMMENDATION_RULES_BLOCK and _RECOMMENDATION_SYNTHESIS_INSTRUCTIONS in
+    insight_generator.py stay in sync with business_thresholds.yaml automatically.
+
+    Returns:
+        (kritis_pct, sehat_pct) — e.g. (95, 98), meaning:
+            SR < kritis_pct%           → KRITIS
+            kritis_pct% ≤ SR < sehat_pct% → PERHATIAN
+            SR ≥ sehat_pct%            → SEHAT
+
+    Raises:
+        ValueError if "Success Rate" metric is not found in the YAML.
+    """
+    for entry in _load()["thresholds"]:
+        if entry["metric"] == "Success Rate":
+            kritis_pct = int(entry["kritis"].replace("<", "").replace("%", "").strip())
+            sehat_pct  = int(entry["sehat"].replace(">", "").replace("%", "").strip())
+            return kritis_pct, sehat_pct
+    raise ValueError("'Success Rate' metric not found in business_thresholds.yaml")

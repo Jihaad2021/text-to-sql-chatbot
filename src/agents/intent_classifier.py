@@ -170,6 +170,7 @@ class IntentClassifier(LLMBaseAgent):
         """
         prompt = self._build_prompt(state)
         response = self._call_llm(prompt, max_tokens=500, temperature=0)
+        self._record_token_usage(state, model=self.model)
         intent = self._parse_response(response)
 
         # Hard override: "kenapa / mengapa / apa penyebab" questions are always

@@ -41,6 +41,21 @@ _PARTNER_LIST   = render_partner_list_block()
 _CHANNEL_LIST   = render_channel_list_block()
 _CHANNEL_RULES  = render_channel_rewrite_rules()
 
+# Clarification patterns that indicate QueryRewriter violated its contract:
+# it must return was_rewritten=false for queries it can't handle — never clarification text.
+# If these substrings appear in the rewritten output, the guard discards the rewrite.
+_CLARIFICATION_PATTERNS: tuple[str, ...] = (
+    "tidak cukup spesifik",
+    "mohon berikan",
+    "perlu informasi tambahan",
+    "silakan berikan",
+    "mohon spesifik",
+    "tidak spesifik",
+    "pertanyaan ini tidak",
+    "please provide",
+    "not specific enough",
+)
+
 # Month name tokens (Indonesian + English abbreviations) used for bare-month detection.
 # Values are intentionally absent — only the keys matter for the regex pattern.
 _MONTH_NAMES: frozenset[str] = frozenset({
@@ -111,7 +126,11 @@ Terapkan HANYA aturan yang relevan:
 5. NAMA CHANNEL HUMAN-READABLE — Jika user menyebut nama channel dalam bentuk manusia, ganti dengan kode database:
 {_CHANNEL_RULES}
 
-6. PARTNER GROUP — Jika pertanyaan menyebut partner (gopay, dana, finnet, dll.), performa partner, ranking partner, atau perbandingan partner: tambahkan di awal rewritten query: "Gunakan kolom partner_group (bukan partner) di daily_master."
+6. PARTNER GROUP — Jika pertanyaan menyebut partner (gopay, dana, finnet, dll.), performa partner, ranking partner, atau perbandingan partner: tambahkan instruksi ini HANYA SEBAGAI PREFIX di awal, lalu PERTAHANKAN SELURUH isi pertanyaan asli setelahnya — JANGAN mengganti atau menghapus bagian pertanyaan user.
+   Format: "Gunakan kolom partner_group (bukan partner) di daily_master. [PERTANYAAN ASLI UTUH]"
+   Contoh:
+     Sebelum: "partner mana yang perlu diprioritaskan?"
+     Sesudah: "Gunakan kolom partner_group (bukan partner) di daily_master. Partner mana yang perlu diprioritaskan?"
    Pengecualian: jika user eksplisit menyebut sub-channel seperti paybill, wec, basic → pakai kolom partner.
 
 Aturan tambahan:
@@ -163,19 +182,32 @@ class QueryRewriter(LLMBaseAgent):
                 history=state.conversation_history,
             )
             raw    = self._call_llm(prompt, max_tokens=600, temperature=0)
+            self._record_token_usage(state, model=self.model)
             result   = _parse_json(raw)
 
             if result.get("was_rewritten") and result.get("rewritten", "").strip():
                 rewritten = result["rewritten"].strip()
-                changes   = result.get("changes") or []
-                state.query        = rewritten
-                state.rewrite_notes = "; ".join(changes) if changes else "rewritten"
-                self.log(
-                    f"Rewritten — original: {state.original_query[:70]!r} | "
-                    f"rewritten: {rewritten[:70]!r}"
-                )
-                if changes:
-                    self.log(f"Changes applied: {changes}")
+
+                # Guard: reject rewrites that contain clarification text.
+                # QueryRewriter contract: when a query cannot be rewritten,
+                # return was_rewritten=false — never emit clarification prose.
+                rewritten_lower = rewritten.lower()
+                if any(pat in rewritten_lower for pat in _CLARIFICATION_PATTERNS):
+                    self.log(
+                        f"Clarification-guard triggered — discarding rewrite, "
+                        f"using original. Rewrite snippet: {rewritten[:80]!r}",
+                        level="warning",
+                    )
+                else:
+                    changes   = result.get("changes") or []
+                    state.query        = rewritten
+                    state.rewrite_notes = "; ".join(changes) if changes else "rewritten"
+                    self.log(
+                        f"Rewritten — original: {state.original_query[:70]!r} | "
+                        f"rewritten: {rewritten[:70]!r}"
+                    )
+                    if changes:
+                        self.log(f"Changes applied: {changes}")
             else:
                 state.rewrite_notes = None
                 self.log(f"No rewrite needed: {state.query[:80]!r}")

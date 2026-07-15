@@ -224,3 +224,122 @@ class TestToolChoiceRequired:
             assert second_call_kwargs.get("tool_choice") == "auto", (
                 "Subsequent iterations must use tool_choice='auto'"
             )
+
+
+# ── TC3: max_tokens / max_completion_tokens per iteration ────────────────
+
+class TestMaxTokensPerIteration:
+    """
+    Regression guard for the missing max_tokens bug (2026-07-10).
+
+    Before fix: _run_openai_compatible() called completions.create() without any
+    token limit — reasoning models (o4-mini etc.) can bill reasoning tokens as
+    output and cost 10× without a cap.
+    After fix: every iteration passes max_tokens=_OPENAI_MAX_TOKENS_PER_ITER for
+    standard models, or max_completion_tokens=_OPENAI_MAX_TOKENS_PER_ITER for
+    reasoning models.
+    """
+
+    def test_standard_model_passes_max_tokens(self, agent):
+        """Standard (non-reasoning) model → each call must have max_tokens set."""
+        state = AgentState(
+            query="kenapa success rate GoPay turun bulan Juni 2026?",
+            database="financial_db",
+        )
+        # Fixture uses "google/gemini-2.5-flash" — not a reasoning model.
+        api_responses = _make_openai_tool_call_response(
+            "compare_periods",
+            {"period_a_start": "2026-06-01", "period_a_end": "2026-06-30",
+             "period_b_start": "2026-05-01", "period_b_end": "2026-05-31"},
+        )
+        agent.client.chat.completions.create.side_effect = api_responses
+
+        with patch("src.agents.analytics_agent.execute_tool",
+                   return_value=_make_execute_tool_result(_COMPARE_DATA)):
+            agent.run(state)
+
+        from src.agents.analytics_agent import _OPENAI_MAX_TOKENS_PER_ITER
+        for i, call in enumerate(agent.client.chat.completions.create.call_args_list):
+            kw = call.kwargs
+            assert "max_tokens" in kw, (
+                f"Iteration {i}: max_tokens must be set for standard models — "
+                "missing means unbounded output (cost risk)"
+            )
+            assert kw["max_tokens"] == _OPENAI_MAX_TOKENS_PER_ITER, (
+                f"Iteration {i}: max_tokens must equal _OPENAI_MAX_TOKENS_PER_ITER "
+                f"({_OPENAI_MAX_TOKENS_PER_ITER}), got {kw['max_tokens']}"
+            )
+            assert "max_completion_tokens" not in kw, (
+                f"Iteration {i}: standard model must NOT use max_completion_tokens"
+            )
+
+    def test_standard_model_keeps_temperature_zero(self, agent):
+        """Standard model must retain temperature=0 (deterministic responses)."""
+        state = AgentState(
+            query="analisis SR GoPay Juni 2026",
+            database="financial_db",
+        )
+        api_responses = _make_openai_tool_call_response(
+            "compare_periods",
+            {"period_a_start": "2026-06-01", "period_a_end": "2026-06-30",
+             "period_b_start": "2026-05-01", "period_b_end": "2026-05-31"},
+        )
+        agent.client.chat.completions.create.side_effect = api_responses
+
+        with patch("src.agents.analytics_agent.execute_tool",
+                   return_value=_make_execute_tool_result(_COMPARE_DATA)):
+            agent.run(state)
+
+        for i, call in enumerate(agent.client.chat.completions.create.call_args_list):
+            kw = call.kwargs
+            assert kw.get("temperature") == 0, (
+                f"Iteration {i}: temperature must be 0 for standard models"
+            )
+
+    def test_reasoning_model_passes_max_completion_tokens(self):
+        """Reasoning model (o4-mini) → must use max_completion_tokens, no temperature."""
+        with patch.object(AnalyticsAgent, "_init_client",
+                          return_value=("openai", MagicMock(), "o4-mini")), \
+             patch.object(AnalyticsAgent, "_init_engines",
+                          return_value={"financial_db": MagicMock()}):
+            reasoning_agent = AnalyticsAgent()
+
+        state = AgentState(
+            query="kenapa success rate GoPay turun bulan Juni 2026?",
+            database="financial_db",
+        )
+        api_responses = _make_openai_tool_call_response(
+            "compare_periods",
+            {"period_a_start": "2026-06-01", "period_a_end": "2026-06-30",
+             "period_b_start": "2026-05-01", "period_b_end": "2026-05-31"},
+        )
+        reasoning_agent.client.chat.completions.create.side_effect = api_responses
+
+        with patch("src.agents.analytics_agent.execute_tool",
+                   return_value=_make_execute_tool_result(_COMPARE_DATA)):
+            reasoning_agent.run(state)
+
+        from src.agents.analytics_agent import _OPENAI_MAX_TOKENS_PER_ITER
+        for i, call in enumerate(reasoning_agent.client.chat.completions.create.call_args_list):
+            kw = call.kwargs
+            assert "max_completion_tokens" in kw, (
+                f"Iteration {i}: reasoning model must use max_completion_tokens"
+            )
+            assert kw["max_completion_tokens"] == _OPENAI_MAX_TOKENS_PER_ITER, (
+                f"Iteration {i}: max_completion_tokens must equal "
+                f"_OPENAI_MAX_TOKENS_PER_ITER ({_OPENAI_MAX_TOKENS_PER_ITER})"
+            )
+            assert "max_tokens" not in kw, (
+                f"Iteration {i}: reasoning model must NOT use max_tokens"
+            )
+            assert "temperature" not in kw, (
+                f"Iteration {i}: reasoning model must NOT receive temperature param"
+            )
+
+    def test_max_tokens_value_matches_constant(self):
+        """_OPENAI_MAX_TOKENS_PER_ITER must equal 2000 (documented ceiling design)."""
+        from src.agents.analytics_agent import _OPENAI_MAX_TOKENS_PER_ITER
+        assert _OPENAI_MAX_TOKENS_PER_ITER == 2000, (
+            "Constant must be 2000: 2000 tok/iter × 8 iterations = 16k ceiling. "
+            "Change _MAX_TOOL_ITERATIONS or this constant together, not independently."
+        )

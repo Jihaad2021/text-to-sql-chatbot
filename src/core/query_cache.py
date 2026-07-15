@@ -54,9 +54,9 @@ class QueryCache:
     # PUBLIC API
     # ─────────────────────────────────────────────
 
-    def get(self, query: str, database: str) -> dict[str, Any] | None:
+    def get(self, query: str, database: str, tier: str = "standard") -> dict[str, Any] | None:
         """Return cached snapshot or None if missing/expired."""
-        key = self._key(query, database)
+        key = self._key(query, database, tier)
         entry = self._store.get(key)
         if entry is None:
             return None
@@ -65,9 +65,9 @@ class QueryCache:
             return None
         return entry.snapshot
 
-    def put(self, query: str, database: str, snapshot: dict[str, Any]) -> None:
+    def put(self, query: str, database: str, snapshot: dict[str, Any], tier: str = "standard") -> None:
         """Store a result snapshot with TTL."""
-        key = self._key(query, database)
+        key = self._key(query, database, tier)
         self._store[key] = _CacheEntry(
             snapshot=snapshot,
             expires_at=time.monotonic() + self._ttl,
@@ -86,8 +86,8 @@ class QueryCache:
     # ─────────────────────────────────────────────
 
     @staticmethod
-    def _key(query: str, database: str) -> tuple[str, str]:
-        return (query.strip().lower(), database)
+    def _key(query: str, database: str, tier: str = "standard") -> tuple[str, str, str]:
+        return (query.strip().lower(), database, tier)
 
 
 def build_snapshot(state: Any) -> dict[str, Any]:

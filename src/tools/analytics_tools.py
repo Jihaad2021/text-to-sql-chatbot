@@ -16,6 +16,29 @@ Return contract for all tools:
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+# Dimension → table/column/SR-formula reference map.
+# DOCUMENTATION ONLY — not read by any SQL-generation code.
+# All tools build their SQL independently (see each function below).
+# Update this dict whenever a new dimension is added so the mapping
+# stays visible in one place for grep/audit.
+#
+# sr_type values:
+#   "raw_counts"     — table stores success_trx + total_trx; SR = SUM/SUM
+#   "precomputed_avg"— table stores success_rate_pct directly; SR = AVG
+#   None             — tool does not emit an SR column for this dimension
+_DIMENSION_REGISTRY: dict[str, dict] = {
+    # dimension  : table             entity_col      sr_type            notes
+    "all"        : {"table": "daily_master",    "entity_col": None,            "sr_type": "raw_counts",      "tools": ["get_summary", "get_trend"]},
+    "partner"    : {"table": "daily_master",    "entity_col": "partner_group", "sr_type": "raw_counts",      "tools": ["get_summary", "compare_periods", "detect_anomaly", "get_trend", "get_distribution"]},
+    "channel"    : {"table": "channel_payment", "entity_col": "channel",       "sr_type": "precomputed_avg", "tools": ["get_summary", "compare_periods", "detect_anomaly", "get_trend", "get_distribution"]},
+    "product"    : {"table": "product_summary", "entity_col": "product_name",  "sr_type": "raw_counts",      "tools": ["get_summary", "compare_periods", "detect_anomaly", "get_distribution"],
+                    # product_name can be NULL → COALESCE(NULLIF(NULLIF(product_name,'NULL'),''),'[Tidak Teridentifikasi]')
+                    # get_trend intentionally omitted: product_summary has no daily timeseries structure
+                    "entity_expr": "COALESCE(NULLIF(NULLIF(product_name,'NULL'),''),'[Tidak Teridentifikasi]')"},
+    # get_hourly_pattern has no dimension parameter; fixed to hourly_pattern_daily
+    # with pre-computed hour/total_trx/success_rate_pct columns — excluded from registry.
+}
+
 
 def get_summary(
     db_engine: Engine,

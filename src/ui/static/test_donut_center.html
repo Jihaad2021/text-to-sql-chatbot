@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Donut Center Value — 2f Test</title>
+<link rel="stylesheet" href="/ui/style.css">
+<style>
+  body { background: #FAF8F5; padding: 32px; }
+  h2   { font-size: 15px; color: #1C1B1A; margin-bottom: 20px; font-family: 'Plus Jakarta Sans', sans-serif; }
+  #chat { max-width: 700px; }
+</style>
+</head>
+<body>
+<h2>2f — Donut center value test: share_pct → "100%" | raw trx → sum</h2>
+<div id="chat"></div>
+
+<script src="/ui/chart.min.js"></script>
+<script type="module">
+import { appendAssistantMessage } from '/ui/renderer.js?v=19'
+
+const container = document.getElementById('chat')
+
+// ── Result A: share_pct column → center_value = "100%" ──────────────────
+appendAssistantMessage(container, {
+  answer:     'Distribusi share transaksi partner Juni 2026.',
+  row_count:  5,
+  intent:     { category: 'filtered_query' },
+  layout_plan: {
+    needs_visual: true,
+    narrative_sections: [{ id: 's1', title: 'Distribusi Partner', content: 'Kontribusi share masing-masing partner.' }],
+    visual_blocks: [{ type: 'donut_chart', anchor_after: 's1', purpose: 'leading_answer' }],
+  },
+  chart_configs: [{
+    type:         'doughnut',
+    labels:       ['QRIS', 'Dana', 'GoPay', 'OVO', 'Finnet'],
+    datasets:     [{
+      label:           'Share Pct',
+      data:            [52.85, 22.32, 8.46, 6.66, 5.73],
+      backgroundColor: ['#4A90E2','#50C878','#F5A623','#E74C3C','#9B59B6'],
+    }],
+    title:        'Share Partner — Juni 2026',
+    dual_axis:    false,
+    center_value: '100%',
+    center_label: 'TOTAL',
+    purpose:      'leading_answer',
+    anchor_after: 's1',
+  }],
+})
+
+// ── Result B: raw trx column → center_value = "26.8M" ───────────────────
+appendAssistantMessage(container, {
+  answer:     'Volume transaksi absolut per partner.',
+  row_count:  4,
+  intent:     { category: 'filtered_query' },
+  layout_plan: {
+    needs_visual: true,
+    narrative_sections: [{ id: 's1', title: 'Volume Transaksi', content: 'Total trx per partner.' }],
+    visual_blocks: [{ type: 'donut_chart', anchor_after: 's1', purpose: 'leading_answer' }],
+  },
+  chart_configs: [{
+    type:         'doughnut',
+    labels:       ['QRIS', 'Dana', 'GoPay', 'OVO'],
+    datasets:     [{
+      label:           'Total Trx',
+      data:            [14000000, 6300000, 4100000, 2400000],
+      backgroundColor: ['#4A90E2','#50C878','#F5A623','#E74C3C'],
+    }],
+    title:        'Volume Trx Partner — Juni 2026',
+    dual_axis:    false,
+    center_value: '26.8M',
+    center_label: 'TOTAL',
+    purpose:      'leading_answer',
+    anchor_after: 's1',
+  }],
+})
+</script>
+</body>
+</html>

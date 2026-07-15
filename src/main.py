@@ -6,7 +6,7 @@ Complete 7-agent pipeline using AgentState.
 import os
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -109,6 +109,8 @@ class QueryRequest(BaseModel):
     question: str
     database: str = "financial_db"
     conversation_history: List[Dict[str, Any]] = []
+    quality_tier: Literal["standard", "deep"] = "standard"
+    session_id: Optional[str] = None
 
     @field_validator("question")
     @classmethod
@@ -226,6 +228,9 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
         query=body.question,
         database=body.database,
         conversation_history=body.conversation_history,
+        quality_tier=body.quality_tier,
+        request_id=request_id,
+        session_id=body.session_id,
     )
 
     try:
@@ -371,6 +376,17 @@ async def process_query(request: Request, body: QueryRequest) -> QueryResponse:
             status_code=500,
             detail={"request_id": request_id, "error": "Internal server error"},
         )
+
+
+@app.get("/usage/summary")
+def usage_summary(period: str = "current_month") -> dict:
+    """
+    Token usage summary for monitoring.
+
+    period: "current_month" (default), "today", or "all_time"
+    """
+    from src.core.token_logger import get_usage_summary
+    return get_usage_summary(period=period)
 
 
 app.mount("/ui", StaticFiles(directory="src/ui/static", html=True), name="ui")

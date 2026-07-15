@@ -10,7 +10,7 @@ import {
   appendErrorMessage,
   appendClarificationMessage,
   removeElement,
-} from '/ui/renderer.js?v=19'
+} from '/ui/renderer.js?v=20'
 
 // ── Config ────────────────────────────────────────────────────
 const API = window.location.origin
@@ -33,10 +33,19 @@ const $settingsPanel   = document.getElementById('settings-panel')
 const $settingsBackBtn = document.getElementById('settings-back-btn')
 const $userProfileBtn  = document.getElementById('user-profile-btn')
 
+// Tier dropdown
+const $tierBtn           = document.getElementById('tier-btn')
+const $tierPopup         = document.getElementById('tier-popup')
+const $tierLabel         = document.getElementById('tier-label')
+const $tierCheckStandard = document.getElementById('tier-check-standard')
+const $tierCheckDeep     = document.getElementById('tier-check-deep')
+
 // ── State ─────────────────────────────────────────────────────
 let conversationHistory = []
 let sessionId           = null
 let sessions            = {}
+// quality_tier is per-conversation; resets to "standard" on new session
+let qualityTier         = 'standard'
 
 try {
   sessions = JSON.parse(localStorage.getItem('tts_sessions') ?? '{}')
@@ -84,7 +93,138 @@ document.querySelectorAll('.snav-btn').forEach(btn => {
     btn.classList.add('snav-active')
     const page = document.getElementById(`spage-${btn.dataset.page}`)
     if (page) page.style.display = 'block'
+    if (btn.dataset.page === 'usage') loadUsagePage()
   })
+})
+
+// ── Token Usage Page ──────────────────────────────────────────
+const _MONTH_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
+const _AGENT_LABELS = {
+  query_rewriter: 'Query Rewriter', intent_classifier: 'Intent Classifier',
+  query_planner: 'Query Planner', schema_retriever: 'Schema Retriever',
+  retrieval_evaluator: 'Retrieval Evaluator', sql_generator: 'SQL Generator',
+  sql_validator: 'SQL Validator', query_executor: 'Query Executor',
+  insight_generator: 'Insight Generator', analytics_agent: 'Analytics Agent',
+  response_planner: 'Response Planner',
+}
+const _TIER_LABELS = { standard: 'Standar', deep: 'Lebih Mendalam' }
+
+function _fmt(n) {
+  return Math.round(n).toLocaleString('id-ID')
+}
+
+let _usageLoaded = false
+
+async function loadUsagePage() {
+  if (_usageLoaded) return
+  const $loading = document.getElementById('usage-loading')
+  const $content = document.getElementById('usage-content')
+
+  try {
+    const res  = await fetch('/usage/summary?period=current_month')
+    const data = await res.json()
+
+    // Period label
+    const now = new Date()
+    document.getElementById('usage-period-label').textContent =
+      `Kuota bulan ini — ${_MONTH_ID[now.getMonth()]} ${now.getFullYear()}`
+
+    // Big numbers
+    const total = data.total_tokens || 0
+    const quota = data.quota || 5000000
+    const pct   = data.quota_used_pct ?? ((total / quota) * 100)
+    document.getElementById('usage-total-num').textContent = _fmt(total)
+    document.getElementById('usage-quota-num').textContent = _fmt(quota)
+    document.getElementById('usage-bar').style.width = Math.min(pct, 100) + '%'
+    document.getElementById('usage-pct-text').textContent = `${pct.toFixed(1)}% terpakai`
+
+    // Stat cards
+    document.getElementById('usage-prompt').textContent     = _fmt(data.prompt_tokens || 0)
+    document.getElementById('usage-completion').textContent = _fmt(data.completion_tokens || 0)
+    const calls = data.llm_calls || 1
+    document.getElementById('usage-per-query').textContent = _fmt(total / calls)
+
+    // Per-mode table
+    const tierTbody = document.getElementById('usage-tier-tbody')
+    tierTbody.innerHTML = ''
+    ;(data.by_tier || []).forEach((row, i) => {
+      const pctRow = total > 0 ? ((row.total_tokens / total) * 100).toFixed(0) : 0
+      const bg     = i % 2 === 1 ? 'background:#FAFAF9;' : ''
+      tierTbody.insertAdjacentHTML('beforeend', `
+        <tr style="border-top:1px solid #EBE8E3;${bg}">
+          <td style="padding:11px 16px;font-size:13px;color:#2A2724;">${_TIER_LABELS[row.quality_tier] || row.quality_tier}</td>
+          <td style="padding:11px 16px;font-size:13px;color:#2A2724;text-align:right;font-family:var(--font-mono);">${_fmt(row.total_tokens)}</td>
+          <td style="padding:11px 16px;font-size:13px;color:#2A2724;text-align:right;">${pctRow}%</td>
+        </tr>`)
+    })
+
+    // Per-agent table
+    const agentTbody = document.getElementById('usage-agent-tbody')
+    agentTbody.innerHTML = ''
+    ;(data.by_agent || []).sort((a, b) => b.total_tokens - a.total_tokens).forEach((row, i) => {
+      const bg = i % 2 === 1 ? 'background:#FAFAF9;' : ''
+      agentTbody.insertAdjacentHTML('beforeend', `
+        <tr style="border-top:1px solid #EBE8E3;${bg}">
+          <td style="padding:11px 16px;font-size:13px;color:#2A2724;">${_AGENT_LABELS[row.agent_name] || row.agent_name}</td>
+          <td style="padding:11px 16px;font-size:13px;color:#2A2724;text-align:right;font-family:var(--font-mono);">${_fmt(row.total_tokens)}</td>
+          <td style="padding:11px 16px;font-size:13px;color:#9B9693;text-align:right;">${row.llm_calls}</td>
+        </tr>`)
+    })
+
+    $loading.style.display = 'none'
+    $content.style.display = 'block'
+    _usageLoaded = true
+  } catch (e) {
+    $loading.innerHTML = '<span style="color:#E4002B;">Gagal memuat data penggunaan.</span>'
+  }
+}
+
+// ── Quality tier ──────────────────────────────────────────────
+function setQualityTier(tier) {
+  qualityTier = tier
+  const isDeep = tier === 'deep'
+
+  $tierLabel.textContent = isDeep ? 'Lebih Mendalam' : 'Standar'
+  $tierBtn.classList.toggle('is-deep', isDeep)
+
+  // Update checkmarks
+  document.querySelectorAll('.tier-opt').forEach(opt => {
+    const active = opt.dataset.tier === tier
+    opt.classList.toggle('is-active', active)
+    opt.querySelector('svg').style.display = active ? '' : 'none'
+    opt.setAttribute('aria-selected', active ? 'true' : 'false')
+  })
+}
+
+function openTierPopup() {
+  $tierPopup.style.display = ''
+  $tierBtn.classList.add('is-open')
+  $tierBtn.setAttribute('aria-expanded', 'true')
+}
+
+function closeTierPopup() {
+  $tierPopup.style.display = 'none'
+  $tierBtn.classList.remove('is-open')
+  $tierBtn.setAttribute('aria-expanded', 'false')
+}
+
+$tierBtn.addEventListener('click', e => {
+  e.stopPropagation()
+  $tierPopup.style.display === 'none' ? openTierPopup() : closeTierPopup()
+})
+
+document.querySelectorAll('.tier-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    setQualityTier(opt.dataset.tier)
+    closeTierPopup()
+  })
+})
+
+// Close popup when clicking outside
+document.addEventListener('click', e => {
+  if (!$tierBtn.contains(e.target) && !$tierPopup.contains(e.target)) {
+    closeTierPopup()
+  }
 })
 
 // ── Session helpers ───────────────────────────────────────────
@@ -96,6 +236,7 @@ function newSession() {
   $welcome.style.display  = 'flex'
   $convTitle.textContent  = 'Settlement AI'
   $convMeta.textContent   = ''
+  setQualityTier('standard')   // reset to default on new conversation
   renderHistory()
 }
 
@@ -137,10 +278,11 @@ function saveSession(question, responseData) {
   const existing = sessions[sessionId]
   const turns    = existing?.turns ?? []
   sessions[sessionId] = {
-    title:     existing?.title ?? question.slice(0, 58),
-    history:   conversationHistory,
-    turns:     [...turns, { question, response: trimResponse(responseData) }],
-    timestamp: Date.now(),
+    title:       existing?.title ?? question.slice(0, 58),
+    history:     conversationHistory,
+    qualityTier: qualityTier,
+    turns:       [...turns, { question, response: trimResponse(responseData), qualityTier }],
+    timestamp:   Date.now(),
   }
   try {
     const ids = Object.keys(sessions).sort((a, b) => sessions[b].timestamp - sessions[a].timestamp)
@@ -167,6 +309,9 @@ function restoreSession(id) {
   $messages.style.display = 'flex'
   $welcome.style.display  = 'none'
 
+  // Restore tier for this conversation (defaults to standard for old sessions)
+  setQualityTier(s.qualityTier ?? 'standard')
+
   // Update header
   $convTitle.textContent = s.title ?? 'Settlement AI'
   $convMeta.textContent  = _relTime(s.timestamp)
@@ -183,7 +328,7 @@ function restoreSession(id) {
     turns.forEach(turn => {
       try {
         appendUserMessage($messages, turn.question)
-        appendAssistantMessage($messages, turn.response)
+        appendAssistantMessage($messages, turn.response, turn.qualityTier ?? 'standard')
       } catch (err) {
         console.error('restoreSession render error:', err)
         appendErrorMessage($messages, 'Gagal memuat pesan ini.')
@@ -304,6 +449,9 @@ async function submit() {
   const loader = appendLoadingMessage($messages)
   scrollDown()
 
+  // Capture tier at submit time so the badge matches even if user changes it mid-flight
+  const tierAtSubmit = qualityTier
+
   try {
     const res = await fetch(`${API}/query`, {
       method:  'POST',
@@ -312,6 +460,8 @@ async function submit() {
         question,
         database:             'financial_db',
         conversation_history: conversationHistory,
+        quality_tier:         tierAtSubmit,
+        session_id:           sessionId,
       }),
     })
 
@@ -326,7 +476,7 @@ async function submit() {
       if (data.metadata?.needs_clarification) {
         appendClarificationMessage($messages, data.metadata.clarification_reason)
       } else {
-        appendAssistantMessage($messages, data)
+        appendAssistantMessage($messages, data, tierAtSubmit)
         conversationHistory = data.conversation_history ?? conversationHistory
         saveSession(question, data)
       }

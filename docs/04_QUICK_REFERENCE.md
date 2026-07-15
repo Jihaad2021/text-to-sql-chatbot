@@ -1084,7 +1084,46 @@ uvicorn src.main:app --reload
 
 ---
 
-### 10.3 Add New Business Metric
+### 10.3 Add New Partner or Channel Group
+
+**Partner baru** — hanya edit `config/domain_entities.yaml`, tidak ada perubahan kode:
+```yaml
+# config/domain_entities.yaml — tambahkan entri baru di bawah partners:
+partners:
+  # ... entri yang sudah ada ...
+  - canonical: namapartner          # lowercase, dipakai di kolom partner_group DB
+    display: NamaPartner            # TitleCase, muncul di prompt LLM
+    variants:                       # semua nilai partner_group di daily_master
+      - namapartner
+      - namapartner_wec             # tambahkan sub-channel jika ada
+    keywords:                       # kata yang dikenali dari pertanyaan user
+      - namapartner
+```
+
+**Channel group baru** — hanya edit YAML juga:
+```yaml
+channel_groups:
+  - group: ShortKey                 # identifier internal — TIDAK dibaca oleh kode
+    label: Nama Channel Lengkap    # DISPLAY AUTHORITY — dipakai di semua prompt LLM
+    codes:                          # kode DB di kolom channel daily_master
+      - x1
+    keywords:                       # frase yang query rewriter kenali
+      - Nama Channel Lengkap
+      - singkatan
+```
+
+> ⚠️ **Restart service wajib** — module-level constants di-freeze saat process start.
+> Lihat [12.5 Operational Notes](#125-operational-notes----config-file-restart-requirements).
+
+**Verifikasi setelah restart:**
+```bash
+python scripts/verify_domain_portability.py
+# Expected: 6/6 checks pass (jika ditambah partner baru)
+```
+
+---
+
+### 10.4 Add New Business Metric
 ```yaml
 # Create config/business_metrics.yaml
 
@@ -1412,6 +1451,44 @@ Expected: Blocked with security message
 - [ ] Performance optimization
 - [ ] Advanced SQL features
 ```
+
+---
+
+### 12.5 Operational Notes — Config File Restart Requirements
+
+> **Penting untuk operator:** Beberapa file config di-load satu kali saat proses
+> Python start. Perubahan pada file tersebut TIDAK langsung terasa di server yang
+> sedang berjalan — service restart wajib dilakukan.
+
+| File | Di-load saat | Berlaku setelah |
+|---|---|---|
+| `config/domain_entities.yaml` | Process start (module import) | **Restart service** |
+| `config/business_thresholds.yaml` | Process start (module import) | **Restart service** |
+| `config/few_shot_examples.yaml` | Process start (agent init) | **Restart service** |
+| `.env` | Process start | **Restart service** |
+| `config/databases.yaml` | Process start (pipeline init) | **Restart service** |
+
+**Kenapa?** Semua module-level constants seperti `_PARTNER_LIST`, `_PARTNER_DISPLAY`,
+`_PARTNER_SEGMENT_KW`, dan `InsightGenerator._PARTNER_KW` dievaluasi sekali saat
+Python pertama kali mengimpor modul agent. Memanggil `_load.cache_clear()` saja tidak
+cukup — constants yang sudah ter-freeze di modul yang sudah diimpor tidak akan berubah
+tanpa restart proses.
+
+**Cara restart:**
+```bash
+# Stop service (Ctrl+C di terminal uvicorn / kill proses)
+# Kemudian start ulang:
+uvicorn src.main:app --reload        # development
+# atau
+systemctl restart settlement-ai      # production (jika menggunakan systemd)
+```
+
+**Cara verifikasi setelah restart** (pastikan perubahan domain_entities.yaml ter-load):
+```bash
+python scripts/verify_domain_portability.py
+```
+Script ini spawn fresh Python process untuk memverifikasi bahwa module-level constants
+di semua 6 agent files ter-inject dengan nilai terbaru dari YAML.
 
 ---
 

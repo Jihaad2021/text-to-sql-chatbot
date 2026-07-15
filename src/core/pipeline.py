@@ -233,7 +233,7 @@ class TextToSQLPipeline:
 
         # ── Cache check ──────────────────────────────────────────
         if Config.CACHE_TTL_SECONDS > 0:
-            cached = self._cache.get(original_query, state.database)
+            cached = self._cache.get(original_query, state.database, state.quality_tier)
             if cached:
                 self.intent_classifier.log(f"Cache hit for query: {original_query[:60]}")
                 return restore_snapshot(state, cached)
@@ -299,7 +299,7 @@ class TextToSQLPipeline:
 
         # ── Cache store (keyed by original query, not sub_query) ──
         if Config.CACHE_TTL_SECONDS > 0:
-            self._cache.put(original_query, state.database, build_snapshot(state))
+            self._cache.put(original_query, state.database, build_snapshot(state), state.quality_tier)
 
         return state
 

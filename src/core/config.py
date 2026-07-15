@@ -49,6 +49,9 @@ class Config:
     # Max requests per minute per IP on the /query endpoint.
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
 
+    # ── Token quota (passive monitoring only — never blocks requests) ─────────
+    MONTHLY_TOKEN_QUOTA = int(os.getenv("MONTHLY_TOKEN_QUOTA", "5000000"))
+
     # ── Logging ───────────────────────────────────────────────────
     # "text" for human-readable (dev), "json" for structured (production).
     LOG_FORMAT = os.getenv("LOG_FORMAT", "text")

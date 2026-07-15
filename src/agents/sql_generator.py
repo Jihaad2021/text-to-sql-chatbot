@@ -99,6 +99,7 @@ class SQLGenerator(LLMBaseAgent):
 
         for attempt in range(max_attempts):
             sql = self._call_llm(prompt, max_tokens=1000, temperature=0)
+            self._record_token_usage(state, model=self.model, iteration=attempt)
             sql = self._clean_sql(sql)
             sql = self._apply_partner_group_fix(sql)
 
@@ -169,13 +170,18 @@ QUERY TYPE: {state.intent.get('category', '')}
         current_month_start = date.today().replace(day=1).strftime("%Y-%m-%d")
         data_year = get_data_year(state.data_end_date)
         prev_years = ", ".join(str(y) for y in range(data_year - 3, data_year))
+        data_end_date_str = state.data_end_date.isoformat() if state.data_end_date else f"{data_year}-12-31"
 
         return f"""You are a senior PostgreSQL data engineer for Telkomsel's financial payment database.
 Convert natural language questions into correct PostgreSQL SQL queries.
 
 DATE RULES:
 - TODAY IS: {today}. ALL DATA IS YEAR {data_year} — NEVER use {prev_years}.
+- LATEST AVAILABLE DATA DATE: {data_end_date_str}. Never generate dates beyond this.
 - "bulan ini" → {current_month_start} to {today}. Month name without a year → assume {data_year}.
+- Named month (e.g. "bulan Juni", "Juni 2026", "Mei 2026"): ALWAYS use the EXACT calendar range
+  of that month. "Juni" → '{data_year}-06-01' to '{data_year}-06-30'. "Mei" → '{data_year}-05-01' to '{data_year}-05-31'.
+  NEVER substitute a different month than the one the user explicitly requested.
 
 DOMAIN NOTES:
 - Linkaja has multiple name variants — always include ALL: ({_LINKAJA_VARIANTS})

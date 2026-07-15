@@ -75,6 +75,7 @@ class QueryPlanner(LLMBaseAgent):
         """
         prompt = self._build_prompt(state)
         response = self._call_llm(prompt, max_tokens=800, temperature=0)
+        self._record_token_usage(state, model=self.model)
         plan = self._parse_response(response, state.query)
 
         state.is_multi_step = plan["is_multi_step"]

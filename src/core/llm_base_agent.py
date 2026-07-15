@@ -99,6 +99,10 @@ class LLMBaseAgent(BaseAgent):
             model_override=model,
         )
 
+        # Token usage from the most recent provider call — set by each _call_* method.
+        # Read immediately after _call_llm() returns; never rely on it after another call.
+        self._last_usage: dict | None = None
+
         self.log(f"LLM provider: {self.provider}, model: {self.model}")
 
     def _init_client(self, agent_name: str, model_override: str | None = None) -> tuple[str, Any, str]:
@@ -211,6 +215,7 @@ class LLMBaseAgent(BaseAgent):
         max_tokens: int = 1000,
         temperature: float = 0,
         use_thinking: bool = False,
+        model: str | None = None,
     ) -> str:
         """
         Call LLM API and return response text.
@@ -231,13 +236,13 @@ class LLMBaseAgent(BaseAgent):
         """
         try:
             if self.provider == "anthropic":
-                return self._call_anthropic(prompt, max_tokens, temperature, use_thinking)
+                return self._call_anthropic(prompt, max_tokens, temperature, use_thinking, model=model)
             elif self.provider in ("openai", "openrouter"):
-                return self._call_openai(prompt, max_tokens, temperature, use_thinking)
+                return self._call_openai(prompt, max_tokens, temperature, use_thinking, model=model)
             elif self.provider in ("gemini",):
-                return self._call_openai(prompt, max_tokens, temperature)
+                return self._call_openai(prompt, max_tokens, temperature, model=model)
             elif self.provider == "groq":
-                return self._call_groq(prompt, max_tokens, temperature)
+                return self._call_groq(prompt, max_tokens, temperature, model=model)
             else:
                 raise LLMCallError(
                     agent_name=self.name,
@@ -259,12 +264,13 @@ class LLMBaseAgent(BaseAgent):
         max_tokens: int,
         temperature: float,
         use_thinking: bool = False,
+        model: str | None = None,
     ) -> str:
         """Call Anthropic Claude API, optionally with extended thinking."""
         # Thinking requires budget_tokens < max_tokens; no temperature allowed
         _THINKING_BUDGET = 8000
         kwargs: dict = {
-            "model":    self.model,
+            "model":    model or self.model,
             "messages": [{"role": "user", "content": prompt}],
         }
         if use_thinking:
@@ -275,6 +281,12 @@ class LLMBaseAgent(BaseAgent):
             kwargs["temperature"] = temperature
 
         response = self.client.messages.create(**kwargs)
+        if response.usage:
+            self._last_usage = {
+                "prompt_tokens":     response.usage.input_tokens,
+                "completion_tokens": response.usage.output_tokens,
+                "total_tokens":      response.usage.input_tokens + response.usage.output_tokens,
+            }
         # Response may contain thinking blocks + text blocks — return text only
         return next(
             (b.text.strip() for b in response.content if b.type == "text"), ""
@@ -292,8 +304,10 @@ class LLMBaseAgent(BaseAgent):
         max_tokens: int,
         temperature: float,
         use_thinking: bool = False,
+        model: str | None = None,
     ) -> str:
         """Call OpenAI GPT API, optionally routing to a reasoning model."""
+        effective_model = model or self.model
         if use_thinking:
             # Switch to reasoning model for complex intents
             reasoning_model = "o4-mini"
@@ -304,31 +318,66 @@ class LLMBaseAgent(BaseAgent):
                 messages=[{"role": "user", "content": prompt}],
             )
             self.log(f"OpenAI reasoning model used: {reasoning_model}")
-        elif self._is_openai_reasoning_model(self.model):
+        elif self._is_openai_reasoning_model(effective_model):
             # Configured model is already a reasoning model — use its native params
             response = self.client.chat.completions.create(
-                model=self.model,
+                model=effective_model,
                 max_completion_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
         else:
             response = self.client.chat.completions.create(
-                model=self.model,
+                model=effective_model,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 messages=[{"role": "user", "content": prompt}],
             )
+        if response.usage:
+            self._last_usage = {
+                "prompt_tokens":     response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens":      response.usage.total_tokens,
+            }
         return response.choices[0].message.content.strip()
 
-    def _call_groq(self, prompt: str, max_tokens: int, temperature: float) -> str:
+    def _call_groq(self, prompt: str, max_tokens: int, temperature: float, model: str | None = None) -> str:
         """Call Groq API (same interface as OpenAI)."""
         response = self.client.chat.completions.create(
-            model=self.model,
+            model=model or self.model,
             max_tokens=max_tokens,
             temperature=temperature,
             messages=[{"role": "user", "content": prompt}]
         )
+        if response.usage:
+            self._last_usage = {
+                "prompt_tokens":     response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens":      response.usage.total_tokens,
+            }
         return response.choices[0].message.content.strip()
+
+    def _record_token_usage(
+        self,
+        state: "AgentState",
+        *,
+        model: str,
+        iteration: int | None = None,
+    ) -> None:
+        """Read self._last_usage and INSERT one row into token_usage_log. Never raises."""
+        if not self._last_usage:
+            return
+        from src.core.token_logger import log_token_usage
+        log_token_usage(
+            request_id=getattr(state, "request_id", None) or "unknown",
+            session_id=getattr(state, "session_id", None),
+            agent_name=self.name,
+            model=model,
+            quality_tier=getattr(state, "quality_tier", "standard"),
+            prompt_tokens=self._last_usage.get("prompt_tokens", 0),
+            completion_tokens=self._last_usage.get("completion_tokens", 0),
+            total_tokens=self._last_usage.get("total_tokens", 0),
+            iteration=iteration,
+        )
 
     def _call_gemini(self, prompt: str, max_tokens: int, temperature: float) -> str:
         """Call Google Gemini via OpenAI-compatible API."""

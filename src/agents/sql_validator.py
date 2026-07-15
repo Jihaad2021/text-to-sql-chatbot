@@ -88,9 +88,25 @@ class SQLValidator(LLMBaseAgent):
         fixes_applied: list[str] = []
 
         for attempt in range(self.max_retries + 1):
-            errors, _ = self._validate(current_sql, state.query)
+            # Layers 1-3: deterministic validation (syntax, security, table whitelist).
+            # These are the only layers that can gate auto-fix.
+            structural_errors = self._validate_structural(current_sql)
 
-            if not errors:
+            if not structural_errors:
+                # Layers 1-3 clean — run AI check for informational purposes only.
+                # Silent-rewrite guard: never auto-fix SQL that passed structural layers,
+                # even if the AI layer reports logic errors. This prevents the AI from
+                # silently mutating semantically-valid SQL (e.g. replacing LAG() with
+                # SUM(), or rewriting subquery filters) when it misreads the SQL.
+                if self.enable_ai_validation and state.query:
+                    ai_errors, _ = self._validate_logic_ai(current_sql, state.query, state)
+                    if ai_errors:
+                        self.log(
+                            f"AI validator reported errors on structurally-valid SQL — "
+                            f"keeping original SQL (silent-rewrite guard). "
+                            f"Suppressed AI errors: {ai_errors}",
+                            level="warning",
+                        )
                 state.validated_sql = current_sql
                 if fixes_applied:
                     self.log(f"SQL valid after {len(fixes_applied)} fix(es)")
@@ -98,16 +114,17 @@ class SQLValidator(LLMBaseAgent):
                     self.log("SQL valid, no fixes needed")
                 return state
 
+            # Layers 1-3 found structural errors → attempt AI auto-fix.
             if attempt >= self.max_retries:
                 raise SQLValidationError(
                     agent_name=self.name,
                     message=f"SQL validation failed after {self.max_retries} retries",
-                    details={"errors": errors}
+                    details={"errors": structural_errors}
                 )
 
             if self.enable_ai_validation:
                 self.log(f"Attempting auto-fix (attempt {attempt + 1}/{self.max_retries})")
-                fixed_sql = self._auto_fix(current_sql, errors, state.query)
+                fixed_sql = self._auto_fix(current_sql, structural_errors, state.query, state)
 
                 if fixed_sql and fixed_sql != current_sql:
                     fixes_applied.append(f"Attempt {attempt + 1}: AI fix applied")
@@ -116,13 +133,13 @@ class SQLValidator(LLMBaseAgent):
                     raise SQLValidationError(
                         agent_name=self.name,
                         message="Auto-fix failed to produce different SQL",
-                        details={"errors": errors}
+                        details={"errors": structural_errors}
                     )
             else:
                 raise SQLValidationError(
                     agent_name=self.name,
                     message="SQL validation failed, AI auto-fix disabled",
-                    details={"errors": errors}
+                    details={"errors": structural_errors}
                 )
 
         # Unreachable — loop always returns or raises — but satisfies type checker
@@ -131,7 +148,17 @@ class SQLValidator(LLMBaseAgent):
             message="SQL validation exhausted all retries unexpectedly"
         )
 
-    def _validate(self, sql: str, query: str = "") -> tuple[list[str], list[str]]:
+    def _validate_structural(self, sql: str) -> list[str]:
+        """Run layers 1-3 only (deterministic): syntax, security, table whitelist."""
+        errors = self._validate_syntax(sql)
+        if errors:
+            return errors
+        errors = self._validate_security(sql)
+        if errors:
+            return errors
+        return self._validate_tables(sql)
+
+    def _validate(self, sql: str, query: str = "", state: AgentState | None = None) -> tuple[list[str], list[str]]:
         """Run all validation layers, return (errors, warnings)."""
         errors: list[str] = []
         warnings: list[str] = []
@@ -149,7 +176,7 @@ class SQLValidator(LLMBaseAgent):
             return errors, warnings
 
         if self.enable_ai_validation and query:
-            ai_errors, ai_warnings = self._validate_logic_ai(sql, query)
+            ai_errors, ai_warnings = self._validate_logic_ai(sql, query, state)
             errors.extend(ai_errors)
             warnings.extend(ai_warnings)
 
@@ -215,7 +242,7 @@ class SQLValidator(LLMBaseAgent):
 
         return errors
 
-    def _validate_logic_ai(self, sql: str, query: str) -> tuple[list[str], list[str]]:
+    def _validate_logic_ai(self, sql: str, query: str, state: AgentState | None = None) -> tuple[list[str], list[str]]:
         """Layer 4: AI logic validation using LLM."""
         if 'EXTRACT(' in sql.upper() or 'DATE_TRUNC' in sql.upper():
             return [], []
@@ -236,6 +263,8 @@ Your response:"""
 
         try:
             response = self._call_llm(prompt, max_tokens=500, temperature=0)
+            if state is not None:
+                self._record_token_usage(state, model=self.model)
             errors: list[str] = []
             warnings: list[str] = []
             current_section: str | None = None
@@ -266,7 +295,7 @@ Your response:"""
             self.log(f"AI validation failed: {e}", level="warning")
             return [], [f"AI validation unavailable: {e}"]
 
-    def _auto_fix(self, sql: str, errors: list[str], query: str) -> str:
+    def _auto_fix(self, sql: str, errors: list[str], query: str, state: AgentState | None = None) -> str:
         """Auto-fix SQL using LLM."""
         prompt = f"""You are a SQL fixer. Fix the errors in this SQL query.
 
@@ -284,6 +313,8 @@ Corrected SQL:"""
 
         try:
             fixed = self._call_llm(prompt, max_tokens=800, temperature=0)
+            if state is not None:
+                self._record_token_usage(state, model=self.model)
             fixed = re.sub(r'```sql\s*', '', fixed)
             fixed = re.sub(r'```\s*', '', fixed)
             return fixed.strip()

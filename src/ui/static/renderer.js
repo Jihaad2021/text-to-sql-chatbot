@@ -1,5 +1,5 @@
 /**
- * renderer.js — DOM rendering for Settlement AI chat interface. v9
+ * renderer.js — DOM rendering for Settlement AI chat interface. v10
  * Telkomsel warm beige design: KPI cards, horizontal bars, insight callout, table, quick replies.
  */
 
@@ -90,7 +90,7 @@ function appendClarificationMessage(container, reason) {
 // Main assistant message
 // ─────────────────────────────────────────────────────────────
 
-function appendAssistantMessage(container, result) {
+function appendAssistantMessage(container, result, tier = 'standard') {
   const gid       = 'g' + Date.now() + Math.random().toString(36).slice(2, 6)
   const isMulti   = result.is_multi_step && result.step_results?.length > 0
   const hasSql    = Boolean(result.sql)
@@ -116,7 +116,10 @@ function appendAssistantMessage(container, result) {
   if (intent) metaParts.push(intent.replace(/_/g, ' '))
   if (errors.length > 0) metaParts.push(`${errors.length} peringatan`)
   if (result.execution_time_ms) metaParts.push(fmtMs(result.execution_time_ms))
-  body += `<div class="meta-line">${metaParts.join(' · ')}</div>`
+  const tierBadge = tier === 'deep'
+    ? `<span class="tier-badge tier-badge-deep">✦ Lebih Mendalam</span>`
+    : `<span class="tier-badge tier-badge-std">Standar</span>`
+  body += `<div class="meta-line" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${tierBadge}<span>${metaParts.join(' · ')}</span></div>`
 
   const el = make(`
     <div class="msg-enter" style="display:flex;flex-direction:column;gap:4px;">

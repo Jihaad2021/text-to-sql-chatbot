@@ -60,6 +60,7 @@ class RetrievalEvaluator(LLMBaseAgent):
 
         prompt = self._build_prompt(state.query, retrieved)
         response = self._call_llm(prompt, max_tokens=1000, temperature=0)
+        self._record_token_usage(state, model=self.model)
         essential, optional, excluded = self._parse_response(response, retrieved)
 
         all_relevant = essential + optional

@@ -34,11 +34,26 @@ from datetime import datetime
 
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
+from src.utils.client_profile import (
+    render_client_identity_block,
+    render_persona_header_block,
+    render_persona_scope_block,
+)
 from src.utils.domain_entities import get_partner_keywords, get_channel_keywords, render_channel_groups_block
-from src.utils.thresholds import render_thresholds_block
+from src.utils.thresholds import get_sr_verdict_boundaries, render_thresholds_block
 
 # Domain entity constants — computed once at import from domain_entities.yaml.
 _CHANNEL_GROUPS_BLOCK = render_channel_groups_block()
+_CLIENT_IDENTITY      = render_client_identity_block()
+_PERSONA_HEADER       = render_persona_header_block()
+_PERSONA_SCOPE        = render_persona_scope_block()
+_SR_KRITIS, _SR_SEHAT = get_sr_verdict_boundaries()
+
+# Verdict keywords used by the closing-paragraph guard.
+_VERDICT_KEYWORDS: frozenset[str] = frozenset({"SEHAT", "PERHATIAN", "KRITIS"})
+
+# Model used when quality_tier="deep". All other agents are unaffected.
+_DEEP_MODEL = "gpt-4.1-mini"
 
 _MONTH_ID = [
     "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -61,14 +76,14 @@ _CHARTJS_VISUAL_TYPES = {"line_chart", "bar_chart", "donut_chart", "diverging_ba
 
 # Recommendation rules block — injected BEFORE SQL/RESULTS so the LLM processes
 # the threshold-first ordering instruction before forming a volume-based approach.
-_RECOMMENDATION_RULES_BLOCK = """
+_RECOMMENDATION_RULES_BLOCK = f"""
 ⚠️ ANALISIS REKOMENDASI — IKUTI TIGA LANGKAH INI SECARA BERURUTAN:
 
 LANGKAH 1 — KLASIFIKASI (lakukan ini diam-diam, sebelum menulis output):
 Untuk setiap baris data, tentukan statusnya:
-  SR < 95%         → KRITIS  (intervensi segera)
-  95% ≤ SR < 98%   → PERHATIAN  (monitoring ketat)
-  SR ≥ 98%         → SEHAT
+  SR < {_SR_KRITIS}%         → KRITIS  (intervensi segera)
+  {_SR_KRITIS}% ≤ SR < {_SR_SEHAT}%   → PERHATIAN  (monitoring ketat)
+  SR ≥ {_SR_SEHAT}%         → SEHAT
 
 LANGKAH 2 — URUTKAN berdasarkan status (bukan volume atau revenue):
   KRITIS (paling mendesak) → PERHATIAN → SEHAT
@@ -78,10 +93,10 @@ LANGKAH 3 — TULIS OUTPUT dalam format ini:
 Partner yang paling membutuhkan perhatian berdasarkan tingkat keberhasilan transaksi.
 
 ## 🔴 KRITIS — Perlu Tindakan Segera
-- **[nama_partner]**: SR **X,XX%** (standar **≥98%** | selisih **-Y,YY pp**) — [rekomendasi spesifik]
+- **[nama_partner]**: SR **X,XX%** (standar **≥{_SR_SEHAT}%** | selisih **-Y,YY pp**) — [rekomendasi spesifik]
 
 ## 🟡 PERHATIAN — Perlu Monitoring Ketat
-- **[nama_partner]**: SR **X,XX%** (standar **≥98%** | selisih **-Y,YY pp**) — [rekomendasi]
+- **[nama_partner]**: SR **X,XX%** (standar **≥{_SR_SEHAT}%** | selisih **-Y,YY pp**) — [rekomendasi]
 
 ## 🟢 SEHAT — Pertahankan Performa
 - **[nama_partner]**: SR **X,XX%** ✓
@@ -131,36 +146,36 @@ Total transaksi GoPay bulan April mencapai **12,3 juta transaksi**, lebih tinggi
 
 # Late-position reinforcement for recommendation synthesis (threshold-first, not volume ranking).
 # Injected after business_thresholds_block as a closing reminder.
-_RECOMMENDATION_SYNTHESIS_INSTRUCTIONS = """
+_RECOMMENDATION_SYNTHESIS_INSTRUCTIONS = f"""
 INSTRUKSI SYNTHESIS REKOMENDASI — WAJIB DIIKUTI (menggantikan urutan standar):
 
 Langkah 1 — SCAN THRESHOLD: Periksa SETIAP baris data terhadap threshold resmi di atas.
-  - SR < 95%         → KRITIS
-  - 95% ≤ SR < 98%   → PERHATIAN
-  - SR ≥ 98%         → SEHAT
+  - SR < {_SR_KRITIS}%         → KRITIS
+  - {_SR_KRITIS}% ≤ SR < {_SR_SEHAT}%   → PERHATIAN
+  - SR ≥ {_SR_SEHAT}%         → SEHAT
 
 Langkah 2 — URUTKAN berdasarkan tingkat keparahan, BUKAN volume atau revenue:
   KRITIS dulu → PERHATIAN → SEHAT (sebagai konteks saja)
 
 Langkah 3 — SETIAP entitas WAJIB menyebutkan tiga hal:
   a) Angka aktual (contoh: SR **92,87%**)
-  b) Threshold yang berlaku (contoh: threshold minimum **98%**)
+  b) Threshold yang berlaku (contoh: threshold minimum **{_SR_SEHAT}%**)
   c) Selisih dari threshold (contoh: **-5,13 pp dari standar**)
 
 FORMAT OUTPUT WAJIB:
 
 ## 🔴 KRITIS — Perlu Tindakan Segera
-- **[nama_partner]**: SR **X,XX%** (standar **≥98%** | selisih **-Y,YY pp**) — [rekomendasi tindakan spesifik]
+- **[nama_partner]**: SR **X,XX%** (standar **≥{_SR_SEHAT}%** | selisih **-Y,YY pp**) — [rekomendasi tindakan spesifik]
 
 ## 🟡 PERHATIAN — Perlu Monitoring Ketat
-- **[nama_partner]**: SR **X,XX%** (standar **≥98%** | selisih **-Y,YY pp**) — [rekomendasi tindakan]
+- **[nama_partner]**: SR **X,XX%** (standar **≥{_SR_SEHAT}%** | selisih **-Y,YY pp**) — [rekomendasi tindakan]
 
 ## 🟢 SEHAT — Referensi Performa Baik
 - **[nama_partner]**: SR **X,XX%** ✓ — pertahankan performa
 
 LARANGAN KERAS:
 ✗ DILARANG mengurutkan partner berdasarkan total_trx atau revenue
-✗ DILARANG menjadikan partner dengan volume terbesar sebagai prioritas utama jika SR-nya ≥98%
+✗ DILARANG menjadikan partner dengan volume terbesar sebagai prioritas utama jika SR-nya ≥{_SR_SEHAT}%
 ✗ DILARANG melewati satu entitas pun tanpa mengecek threshold SR-nya
 ✗ DILARANG menyebut partner SEHAT sebagai yang perlu "diprioritaskan"
 """
@@ -243,6 +258,21 @@ class InsightGenerator(LLMBaseAgent):
 
         plan = state.layout_plan or {}
 
+        # Option B guard: remove any layout section whose title mentions "distribusi" /
+        # "distribution" when get_distribution was not actually called. Prevents
+        # InsightGenerator from filling a "Distribusi" section with compare_periods data.
+        if state.tool_results and state.layout_plan:
+            called_tools = {tr.tool_name for tr in state.tool_results}
+            if "get_distribution" not in called_tools:
+                state.layout_plan["narrative_sections"] = [
+                    s for s in state.layout_plan.get("narrative_sections", [])
+                    if not any(
+                        kw in (s.get("title") or "").lower()
+                        for kw in ("distribusi", "distribution")
+                    )
+                ]
+                plan = state.layout_plan
+
         try:
             prompt = self._build_prompt(state)
             intent = getattr(state, "intent", None)
@@ -253,13 +283,37 @@ class InsightGenerator(LLMBaseAgent):
                 self.provider == "anthropic"
                 and intent_category in self._THINKING_INTENTS
             )
+            # Compute effective model per-request without mutating self.model —
+            # InsightGenerator is a singleton shared across all concurrent requests.
+            effective_model: str | None = None
+            if getattr(state, "quality_tier", "standard") == "deep":
+                effective_model = _DEEP_MODEL
+                self.log(f"quality_tier=deep → using model '{_DEEP_MODEL}' (default: '{self.model}')")
             insights = self._call_llm(
-                prompt, max_tokens=1500, temperature=0.3, use_thinking=use_thinking
+                prompt, max_tokens=1500, temperature=0.3, use_thinking=use_thinking,
+                model=effective_model,
             )
+            self._record_token_usage(state, model=effective_model or self.model)
             # Guard: if ResponsePlanner asked for brief, strip any extra sections
             # the LLM added beyond the direct answer (defense-in-depth after context trim).
             if plan.get("response_length") == "brief":
                 insights = self._truncate_brief_sections(insights)
+
+            # Verdict closing guard: detailed tool-results responses must end with an
+            # explicit SEHAT/PERHATIAN/KRITIS label. If the LLM omitted it despite
+            # PENUTUP WAJIB, derive verdict deterministically and append one sentence.
+            if (
+                state.tool_results
+                and plan.get("response_length") == "detailed"
+                and not self._has_explicit_verdict_in_closing(insights)
+            ):
+                verdict = self._derive_verdict_from_tool_results(state.tool_results)
+                insights = insights.rstrip() + f"\n\nVerdict keseluruhan: **{verdict}**."
+                self.log(
+                    f"Verdict guard appended '{verdict}' — closing lacked explicit verdict",
+                    level="warning",
+                )
+
             state.insights = insights
             state.insights_sections = self._parse_insight_sections(insights)
 
@@ -399,7 +453,7 @@ class InsightGenerator(LLMBaseAgent):
 
         elaboration_block = self._build_single_elaboration(response_length, has_context)
 
-        return f"""You are a data analyst for Telkomsel's digital payment platform. Generate insights in conversational Indonesian.
+        return f"""{_CLIENT_IDENTITY}. Generate insights in conversational Indonesian.
 {early_product_warning}{context_block}{history_block}
 USER QUESTION: "{state.query}"
 
@@ -546,7 +600,7 @@ METODOLOGI ANALISIS — ikuti urutan ini:
             partial_display_block = "".join(mandatory_lines)
             break
 
-        return f"""You are a data analyst for Telkomsel's digital payment platform.
+        return f"""{_CLIENT_IDENTITY}.
 {early_product_warning}{context_block}{history_block}
 USER QUESTION: "{state.query}"
 
@@ -621,7 +675,7 @@ FORMAT OUTPUT — gunakan markdown untuk struktur yang jelas:
         has_context       = bool(state.context_snapshot)
         elaboration_block = self._build_multi_elaboration(response_length, has_context)
 
-        return f"""You are a data analyst for Telkomsel's digital payment platform.
+        return f"""{_CLIENT_IDENTITY}.
 {early_product_warning}{context_block}{history_block}
 USER ORIGINAL QUESTION: "{state.query}"
 
@@ -751,6 +805,48 @@ SYNTHESIS RULES:
                 missing.append((entity, sr_val))
         return missing
 
+    # ── Verdict closing guard ─────────────────────────────────────────────────
+
+    def _has_explicit_verdict_in_closing(self, text: str) -> bool:
+        """Return True if SEHAT/PERHATIAN/KRITIS appears in the last ~3 sentences."""
+        closing = text[-400:] if len(text) > 400 else text
+        return any(kw in closing for kw in _VERDICT_KEYWORDS)
+
+    def _derive_verdict_from_tool_results(self, tool_results: list) -> str:
+        """Derive SEHAT/PERHATIAN/KRITIS from tool_results data.
+
+        Priority: KRITIS > PERHATIAN > SEHAT.
+        Scans all rows in all tool results for SR values against module-level
+        thresholds. Treats a non-empty detect_anomaly result as PERHATIAN when
+        SR is otherwise clean.
+        """
+        _SR_COL_NAMES = ("success_rate_pct", "avg_success_rate", "sr_pct", "sr")
+        has_anomaly = False
+        worst_sr: float | None = None
+
+        for tr in tool_results:
+            if tr.tool_name == "detect_anomaly" and tr.row_count > 0:
+                has_anomaly = True
+            for row in (tr.data or []):
+                for col in _SR_COL_NAMES:
+                    val = row.get(col)
+                    if val is None:
+                        continue
+                    try:
+                        sr = float(val)
+                        if worst_sr is None or sr < worst_sr:
+                            worst_sr = sr
+                    except (TypeError, ValueError):
+                        pass
+
+        if worst_sr is not None and worst_sr < _SR_KRITIS:
+            return "KRITIS"
+        if worst_sr is not None and worst_sr < _SR_SEHAT:
+            return "PERHATIAN"
+        if has_anomaly:
+            return "PERHATIAN"
+        return "SEHAT"
+
     def _early_product_warning(self, segment: str) -> str:
         """Return a strong preamble injected at the TOP of the prompt for product segment.
 
@@ -867,6 +963,16 @@ SYNTHESIS RULES:
             "- Berikan implikasi bisnis singkat: apakah kondisi ini perlu perhatian atau sudah normal?\n"
             "Gunakan threshold bisnis di bawah untuk kontekstualisasi. DILARANG mengarang angka."
         )
+        # Closing paragraph required for detailed responses — wraps all sections with a
+        # verdict summary. Not a recommendation (that's the "recommendation" intent domain),
+        # just a concise synthesis so the answer doesn't end mid-data.
+        _closing_detailed = (
+            "\n\nPENUTUP WAJIB (tulis setelah semua section selesai, tanpa sub-judul):\n"
+            "2–3 kalimat yang merangkum: (1) verdict keseluruhan SEHAT/PERHATIAN/KRITIS "
+            "berdasarkan majority temuan di atas, (2) satu area yang paling memerlukan perhatian "
+            "beserta angka konkretnya (jika ada). "
+            "DILARANG menulis rekomendasi tindakan spesifik — hanya rangkuman temuan."
+        )
         if response_length == "brief":
             return (
                 "PANJANG JAWABAN (brief): jawab dalam 1–2 kalimat — bandingkan kedua periode/grup dengan angka "
@@ -875,11 +981,14 @@ SYNTHESIS RULES:
             )
         if response_length == "detailed" and has_context:
             return (
-                _std + "\n"
-                "- Tambahkan konteks historis: mengacu pada CONTEXT SNAPSHOT, jelaskan bagaimana temuan ini "
+                _std
+                + "\n- Tambahkan konteks historis: mengacu pada CONTEXT SNAPSHOT, jelaskan bagaimana temuan ini "
                 "dibandingkan dengan pola historis multi-bulan atau baseline yang tersedia."
+                + _closing_detailed
             )
-        return _std  # standard, or detailed without context snapshot
+        if response_length == "detailed":
+            return _std + _closing_detailed
+        return _std  # standard
 
     def _build_layout_block(self, plan: dict | None) -> str:
         """Convert layout_plan into prompt instructions for structured output."""
@@ -1060,12 +1169,7 @@ SYNTHESIS RULES:
         segment_guide      = self._build_segment_guide(segment, state.product_count)
         threshold_override = self._threshold_override_block(segment, state.product_count)
 
-        return f"""Kamu adalah Finance & Revenue Assurance analyst untuk platform pembayaran digital Telkomsel.
-Domain tugasmu: monitoring performa transaksi, eskalasi anomali ke tim ops/partner management,
-permintaan klarifikasi SLA kontrak, audit kontrak partner, identifikasi pola seasonal vs structural,
-flagging ke compliance/risk, request laporan insiden dari partner/sistem.
-BUKAN tugasmu: keputusan marketing/promosi, desain produk, perbaikan UX/pengalaman pengguna,
-strategi akuisisi pelanggan, atau kebijakan harga.
+        return f"""{_PERSONA_HEADER}
 {context_block}{history_block}
 USER QUESTION: "{state.query}"
 
@@ -1080,11 +1184,7 @@ WAJIB DIIKUTI — ANTI-HALUSINASI:
 
 WAJIB DIIKUTI — DOMAIN & TINDAKAN:
 5. Rekomendasi HARUS berupa tindakan konkret dalam domain Finance & RA:
-   IN-SCOPE: eskalasi ke ops/partner management, permintaan klarifikasi SLA, audit kontrak,
-             perbandingan periode untuk identifikasi pola seasonal vs structural,
-             flagging ke compliance/risk, request laporan insiden.
-   OUT-OF-SCOPE — DILARANG: kampanye promosi, keputusan marketing, redesain produk,
-                             perbaikan UX/pengalaman pengguna, strategi akuisisi pelanggan.
+   {_PERSONA_SCOPE}
 6. DILARANG "lakukan analisis/investigasi lebih lanjut" sebagai rekomendasi utama.
    Data di histori sudah cukup untuk rekomendasi konkret. Kalau ada gap data yang benar-benar
    teridentifikasi, sebutkan SATU kalimat — bukan dijadikan item rekomendasi tersendiri.
