@@ -15,7 +15,6 @@ import pytest
 from src.core.pipeline import _BRIEF_MODE_RE, _find_date_col, _find_trx_col
 from src.models.agent_state import AgentState, ToolCallResult
 
-
 # ── helper function unit tests ────────────────────────────────────────────────
 
 
@@ -242,7 +241,7 @@ class TestAutoDrilldownScenarios:
         state.query_result = [{"date": "2026-06-30", "total_trx": 592_437}]
 
         with patch("src.core.pipeline.get_distribution") as mock_dist:
-            result = pipeline._run_auto_drilldown(state)
+            _result = pipeline._run_auto_drilldown(state)
 
         mock_dist.assert_not_called()
 
@@ -256,6 +255,6 @@ class TestAutoDrilldownScenarios:
         ]
 
         with patch("src.core.pipeline.get_distribution") as mock_dist:
-            result = pipeline._run_auto_drilldown(state)
+            _result = pipeline._run_auto_drilldown(state)
 
         mock_dist.assert_not_called()

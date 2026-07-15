@@ -7,14 +7,14 @@ Tests three layers:
   3. execute()               — regeneration triggered when coverage fails; covered on retry
 """
 
-from unittest.mock import MagicMock, patch, call
+import re
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from src.agents.sql_generator import SQLGenerator
 from src.models.agent_state import AgentState
 from src.models.retrieved_table import RetrievedTable
-
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -279,4 +279,3 @@ class TestExecuteCoverageRetry:
         assert "CORRECTED SQL:" in modified
 
 
-import re  # used in test_uses_best_sql_after_max_retries

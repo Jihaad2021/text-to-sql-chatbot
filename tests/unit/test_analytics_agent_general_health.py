@@ -25,7 +25,6 @@ from src.agents.analytics_agent import (
 )
 from src.models.agent_state import AgentState, ToolCallResult
 
-
 # ── _is_general_health ───────────────────────────────────────────────────────
 
 class TestIsGeneralHealth:
@@ -152,7 +151,7 @@ _PERIOD = {"period_start": "2026-06-01", "period_end": "2026-06-30"}
 _DUMMY_RESULT = {"data": [{"total_trx": 1}], "row_count": 1, "sql": "SELECT 1", "description": "test"}
 
 
-def _make_analytics_agent(mock_client: MagicMock) -> "AnalyticsAgent":
+def _make_analytics_agent(mock_client: MagicMock):
     """Build AnalyticsAgent with mocked LLM client and DB engine (no real connections)."""
     from src.agents.analytics_agent import AnalyticsAgent
     with (
@@ -247,7 +246,7 @@ class TestGeneralHealthGuardDoesNotFireForSpecificSegment:
 
 # ── InsightGenerator section filter ─────────────────────────────────────────
 
-def _make_insight_generator() -> "InsightGenerator":
+def _make_insight_generator():
     """Build InsightGenerator with mocked LLM client (no real API calls)."""
     from src.agents.insight_generator import InsightGenerator
     with patch.object(InsightGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o-mini")):

@@ -31,9 +31,12 @@ Example .env configuration:
 """
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    from src.models.agent_state import AgentState
 
 from src.core.base_agent import BaseAgent
 from src.utils.exceptions import LLMCallError

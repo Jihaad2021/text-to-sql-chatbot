@@ -12,16 +12,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agents.analytics_agent import AnalyticsAgent, _DEEP_MODEL as AA_DEEP_MODEL
-from src.agents.insight_generator import InsightGenerator, _DEEP_MODEL as IG_DEEP_MODEL
+from src.agents.analytics_agent import _DEEP_MODEL as AA_DEEP_MODEL
+from src.agents.analytics_agent import AnalyticsAgent
+from src.agents.insight_generator import _DEEP_MODEL as IG_DEEP_MODEL
+from src.agents.insight_generator import InsightGenerator
 from src.agents.intent_classifier import IntentClassifier
-from src.agents.query_rewriter import QueryRewriter
 from src.agents.query_planner import QueryPlanner
+from src.agents.query_rewriter import QueryRewriter
 from src.agents.retrieval_evaluator import RetrievalEvaluator
 from src.agents.sql_generator import SQLGenerator
 from src.agents.sql_validator import SQLValidator
 from src.models.agent_state import AgentState
-
 
 # ─────────────────────────────────────────────────────────────
 # Helpers
@@ -68,7 +69,7 @@ class TestAnalyticsAgentQualityTier:
 
         captured: list[str] = []
 
-        original_run = agent._run_openai_compatible
+        _original_run = agent._run_openai_compatible
 
         def intercept(state, db_engine, system_prompt, effective_model):
             captured.append(effective_model)

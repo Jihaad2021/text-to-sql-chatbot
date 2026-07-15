@@ -15,7 +15,6 @@ import pytest
 from src.agents.intent_classifier import IntentClassifier
 from src.models.agent_state import AgentState
 
-
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────
@@ -188,7 +187,7 @@ class TestIntentClassifierLogsUsage:
         agent = _make_agent()
         state = _state()
 
-        mock_intent = {
+        _mock_intent = {
             "category": "simple_select",
             "segment": "general",
             "confidence": 0.9,

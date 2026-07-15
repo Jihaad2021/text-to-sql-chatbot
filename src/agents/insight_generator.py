@@ -39,7 +39,7 @@ from src.utils.client_profile import (
     render_persona_header_block,
     render_persona_scope_block,
 )
-from src.utils.domain_entities import get_partner_keywords, get_channel_keywords, render_channel_groups_block
+from src.utils.domain_entities import get_channel_keywords, get_partner_keywords, render_channel_groups_block
 from src.utils.thresholds import get_sr_verdict_boundaries, render_thresholds_block
 
 # Domain entity constants — computed once at import from domain_entities.yaml.
@@ -527,7 +527,6 @@ METODOLOGI ANALISIS — ikuti urutan ini:
                 # Cumulative share: computed deterministically from returned rows.
                 cum_trx = getattr(tr, "cumulative_trx_share_pct", 0.0)
                 cum_rev = getattr(tr, "cumulative_rev_share_pct", 0.0)
-                dim = getattr(tr, "dimension", "") or "entitas"
                 if cum_trx > 0 or cum_rev > 0:
                     lines.append(
                         f"CUMULATIVE SHARE (dihitung dari {tr.row_count} baris di atas): "
@@ -1261,13 +1260,19 @@ FORMAT OUTPUT:
             return []
 
         def _to_num(v: object) -> float | None:
-            if isinstance(v, bool): return None
-            if isinstance(v, (int, float)): return float(v)
+            if isinstance(v, bool):
+                return None
+            if isinstance(v, (int, float)):
+                return float(v)
             if isinstance(v, str):
-                try: return float(v.replace(',', '').replace(' ', ''))
-                except ValueError: return None
-            try: return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError): return None
+                try:
+                    return float(v.replace(',', '').replace(' ', ''))
+                except ValueError:
+                    return None
+            try:
+                return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return None
 
         cols         = list(data[0].keys())
         numeric_cols = [c for c in cols if _to_num(data[0].get(c)) is not None]
@@ -1472,13 +1477,19 @@ FORMAT OUTPUT:
             return None
 
         def _to_num(v: object) -> float | None:
-            if isinstance(v, bool): return None
-            if isinstance(v, (int, float)): return float(v)
+            if isinstance(v, bool):
+                return None
+            if isinstance(v, (int, float)):
+                return float(v)
             if isinstance(v, str):
-                try: return float(v.replace(',', '').replace(' ', ''))
-                except ValueError: return None
-            try: return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError): return None
+                try:
+                    return float(v.replace(',', '').replace(' ', ''))
+                except ValueError:
+                    return None
+            try:
+                return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return None
 
         cols     = list(data[0].keys())
         num_cols = [c for c in cols if _to_num(data[0].get(c)) is not None]
@@ -1514,10 +1525,14 @@ FORMAT OUTPUT:
         else:
             def _fmt_abbr(n: float) -> str:
                 a = abs(n)
-                if a >= 1e12: return f"{n / 1e12:.1f}T"
-                if a >= 1e9:  return f"{n / 1e9:.1f}M"
-                if a >= 1e6:  return f"{n / 1e6:.1f}jt"
-                if a >= 1e3:  return f"{n / 1e3:.0f}k"
+                if a >= 1e12:
+                    return f"{n / 1e12:.1f}T"
+                if a >= 1e9:
+                    return f"{n / 1e9:.1f}M"
+                if a >= 1e6:
+                    return f"{n / 1e6:.1f}jt"
+                if a >= 1e3:
+                    return f"{n / 1e3:.0f}k"
                 return f"{n:.0f}"
             _REVENUE_KW = ('revenue', 'pendapatan', 'net_gap', 'fee', 'anggaran', 'biaya')
             rp = "Rp" if any(kw in val_col.lower() for kw in _REVENUE_KW) else ""
@@ -1551,13 +1566,19 @@ FORMAT OUTPUT:
             return None
 
         def _to_num(v: object) -> float | None:
-            if isinstance(v, bool): return None
-            if isinstance(v, (int, float)): return float(v)
+            if isinstance(v, bool):
+                return None
+            if isinstance(v, (int, float)):
+                return float(v)
             if isinstance(v, str):
-                try: return float(v.replace(',', '').replace(' ', ''))
-                except ValueError: return None
-            try: return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError): return None
+                try:
+                    return float(v.replace(',', '').replace(' ', ''))
+                except ValueError:
+                    return None
+            try:
+                return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return None
 
         cols     = list(data[0].keys())
         num_cols = [c for c in cols if _to_num(data[0].get(c)) is not None]
@@ -1618,13 +1639,19 @@ FORMAT OUTPUT:
             return None
 
         def _to_num(v: object) -> float | None:
-            if isinstance(v, bool): return None
-            if isinstance(v, (int, float)): return float(v)
+            if isinstance(v, bool):
+                return None
+            if isinstance(v, (int, float)):
+                return float(v)
             if isinstance(v, str):
-                try: return float(v.replace(',', '').replace(' ', ''))
-                except ValueError: return None
-            try: return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError): return None
+                try:
+                    return float(v.replace(',', '').replace(' ', ''))
+                except ValueError:
+                    return None
+            try:
+                return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return None
 
         cols     = list(data[0].keys())
         txt_cols = [c for c in cols if _to_num(data[0].get(c)) is None]
@@ -1817,13 +1844,19 @@ FORMAT OUTPUT:
     def _charts_from_multi_step(self, step_results: list) -> list[dict]:
         """Build one Chart.js config per step, plus an overall comparison chart."""
         def _to_num(v: object) -> float | None:
-            if isinstance(v, bool): return None
-            if isinstance(v, (int, float)): return float(v)
+            if isinstance(v, bool):
+                return None
+            if isinstance(v, (int, float)):
+                return float(v)
             if isinstance(v, str):
-                try: return float(v.replace(',', ''))
-                except ValueError: return None
-            try: return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError): return None
+                try:
+                    return float(v.replace(',', ''))
+                except ValueError:
+                    return None
+            try:
+                return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return None
 
         configs: list[dict] = []
         for step in step_results:
@@ -1873,13 +1906,21 @@ FORMAT OUTPUT:
             return None
 
         def _is_num(v: object) -> bool:
-            if isinstance(v, bool): return False
-            if isinstance(v, (int, float)): return True
+            if isinstance(v, bool):
+                return False
+            if isinstance(v, (int, float)):
+                return True
             if isinstance(v, str):
-                try: float(v.replace(',', '')); return True
-                except ValueError: return False
-            try: float(v); return True  # type: ignore[arg-type]
-            except (TypeError, ValueError): return False
+                try:
+                    float(v.replace(',', ''))
+                    return True
+                except ValueError:
+                    return False
+            try:
+                float(v)  # type: ignore[arg-type]
+                return True
+            except (TypeError, ValueError):
+                return False
 
         first_cols = list(valid[0].data[0].keys())
         numeric_keys = [
@@ -1892,14 +1933,18 @@ FORMAT OUTPUT:
         metric = numeric_keys[0]
         labels = [s.description or f"Tahap {s.step_number}" for s in valid]
         def _to_f(v: object) -> float:
-            if isinstance(v, (int, float)): return float(v)
-            try: return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError): pass
-            try: return float(str(v).replace(',', ''))
-            except ValueError: return 0.0
+            if isinstance(v, (int, float)):
+                return float(v)
+            try:
+                return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                pass
+            try:
+                return float(str(v).replace(',', ''))
+            except ValueError:
+                return 0.0
 
         values = [_to_f(s.data[0].get(metric)) for s in valid]
-        color  = self._CHART_COLORS[0]
 
         return {
             'type': 'bar',
