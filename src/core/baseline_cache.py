@@ -6,7 +6,6 @@ and z-score helpers so the rest of the system can say "X is above/below normal"
 without recomputing statistics on every query.
 """
 
-import math
 from typing import Any
 
 from sqlalchemy import text

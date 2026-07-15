@@ -12,7 +12,6 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-
 # Fields copied from AgentState on store and restored on hit
 _CACHED_FIELDS = (
     "intent",

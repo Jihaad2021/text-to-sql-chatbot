@@ -26,7 +26,7 @@ from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState, ToolCallResult
 from src.tools.tool_registry import TOOL_DEFINITIONS, execute_tool, to_anthropic_tools
-from src.utils.domain_entities import render_partner_display_block, render_channel_codes_flat
+from src.utils.domain_entities import render_channel_codes_flat, render_partner_display_block
 from src.utils.exceptions import LLMCallError
 from src.utils.thresholds import render_thresholds_block as _render_thresholds
 

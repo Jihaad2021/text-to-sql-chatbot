@@ -23,7 +23,6 @@ from src.agents.sql_generator import SQLGenerator
 from src.models.agent_state import AgentState
 from src.models.retrieved_table import RetrievedTable
 
-
 # -----------------------------------------------------------------------
 # Shared helpers
 # -----------------------------------------------------------------------

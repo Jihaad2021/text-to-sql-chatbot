@@ -17,7 +17,6 @@ from src.agents.insight_generator import InsightGenerator
 from src.models.agent_state import AgentState
 from src.utils.date_range import get_product_count
 
-
 # ── get_product_count ─────────────────────────────────────────────────────────
 
 class TestGetProductCount:

@@ -16,7 +16,6 @@ import pytest
 
 from src.tools.analytics_tools import compare_periods, detect_anomaly
 
-
 _COALESCE_EXPR = "coalesce(nullif(nullif(product_name, 'null'), ''), '[tidak teridentifikasi]')"
 
 

@@ -15,14 +15,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.agents.insight_generator import (
-    InsightGenerator,
     _RECOMMENDATION_RULES_BLOCK,
     _RECOMMENDATION_SYNTHESIS_INSTRUCTIONS,
+    InsightGenerator,
 )
 from src.agents.intent_classifier import INTENT_SQL_STRATEGY
 from src.core.pipeline import _has_analytic_prior_turn
 from src.models.agent_state import AgentState
-
 
 # ── _has_analytic_prior_turn helper ───────────────────────────────────────
 

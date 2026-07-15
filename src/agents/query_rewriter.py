@@ -28,9 +28,9 @@ from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.date_range import get_data_year
 from src.utils.domain_entities import (
-    render_partner_list_block,
     render_channel_list_block,
     render_channel_rewrite_rules,
+    render_partner_list_block,
 )
 
 _TABLES = ", ".join(sorted(Config.ALLOWED_TABLES))

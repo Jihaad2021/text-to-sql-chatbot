@@ -7,25 +7,26 @@ Covers:
   3. Cache-clear portability: adding a partner to YAML propagates to all helpers.
 """
 
-import yaml
-import pytest
 from pathlib import Path
+
+import pytest
+import yaml
 
 from src.utils.domain_entities import (
     _load,
-    get_partner_canonical_list,
-    get_partner_display_list,
-    get_partner_variants,
-    get_partner_keywords,
-    render_partner_list_block,
-    render_partner_display_block,
     get_channel_codes,
     get_channel_keywords,
-    render_channel_list_block,
-    render_channel_group_labels_block,
+    get_partner_canonical_list,
+    get_partner_display_list,
+    get_partner_keywords,
+    get_partner_variants,
     render_channel_codes_flat,
+    render_channel_group_labels_block,
     render_channel_groups_block,
+    render_channel_list_block,
     render_channel_rewrite_rules,
+    render_partner_display_block,
+    render_partner_list_block,
 )
 
 _YAML_PATH = Path(__file__).parent.parent.parent / "config" / "domain_entities.yaml"

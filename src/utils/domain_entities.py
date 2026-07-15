@@ -16,9 +16,10 @@ Adding a new partner:
     3. Update financial_domain.PARTNER_GROUPS if the partner has SQL-level variants
 """
 
-import yaml
 from functools import lru_cache
 from pathlib import Path
+
+import yaml
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "domain_entities.yaml"
 

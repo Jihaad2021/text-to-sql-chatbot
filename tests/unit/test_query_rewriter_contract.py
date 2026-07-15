@@ -16,9 +16,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agents.query_rewriter import QueryRewriter, _CLARIFICATION_PATTERNS
+from src.agents.query_rewriter import _CLARIFICATION_PATTERNS, QueryRewriter
 from src.models.agent_state import AgentState
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 

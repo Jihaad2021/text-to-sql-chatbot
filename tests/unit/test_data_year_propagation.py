@@ -23,7 +23,6 @@ from src.agents.sql_generator import SQLGenerator
 from src.models.agent_state import AgentState
 from src.utils.date_range import get_data_year
 
-
 # ── get_data_year ─────────────────────────────────────────────────────────────
 
 class TestGetDataYear:
@@ -99,8 +98,9 @@ class TestQueryRewriterPromptYear:
 
 class TestSQLGeneratorPromptYear:
     def _make_state(self, year: int) -> AgentState:
-        from src.models.agent_state import AgentState
         from unittest.mock import MagicMock
+
+        from src.models.agent_state import AgentState
         state = AgentState(query="test query", database="financial_db")
         state.data_end_date = date(year, 6, 30)
         mock_table = MagicMock()

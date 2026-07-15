@@ -20,7 +20,6 @@ import pytest
 from src.agents.insight_generator import InsightGenerator
 from src.models.agent_state import AgentState
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────
 
 @pytest.fixture

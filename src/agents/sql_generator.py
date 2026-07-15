@@ -36,7 +36,7 @@ from src.core.config import Config
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.date_range import get_data_year
-from src.utils.domain_entities import get_partner_variants, get_partner_canonical_list, render_partner_list_block
+from src.utils.domain_entities import get_partner_canonical_list, get_partner_variants, render_partner_list_block
 from src.utils.exceptions import SQLGenerationError
 
 # Domain entity constants — computed once at import from domain_entities.yaml.

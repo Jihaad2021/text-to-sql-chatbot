@@ -19,7 +19,6 @@ import pytest
 from src.core.pipeline import TextToSQLPipeline
 from src.models.agent_state import AgentState
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_pipeline() -> TextToSQLPipeline:

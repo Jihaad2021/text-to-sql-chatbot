@@ -17,7 +17,6 @@ import pytest
 
 from src.tools.analytics_tools import get_distribution
 
-
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _make_engine(rows: list[dict] | None = None, entity_count: int = 9999) -> MagicMock:

@@ -25,7 +25,6 @@ import pytest
 from src.agents.analytics_agent import AnalyticsAgent
 from src.models.agent_state import AgentState
 
-
 # ── Shared mock data ──────────────────────────────────────────────────────
 
 _COMPARE_ROW = {

@@ -25,7 +25,6 @@ from src.agents.insight_generator import InsightGenerator
 from src.agents.response_planner import ResponsePlanner
 from src.models.agent_state import AgentState, ToolCallResult
 
-
 # ────────────────────────────────────────────────────────────────────────
 # FIXTURES
 # ────────────────────────────────────────────────────────────────────────

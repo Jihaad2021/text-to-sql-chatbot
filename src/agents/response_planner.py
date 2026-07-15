@@ -78,7 +78,7 @@ import os
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.utils.client_profile import get_client_platform
-from src.utils.domain_entities import get_partner_keywords, get_channel_keywords
+from src.utils.domain_entities import get_channel_keywords, get_partner_keywords
 
 # Domain entity constants — computed once at import.
 _PARTNER_SEGMENT_KW = frozenset({"partner", "mitra"} | get_partner_keywords())
