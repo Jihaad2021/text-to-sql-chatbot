@@ -102,7 +102,11 @@ jobs:
         run: pip install pip-audit bandit
 
       - name: Audit dependencies for CVEs
-        run: pip-audit -r requirements.txt
+        run: |
+          # PYSEC-2026-311 / CVE-2026-45829: pre-auth RCE via chromadb HTTP API with trust_remote_code=True.
+          # Not applicable here — we use chromadb in embedded (in-process) mode, no server, no HTTP API exposed.
+          # All chromadb 1.x versions are affected; no upstream fix exists yet (last_affected: 1.5.9).
+          pip-audit -r requirements.txt --ignore-vuln PYSEC-2026-311
 
       - name: Static security analysis
         # Exclude src/pipeline/: offline build scripts (not production runtime code)
