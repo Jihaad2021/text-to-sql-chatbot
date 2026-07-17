@@ -224,3 +224,10 @@ data/raw/
 
 # Dashboard source — read-only reference, not part of this repo
 ai-dashbord-settlement-master/
+
+# Ad-hoc investigation / debug scripts — not part of the codebase
+AGENTS.md
+scripts/_*.py
+scripts/investigate_*.py
+scripts/verify_*.py
+scripts/trigger_*.py
