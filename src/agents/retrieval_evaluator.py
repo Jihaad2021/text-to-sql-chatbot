@@ -23,23 +23,31 @@ Example:
     [customers]  # orders and products excluded as not needed
 """
 
+import json
+import re
+
 from src.core.llm_base_agent import LLMBaseAgent
 from src.models.agent_state import AgentState
 from src.models.retrieved_table import RetrievedTable
 
+# Valid category values the LLM may return.
+_VALID_CATEGORIES = {"ESSENTIAL", "OPTIONAL", "EXCLUDED"}
+
 
 class RetrievalEvaluator(LLMBaseAgent):
     """
-    Filter retrieved tables to only relevant ones using Claude.
+    Filter retrieved tables to only relevant ones using an LLM.
 
     Categorizes each table as:
     - ESSENTIAL: Must have to answer the query
     - OPTIONAL: Provides additional context
     - EXCLUDED: Not relevant, should be removed
+
+    Output is structured JSON so parsing never depends on free-text line format.
     """
 
     def __init__(self) -> None:
-        super().__init__(name="retrieval_evaluator", version="1.0.0")
+        super().__init__(name="retrieval_evaluator", version="2.0.0")
 
     def execute(self, state: AgentState) -> AgentState:
         """
@@ -84,78 +92,93 @@ class RetrievalEvaluator(LLMBaseAgent):
         return state
 
     def _build_prompt(self, query: str, tables: list[RetrievedTable]) -> str:
-        """Build evaluation prompt."""
-        tables_info = ""
-        for i, table in enumerate(tables, 1):
-            tables_info += f"\nTable {i}: {table.full_name}\n"
-            tables_info += f"Description: {table.description}\n"
-            tables_info += f"Columns: {', '.join(table.columns)}"
-            tables_info += f"\nSimilarity Score: {table.similarity_score:.3f}\n"
+        """Build evaluation prompt that requests structured JSON output."""
+        tables_info = []
+        for table in tables:
+            entry: dict = {
+                "name": table.full_name,
+                "description": table.description,
+                "columns": table.columns,
+            }
             if table.relationships:
-                tables_info += f"Relationships: {'; '.join(table.relationships[:3])}\n"
+                entry["relationships"] = table.relationships[:3]
+            tables_info.append(entry)
 
-        return f"""You are a database schema analyzer. Evaluate which tables are needed to answer the query.
+        tables_json = json.dumps(tables_info, indent=2)
+
+        return f"""You are a database schema analyst. Decide which tables are needed to answer the query.
 
 USER QUERY: "{query}"
 
 RETRIEVED TABLES:
-{tables_info}
+{tables_json}
 
-Categorize each table as ESSENTIAL, OPTIONAL, or EXCLUDED.
+Categories:
+- ESSENTIAL: directly required to answer the query
+- OPTIONAL: adds useful context but not strictly necessary
+- EXCLUDED: not relevant to this query
 
-- ESSENTIAL: Absolutely required to answer the query
-- OPTIONAL: Provides additional context but not strictly necessary
-- EXCLUDED: Not relevant to this query
+Respond with ONLY valid JSON — no explanation, no markdown, no text outside the JSON.
 
-Respond in this EXACT format:
-
-ESSENTIAL:
-- [db_name.table_name]: [brief reason]
-
-OPTIONAL:
-- [db_name.table_name]: [brief reason]
-
-EXCLUDED:
-- [db_name.table_name]: [brief reason]
-
-Your response:"""
+{{
+  "tables": [
+    {{"name": "<db_name.table_name>", "category": "ESSENTIAL|OPTIONAL|EXCLUDED", "reason": "<one sentence>"}},
+    ...
+  ]
+}}"""
 
     def _parse_response(
         self,
         response: str,
         tables: list[RetrievedTable],
     ) -> tuple[list[RetrievedTable], list[RetrievedTable], list[RetrievedTable]]:
-        """Parse LLM response into essential, optional, excluded lists."""
+        """
+        Parse JSON response into essential, optional, excluded lists.
+
+        Falls back to all-essential if JSON is malformed or missing.
+        """
         table_map = {table.full_name: table for table in tables}
 
         essential: list[RetrievedTable] = []
         optional: list[RetrievedTable] = []
         excluded: list[RetrievedTable] = []
-        current_category: str | None = None
 
-        for line in response.split("\n"):
-            line = line.strip()
+        try:
+            # Strip optional markdown fences the model may still emit
+            cleaned = re.sub(r"```(?:json)?|```", "", response).strip()
+            data = json.loads(cleaned)
+            entries = data.get("tables", [])
 
-            if line.startswith("ESSENTIAL:"):
-                current_category = "essential"
-            elif line.startswith("OPTIONAL:"):
-                current_category = "optional"
-            elif line.startswith("EXCLUDED:"):
-                current_category = "excluded"
-            elif line.startswith("-") and current_category and ":" in line:
-                table_part = line.split(":")[0].strip("- ").strip()
-                for full_name, table_obj in table_map.items():
-                    if table_part in full_name or full_name in table_part:
-                        if current_category == "essential":
-                            essential.append(table_obj)
-                        elif current_category == "optional":
-                            optional.append(table_obj)
-                        elif current_category == "excluded":
-                            excluded.append(table_obj)
-                        break
+            for entry in entries:
+                name = entry.get("name", "").strip()
+                category = entry.get("category", "").upper().strip()
+
+                if category not in _VALID_CATEGORIES:
+                    self.log(f"Unknown category '{category}' for '{name}' — skipping", level="warning")
+                    continue
+
+                # Match by exact full_name or by table_name suffix
+                table_obj = table_map.get(name) or next(
+                    (t for t in tables if t.table_name == name or t.full_name == name),
+                    None,
+                )
+                if table_obj is None:
+                    self.log(f"Table '{name}' from LLM response not found in retrieved set — skipping", level="warning")
+                    continue
+
+                if category == "ESSENTIAL":
+                    essential.append(table_obj)
+                elif category == "OPTIONAL":
+                    optional.append(table_obj)
+                else:
+                    excluded.append(table_obj)
+
+        except (json.JSONDecodeError, AttributeError, TypeError) as exc:
+            self.log(f"JSON parse failed ({exc}) — using all tables as essential", level="warning")
+            essential = list(tables)
 
         if not essential and not optional and not excluded:
-            self.log("Parse failed, using all tables as essential", level="warning")
+            self.log("Empty evaluation result — using all tables as essential", level="warning")
             essential = list(tables)
 
         return essential, optional, excluded
