@@ -1,5 +1,5 @@
 """
-Component 4: SQL Generator
+Component 5: SQL Generator
 
 Generates SQL queries from natural language using Claude.
 Uses intent category from IntentClassifier as strategy hint.
@@ -387,29 +387,53 @@ QUERY TYPE: {state.intent.get('category', '')}
                 config = yaml.safe_load(f)
                 return config.get('examples', [])
         except FileNotFoundError:
-            self.log(f"Examples file not found: {path}, using defaults", level="warning")
+            self.log(f"Examples file not found: {path} — using built-in domain defaults", level="warning")
+            return self._default_examples()
+        except yaml.YAMLError as exc:
+            self.log(f"Examples file malformed ({exc}) — using built-in domain defaults", level="warning")
             return self._default_examples()
 
     def _default_examples(self) -> list[dict]:
+        """Domain-specific fallback examples for Telkomsel financial DB.
+
+        Used only when the YAML examples file is unavailable. Must stay
+        domain-accurate so the LLM receives valid SQL patterns as few-shot context.
+        """
         return [
             {
-                'question': 'Show all customers',
-                'sql': 'SELECT * FROM customers LIMIT 100;'
+                "question": "berapa total transaksi bulan April 2026?",
+                "sql": (
+                    "SELECT SUM(total_trx) AS total_transaksi\n"
+                    "FROM daily_master\n"
+                    "WHERE date >= '2026-04-01' AND date <= '2026-04-30'\n"
+                    "LIMIT 100;"
+                ),
             },
             {
-                'question': 'How many orders were placed?',
-                'sql': 'SELECT COUNT(*) as total_orders FROM orders;'
+                "question": "success rate per partner bulan Mei 2026",
+                "sql": (
+                    "SELECT\n"
+                    "  partner_group,\n"
+                    "  ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct,\n"
+                    "  SUM(total_trx) AS total_transaksi\n"
+                    "FROM daily_master\n"
+                    "WHERE date >= '2026-05-01' AND date <= '2026-05-31'\n"
+                    "GROUP BY partner_group\n"
+                    "ORDER BY success_rate_pct DESC;"
+                ),
             },
             {
-                'question': 'Top 5 customers by total spending',
-                'sql': (
-                    'SELECT c.customer_name, SUM(p.payment_value) as total_spent\n'
-                    'FROM customers c\n'
-                    'JOIN orders o ON c.customer_id = o.customer_id\n'
-                    'JOIN payments p ON o.order_id = p.order_id\n'
-                    'GROUP BY c.customer_name\n'
-                    'ORDER BY total_spent DESC\n'
-                    'LIMIT 5;'
-                )
+                "question": "tren transaksi harian bulan April 2026",
+                "sql": (
+                    "SELECT\n"
+                    "  date,\n"
+                    "  SUM(total_trx)     AS total_transaksi,\n"
+                    "  SUM(total_revenue) AS total_revenue,\n"
+                    "  ROUND((SUM(success_trx)::numeric / NULLIF(SUM(total_trx), 0)) * 100, 2) AS success_rate_pct\n"
+                    "FROM daily_master\n"
+                    "WHERE date >= '2026-04-01' AND date <= '2026-04-30'\n"
+                    "GROUP BY date\n"
+                    "ORDER BY date;"
+                ),
             },
         ]

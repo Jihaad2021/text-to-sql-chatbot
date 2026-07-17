@@ -116,19 +116,45 @@ class TestIntentStrategy:
         assert state_with_tables.intent["sql_strategy"] in prompt
 
     def test_table_schema_included_in_prompt(self, generator, state_with_tables):
-        """Table names should be included in LLM prompt."""
-        mock_sql = "SELECT COUNT(*) FROM customers LIMIT 100;"
+        """Table names from evaluated_tables should be included in LLM prompt."""
+        mock_sql = "SELECT SUM(total_trx) AS total FROM daily_master LIMIT 100;"
 
         with patch.object(generator, "_call_llm", return_value=mock_sql) as mock_llm:
             generator.run(state_with_tables)
             prompt = mock_llm.call_args[0][0]
 
-        assert "customers" in prompt
+        assert "daily_master" in prompt
 
 
 # ========================================
 # Test: Error Handling
 # ========================================
+
+class TestExamplesLoading:
+
+    def test_fallback_on_missing_file(self):
+        """Should use domain-specific defaults when YAML file is not found."""
+        with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            with patch("builtins.open", side_effect=FileNotFoundError):
+                gen = SQLGenerator()
+
+        assert len(gen.examples) > 0
+        # Must be domain-specific — no generic table names
+        all_sql = " ".join(e["sql"] for e in gen.examples)
+        assert "daily_master" in all_sql
+        assert "customers" not in all_sql
+
+    def test_fallback_on_malformed_yaml(self):
+        """Should use domain-specific defaults when YAML is malformed."""
+        import yaml as _yaml
+        with patch.object(SQLGenerator, "_init_client", return_value=("openai", MagicMock(), "gpt-4o")):
+            with patch("builtins.open"), patch("yaml.safe_load", side_effect=_yaml.YAMLError("bad yaml")):
+                gen = SQLGenerator()
+
+        assert len(gen.examples) > 0
+        all_sql = " ".join(e["sql"] for e in gen.examples)
+        assert "daily_master" in all_sql
+
 
 class TestErrorHandling:
 
