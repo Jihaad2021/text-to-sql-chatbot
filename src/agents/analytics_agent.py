@@ -139,16 +139,22 @@ Channel: {_CHANNEL_CODES_FLAT}.
 3. Jika tidak yakin tool mana yang tepat, mulai dengan get_summary terlebih dahulu.
 4. Angka yang tidak berasal dari tool call dianggap halusinasi dan TIDAK BOLEH disebutkan.
 {general_health_block}
-Panduan pemilihan tool — pilih berdasarkan pertanyaan:
-- Kata "anomali", "lonjakan", "penurunan tiba-tiba", "melebihi batas", "tidak wajar" → WAJIB mulai dengan `detect_anomaly`
-- Kata "bandingkan", "vs", "dibanding bulan lalu", "perubahan" → WAJIB mulai dengan `compare_periods`
-- Kata "distribusi", "breakdown", "kontributor", "siapa yang dominan" → mulai dengan `get_distribution`
-- Kata "tren", "pertumbuhan", "dari waktu ke waktu", "setiap bulan" → mulai dengan `get_trend`
-- Kata "jam", "pukul", "waktu puncak", "peak hour" → gunakan `get_hourly_pattern`
-- Pertanyaan umum tanpa kata kunci di atas → mulai dengan `get_summary`
+Panduan pemilihan tool — pilih berdasarkan kata kunci dalam pertanyaan:
+- "anomali", "lonjakan", "penurunan tiba-tiba", "tidak wajar" → `detect_anomaly`
+- "bandingkan", "vs", "dibanding bulan lalu", "perubahan" → `compare_periods`
+- "distribusi", "breakdown", "kontributor", "siapa yang dominan" → `get_distribution`
+- "tren", "pertumbuhan", "dari waktu ke waktu", "setiap bulan" → `get_trend`
+- "jam", "pukul", "waktu puncak", "peak hour" → `get_hourly_pattern`
+- Pertanyaan umum tanpa kata kunci di atas → `get_summary`
 
-Strategi investigasi setelah tool pertama:
-1. Tool pertama dipilih berdasarkan panduan di atas
+⚠️ PERTANYAAN GABUNGAN — jika pertanyaan mengandung sinyal untuk BEBERAPA tool:
+Panggil SEMUA tool yang relevan, satu per sinyal. JANGAN panggil tool yang sama dua kali.
+Contoh: "Ada anomali GoPay April? Bandingkan juga dengan Maret"
+  → Iterasi 1: detect_anomaly(April)
+  → Iterasi 2: compare_periods(April vs Maret)   ← BUKAN detect_anomaly(Maret)
+
+Strategi investigasi:
+1. Identifikasi semua sinyal tool dalam pertanyaan, selesaikan satu per satu
 2. Gunakan compare_periods untuk membuktikan ada/tidaknya perubahan vs baseline
 3. Drill down dengan get_distribution untuk tahu kontributor utama jika perlu
 {stop_instruction}
@@ -307,6 +313,8 @@ class AnalyticsAgent(LLMBaseAgent):
         tool_calls_log: list[dict] = []
         # Track (tool_name, frozen_args) to prevent identical repeated calls
         seen_calls: set[tuple] = set()
+        # Track tool names already called (for same-tool compound-query hint)
+        called_tool_names: set[str] = set()
 
         for iteration in range(_MAX_TOOL_ITERATIONS):
             # Force at least one tool call on the first iteration — "required" ensures the
@@ -378,10 +386,25 @@ class AnalyticsAgent(LLMBaseAgent):
                     "sql":       result["sql"],
                 })
 
+                # Soft compound-query guard: hint to use a different tool if
+                # the same tool name is called again with different args.
+                result_content = json.dumps(result["data"][:50], default=str)
+                if tool_name in called_tool_names:
+                    self.log(
+                        f"Same tool '{tool_name}' called again (different args) — injecting compound-query hint",
+                        level="warning",
+                    )
+                    result_content += (
+                        f"\n[SYSTEM HINT] Tool '{tool_name}' sudah dipanggil sebelumnya. "
+                        "Jika pertanyaan juga mengandung sinyal 'bandingkan/compare', "
+                        "gunakan compare_periods — JANGAN panggil tool yang sama lagi."
+                    )
+                called_tool_names.add(tool_name)
+
                 messages.append({
                     "role":         "tool",
                     "tool_call_id": tc.id,
-                    "content":      json.dumps(result["data"][:50], default=str),
+                    "content":      result_content,
                 })
 
                 if result["row_count"] > 0:
@@ -419,6 +442,7 @@ class AnalyticsAgent(LLMBaseAgent):
         messages: list[dict] = [{"role": "user", "content": state.query}]
         tool_calls_log: list[dict] = []
         seen_calls: set[tuple] = set()
+        called_tool_names: set[str] = set()
 
         for iteration in range(_MAX_TOOL_ITERATIONS):
             # Force at least one tool call on the first iteration via tool_choice=any.
@@ -472,10 +496,25 @@ class AnalyticsAgent(LLMBaseAgent):
                     "sql":       result["sql"],
                 })
 
+                # Soft compound-query guard: hint to use a different tool if
+                # the same tool name is called again with different args.
+                result_content = json.dumps(result["data"][:50], default=str)
+                if tool_name in called_tool_names:
+                    self.log(
+                        f"Same tool '{tool_name}' called again (different args) — injecting compound-query hint",
+                        level="warning",
+                    )
+                    result_content += (
+                        f"\n[SYSTEM HINT] Tool '{tool_name}' sudah dipanggil sebelumnya. "
+                        "Jika pertanyaan juga mengandung sinyal 'bandingkan/compare', "
+                        "gunakan compare_periods — JANGAN panggil tool yang sama lagi."
+                    )
+                called_tool_names.add(tool_name)
+
                 tool_result_msgs.append({
                     "type":        "tool_result",
                     "tool_use_id": block.id,
-                    "content":     json.dumps(result["data"][:50], default=str),
+                    "content":     result_content,
                 })
 
                 if result["row_count"] > 0:
