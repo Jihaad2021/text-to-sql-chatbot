@@ -234,6 +234,14 @@ class SchemaRetriever(BaseAgent):
             return []
 
     def _retrieve_graph(self, seed_tables: list[dict]) -> list[dict]:
+        """
+        Find tables related via FK/join edges in the schema graph.
+
+        Currently only FK-based "joins_with" edges are used. The existing
+        schema graph (data/schema_graph.json) has only hierarchical "contains"
+        edges because no FK constraints are defined for analytics tables.
+        Until semantic join edges are added to the graph, this returns empty.
+        """
         if not self.graph or not seed_tables:
             return []
         try:

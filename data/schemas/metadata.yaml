@@ -189,7 +189,7 @@ schemas:
             type: "bigint"
       - table: "financial_internal"
         description: |
-          The financial_internal table stores transaction records related to financial activities, with the primary key being id and key attributes including date, payment_provider, and total_net_revenue. This table answers business questions about revenue generation and transaction fees, with important synonyms users might search including "financial transactions," "pendapatan," "biaya platform," and "biaya admin."
+          The financial_internal table stores detailed revenue and fee breakdown records per partner (payment_provider), with key attributes including date, payment_provider (partner/mitra: GoPay, OVO, Dana, LinkAja, ShopeePay, Telkomsel), total_net_revenue (pendapatan bersih, revenue bersih), total_platform_fee (biaya platform), total_admin_fee (biaya admin), and net_gap (selisih). Use this table for revenue analysis: revenue trend (tren revenue, tren pendapatan), revenue drop (penurunan revenue, revenue turun, pendapatan turun), revenue per partner (revenue per mitra, pendapatan per partner), partner revenue ranking (ranking revenue partner, partner revenue terbesar), revenue comparison between partners, fee analysis, and net gap. This is the primary table for financial/revenue metrics and monthly partner revenue data. Important synonyms: pendapatan, revenue, penurunan pendapatan, tren pendapatan, tren revenue, biaya platform, biaya admin, selisih, net gap, partner revenue, mitra revenue.
         columns:
           - name: "id"
             description: |
@@ -201,7 +201,7 @@ schemas:
             type: "date"
           - name: "payment_provider"
             description: |
-              The payment_provider column holds the name of the service used for processing payments and is utilized in queries to filter transactions by provider, serving as a status (status) indicator in the financial_internal table.
+              The payment_provider column holds the name of the payment partner (mitra/partner: GoPay, OVO, Dana, LinkAja, ShopeePay, Telkomsel) and is used to filter or group revenue records by partner. Equivalent to partner or partner_group in other tables.
             type: "text"
           - name: "transaction_type"
             description: |

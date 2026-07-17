@@ -41,8 +41,8 @@ questions:
   - id: GS005
     query: "berapa net revenue channel i1 bulan April 2026?"
     intent: aggregation
-    expected_tables: [daily_master]
-    notes: "Channel-level revenue filter"
+    expected_tables: [daily_product_channel]
+    notes: "Channel i1 revenue — daily_product_channel has i1_revenue column; daily_master has no channel breakdown"
 
   - id: GS006
     query: "success rate per channel payment bulan April 2026?"
