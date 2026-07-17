@@ -26,7 +26,6 @@ import pytest
 from src.agents.analytics_agent import AnalyticsAgent, _build_system_prompt
 from src.models.agent_state import AgentState
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _tool_response(tool_name: str, args: dict, call_id: str = "call_001") -> MagicMock:
@@ -87,7 +86,7 @@ class TestSameToolNameHint:
     def test_hint_appended_to_tool_result_on_second_call(self, agent):
         """
         Simulate: iter1 → detect_anomaly(April), iter2 → detect_anomaly(March).
-        The second call result must contain [SYSTEM HINT].
+        execute_tool must be called twice for detect_anomaly (exercising the guard).
         """
         april_args = {"dimension": "partner", "target_date": "2026-04-30"}
         march_args = {"dimension": "partner", "target_date": "2026-03-31"}
@@ -104,37 +103,11 @@ class TestSameToolNameHint:
             database="financial_db",
         )
 
-        injected_contents: list[str] = []
-
-        def mock_create(*args, **kwargs):
-            resp = responses[mock_create.call_count]
-            mock_create.call_count += 1
-            return resp
-        mock_create.call_count = 0
-
-        agent.client.chat.completions.create.side_effect = responses
-
-        captured_messages: list[dict] = []
-
-        original_create = agent.client.chat.completions.create
-
-        def capturing_create(*args, **kwargs):
-            # Capture the messages sent to the API each iteration
-            captured_messages.append(kwargs.get("messages", []))
-            return original_create(*args, **kwargs)
-
-        agent.client.chat.completions.create.side_effect = responses
-
         with patch("src.agents.analytics_agent.execute_tool",
                    return_value=_execute_tool_result(5)) as mock_tool:
-            result = agent.run(state)
+            agent.run(state)
 
-        # After two detect_anomaly calls, a warning should have been logged
-        # (we can't easily capture log output here, but we verify the guard
-        # fires by checking that the tool was called at least twice with the
-        # same name but different args — a scenario the guard is designed for)
-        calls = mock_tool.call_args_list
-        anomaly_calls = [c for c in calls if c.args[0] == "detect_anomaly"]
+        anomaly_calls = [c for c in mock_tool.call_args_list if c.args[0] == "detect_anomaly"]
         assert len(anomaly_calls) >= 2, (
             "Test prerequisite: detect_anomaly must have been called at least twice "
             "for the compound-query guard to be exercised"
@@ -142,8 +115,8 @@ class TestSameToolNameHint:
 
     def test_hint_content_contains_compare_periods_suggestion(self, agent):
         """
-        When the same tool is called twice, the injected hint must mention
-        'compare_periods' so the LLM knows the correct next tool.
+        When detect_anomaly is called twice, the third API call's message list
+        must contain a tool result with [SYSTEM HINT] mentioning compare_periods.
         """
         april_args = {"dimension": "partner", "target_date": "2026-04-30"}
         march_args = {"dimension": "partner", "target_date": "2026-03-31"}
@@ -153,43 +126,36 @@ class TestSameToolNameHint:
             _tool_response("detect_anomaly", march_args, "call_002"),
             _stop_response(),
         ]
-        agent.client.chat.completions.create.side_effect = responses
 
         state = AgentState(
             query="Ada anomali GoPay April? Bandingkan juga dengan Maret",
             database="financial_db",
         )
 
-        hint_contents: list[str] = []
+        captured_messages: list[list] = []
 
-        def mock_execute(tool_name, args, engine):
-            return _execute_tool_result(5)
+        def capturing_create(**kwargs):
+            captured_messages.append(list(kwargs.get("messages", [])))
+            return responses.pop(0)
 
-        # Patch messages.append to intercept tool result content
-        original_side_effect = responses
+        agent.client.chat.completions.create.side_effect = None
+        agent.client.chat.completions.create = MagicMock(side_effect=capturing_create)
 
-        with patch("src.agents.analytics_agent.execute_tool", side_effect=mock_execute):
-            # We verify via the messages sent in iteration 2: the tool result
-            # content for the second detect_anomaly call must include the hint.
-            # Intercept by wrapping chat.completions.create to read messages.
-            iter_messages: list = []
-
-            def capturing_create(**kwargs):
-                iter_messages.append([m for m in kwargs.get("messages", [])])
-                resp = original_side_effect.pop(0) if original_side_effect else _stop_response()
-                return resp
-
-            original_side_effect = list(responses)
-            agent.client.chat.completions.create.side_effect = None
-            agent.client.chat.completions.create.side_effect = list(responses)
-
+        with patch("src.agents.analytics_agent.execute_tool", return_value=_execute_tool_result(5)):
             agent.run(state)
 
-        # The guard fires on the second detect_anomaly call — verify via log
-        # (indirect: the code path that appends the hint also calls self.log)
-        # We verify indirectly that guard code ran: tool was called twice with
-        # the same name, and the agent completed without error.
-        assert state.tool_results is not None  # state populated without exception
+        # Third API call (index 2) receives messages including the hinted tool result
+        assert len(captured_messages) >= 3, "Expected at least 3 API calls (2 tools + stop)"
+        third_call_msgs = captured_messages[2]
+        tool_contents = [
+            m.get("content", "") for m in third_call_msgs
+            if isinstance(m, dict) and m.get("role") == "tool"
+        ]
+        hint_found = any("SYSTEM HINT" in c and "compare_periods" in c for c in tool_contents)
+        assert hint_found, (
+            "SYSTEM HINT mentioning compare_periods must appear in the tool result "
+            "content sent to the LLM after the second detect_anomaly call"
+        )
 
 
 # ── TC2: different tool names → no hint ──────────────────────────────────────
