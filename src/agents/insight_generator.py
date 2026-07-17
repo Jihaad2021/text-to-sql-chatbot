@@ -1,5 +1,5 @@
 """
-Component 7: Insight Generator
+Component 10: Insight Generator
 
 Generates natural language insights from query results using Claude.
 
@@ -178,6 +178,43 @@ LARANGAN KERAS:
 ✗ DILARANG menjadikan partner dengan volume terbesar sebagai prioritas utama jika SR-nya ≥{_SR_SEHAT}%
 ✗ DILARANG melewati satu entitas pun tanpa mengecek threshold SR-nya
 ✗ DILARANG menyebut partner SEHAT sebagai yang perlu "diprioritaskan"
+"""
+
+# Shared number-to-float converter used by all chart builders.
+# Returns None for non-numeric inputs so callers can distinguish 0 from "not a number".
+def _to_num(v: object) -> float | None:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v.replace(',', '').replace(' ', ''))
+        except ValueError:
+            return None
+    try:
+        return float(v)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+# Number formatting rules injected into every insight prompt — single source of truth.
+_NUMBER_FORMAT_BLOCK = """CRITICAL — Number formatting rules:
+
+TRANSACTION COUNTS (kolom: total_trx, success_trx, fail_trx, unique_users_daily, unique_users, unique_users_monthly):
+  - INTEGER COUNTS — NEVER format as Rupiah
+  - Under 1,000: "452 transaksi"
+  - Under 1 million: "52.000 transaksi"
+  - 1M–999M: "52,6 juta transaksi"
+  - 1B+: "1,2 miliar transaksi"
+
+REVENUE / MONEY (kolom: total_revenue, net_revenue, platform_fee, net_gap, total_net_revenue, total_platform_fee):
+  - Rupiah amounts — format with Rp prefix
+  - Under 1 million: "Rp 500.000"
+  - 1M–999M: "Rp 252,3 juta"
+  - 1B+: "Rp 1,2 miliar"
+
+PERCENTAGES (kolom: success_rate_pct, avg_success_rate): format as "92,5%"
 """
 
 # Standard analysis block for non-recommendation single-step queries.
@@ -465,24 +502,7 @@ SQL EXECUTED:
 RESULTS ({state.row_count} rows):
 {results_text}
 
-CRITICAL — Number formatting rules:
-
-TRANSACTION COUNTS (kolom: total_trx, success_trx, fail_trx, unique_users_daily, unique_users, unique_users_monthly):
-  - These are INTEGER COUNTS of transactions or users — NEVER format as Rupiah
-  - Under 1,000: "452 transaksi"
-  - Under 1 million: "52.000 transaksi"
-  - 1M–999M: "52,6 juta transaksi"
-  - 1B+: "1,2 miliar transaksi"
-
-REVENUE / MONEY (kolom: total_revenue, net_revenue, platform_fee, net_gap, total_net_revenue, total_platform_fee):
-  - These ARE Rupiah amounts — format with Rp prefix
-  - Under 1 million: "Rp 500.000"
-  - 1M–999M: "Rp 252,3 juta"
-  - 1B+: "Rp 1,2 miliar"
-
-PERCENTAGES (kolom: success_rate_pct, avg_success_rate):
-  - Format as "92,5%"
-{late_rules_block}
+{_NUMBER_FORMAT_BLOCK}{late_rules_block}
 
 DATA INTEGRITY — ANTI-HALLUCINATION (wajib diikuti):
 - Gunakan angka dari RESULTS atau dari CONTEXT SNAPSHOT — keduanya valid
@@ -609,23 +629,7 @@ INVESTIGATION TOOLS EXECUTED:
 
 {tools_block}
 
-CRITICAL — Number formatting rules:
-
-TRANSACTION COUNTS (kolom: total_trx, success_trx, fail_trx, unique_users_daily, unique_users, unique_users_monthly):
-  - INTEGER COUNTS — NEVER format as Rupiah
-  - Under 1,000: "452 transaksi"
-  - Under 1 million: "52.000 transaksi"
-  - 1M–999M: "52,6 juta transaksi"
-  - 1B+: "1,2 miliar transaksi"
-
-REVENUE / MONEY (kolom: total_revenue, net_revenue, platform_fee, net_gap, total_net_revenue, total_platform_fee):
-  - Rupiah amounts — format with Rp prefix
-  - Under 1 million: "Rp 500.000"
-  - 1M–999M: "Rp 252,3 juta"
-  - 1B+: "Rp 1,2 miliar"
-
-PERCENTAGES: format as "92,5%"
-
+{_NUMBER_FORMAT_BLOCK}
 {business_thresholds_block}{threshold_override}
 
 DATA INTEGRITY — ANTI-HALLUCINATION (wajib diikuti):
@@ -684,23 +688,7 @@ ANALYSIS STEPS EXECUTED:
 
 {steps_block}
 
-CRITICAL — Number formatting rules:
-
-TRANSACTION COUNTS (kolom: total_trx, success_trx, fail_trx, unique_users_daily, unique_users, unique_users_monthly):
-  - INTEGER COUNTS — NEVER format as Rupiah
-  - Under 1,000: "452 transaksi"
-  - Under 1 million: "52.000 transaksi"
-  - 1M–999M: "52,6 juta transaksi"
-  - 1B+: "1,2 miliar transaksi"
-
-REVENUE / MONEY (kolom: total_revenue, net_revenue, platform_fee, net_gap, total_net_revenue, total_platform_fee):
-  - Rupiah amounts — format with Rp prefix
-  - Under 1 million: "Rp 500.000"
-  - 1M–999M: "Rp 252,3 juta"
-  - 1B+: "Rp 1,2 miliar"
-
-PERCENTAGES: format as "92,5%"
-
+{_NUMBER_FORMAT_BLOCK}
 COMPARISON INSTRUCTIONS — when multiple steps represent two groups being compared:
 1. Compute the absolute difference between the two groups
 2. Compute the ratio (e.g. "X kali lipat lebih tinggi")
@@ -1259,21 +1247,6 @@ FORMAT OUTPUT:
         if not data or len(data) <= 1:
             return []
 
-        def _to_num(v: object) -> float | None:
-            if isinstance(v, bool):
-                return None
-            if isinstance(v, (int, float)):
-                return float(v)
-            if isinstance(v, str):
-                try:
-                    return float(v.replace(',', '').replace(' ', ''))
-                except ValueError:
-                    return None
-            try:
-                return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                return None
-
         cols         = list(data[0].keys())
         numeric_cols = [c for c in cols if _to_num(data[0].get(c)) is not None]
         text_cols    = [c for c in cols if c not in numeric_cols]
@@ -1476,21 +1449,6 @@ FORMAT OUTPUT:
         if not data:
             return None
 
-        def _to_num(v: object) -> float | None:
-            if isinstance(v, bool):
-                return None
-            if isinstance(v, (int, float)):
-                return float(v)
-            if isinstance(v, str):
-                try:
-                    return float(v.replace(',', '').replace(' ', ''))
-                except ValueError:
-                    return None
-            try:
-                return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                return None
-
         cols     = list(data[0].keys())
         num_cols = [c for c in cols if _to_num(data[0].get(c)) is not None]
         txt_cols = [c for c in cols if c not in num_cols]
@@ -1565,21 +1523,6 @@ FORMAT OUTPUT:
         if not data:
             return None
 
-        def _to_num(v: object) -> float | None:
-            if isinstance(v, bool):
-                return None
-            if isinstance(v, (int, float)):
-                return float(v)
-            if isinstance(v, str):
-                try:
-                    return float(v.replace(',', '').replace(' ', ''))
-                except ValueError:
-                    return None
-            try:
-                return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                return None
-
         cols     = list(data[0].keys())
         num_cols = [c for c in cols if _to_num(data[0].get(c)) is not None]
         txt_cols = [c for c in cols if c not in num_cols]
@@ -1637,21 +1580,6 @@ FORMAT OUTPUT:
         data = state.query_result
         if not data or len(data) < 2:
             return None
-
-        def _to_num(v: object) -> float | None:
-            if isinstance(v, bool):
-                return None
-            if isinstance(v, (int, float)):
-                return float(v)
-            if isinstance(v, str):
-                try:
-                    return float(v.replace(',', '').replace(' ', ''))
-                except ValueError:
-                    return None
-            try:
-                return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                return None
 
         cols     = list(data[0].keys())
         txt_cols = [c for c in cols if _to_num(data[0].get(c)) is None]
@@ -1843,21 +1771,6 @@ FORMAT OUTPUT:
 
     def _charts_from_multi_step(self, step_results: list) -> list[dict]:
         """Build one Chart.js config per step, plus an overall comparison chart."""
-        def _to_num(v: object) -> float | None:
-            if isinstance(v, bool):
-                return None
-            if isinstance(v, (int, float)):
-                return float(v)
-            if isinstance(v, str):
-                try:
-                    return float(v.replace(',', ''))
-                except ValueError:
-                    return None
-            try:
-                return float(v)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                return None
-
         configs: list[dict] = []
         for step in step_results:
             if not step.data or step.row_count == 0:
