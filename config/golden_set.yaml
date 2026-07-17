@@ -1,0 +1,185 @@
+# Golden Set — Retrieval Evaluation
+#
+# 25 representative queries covering all 10 tables and major intent types.
+# Used to measure SchemaRetriever recall@k and RetrievalEvaluator precision.
+#
+# Fields:
+#   id             : unique identifier (GS001..GS025)
+#   query          : natural language question (Indonesian / English)
+#   intent         : expected intent category
+#   expected_tables: ground-truth tables needed to answer the query (order does not matter)
+#   notes          : optional explanation for edge cases
+
+questions:
+
+  # ── Single-table: daily_master ────────────────────────────────────────────
+
+  - id: GS001
+    query: "berapa total transaksi bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_master]
+    notes: "Simplest aggregation, primary table"
+
+  - id: GS002
+    query: "success rate seluruh partner bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_master]
+    notes: "SR calculation from total_trx and success_trx"
+
+  - id: GS003
+    query: "top 5 partner berdasarkan volume transaksi bulan April 2026?"
+    intent: ranking_analysis
+    expected_tables: [daily_master]
+    notes: "Ranking by volume, uses partner_group"
+
+  - id: GS004
+    query: "tren transaksi harian bulan April 2026?"
+    intent: trend_analysis
+    expected_tables: [daily_master]
+    notes: "Daily trend over a month"
+
+  - id: GS005
+    query: "berapa net revenue channel i1 bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_master]
+    notes: "Channel-level revenue filter"
+
+  - id: GS006
+    query: "success rate per channel payment bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_master]
+    notes: "Grouped by channel_payment column"
+
+  # ── Single-table: financial_internal ─────────────────────────────────────
+
+  - id: GS007
+    query: "berapa total revenue GoPay bulan Maret 2026?"
+    intent: aggregation
+    expected_tables: [financial_internal]
+    notes: "Partner revenue from internal table"
+
+  - id: GS008
+    query: "berapa platform fee yang dikumpulkan bulan April 2026?"
+    intent: aggregation
+    expected_tables: [financial_internal]
+    notes: "Fee metric — only in financial_internal"
+
+  - id: GS009
+    query: "partner mana yang mengalami penurunan revenue terbesar bulan April 2026?"
+    intent: ranking_analysis
+    expected_tables: [financial_internal]
+    notes: "Revenue drop ranking"
+
+  - id: GS010
+    query: "trend revenue partner LinkAja 3 bulan terakhir?"
+    intent: trend_analysis
+    expected_tables: [financial_internal]
+    notes: "Multi-month trend, partner filter"
+
+  # ── Single-table: product_summary ────────────────────────────────────────
+
+  - id: GS011
+    query: "summary performa produk tsel wallet Q1 2026?"
+    intent: aggregation
+    expected_tables: [product_summary]
+    notes: "Product-level metrics"
+
+  - id: GS012
+    query: "berapa jumlah produk aktif dengan success rate di atas 98%?"
+    intent: filtered_lookup
+    expected_tables: [product_summary]
+    notes: "Product filter by SR threshold"
+
+  # ── Single-table: anomalies ───────────────────────────────────────────────
+
+  - id: GS013
+    query: "anomali terbesar berdasarkan persentase perubahan bulan April 2026?"
+    intent: ranking_analysis
+    expected_tables: [anomalies]
+    notes: "Anomaly ranking by pct_change"
+
+  - id: GS014
+    query: "tampilkan anomali yang terjadi minggu ini?"
+    intent: filtered_lookup
+    expected_tables: [anomalies]
+    notes: "Recent anomaly lookup"
+
+  # ── Single-table: daily_unique_users ─────────────────────────────────────
+
+  - id: GS015
+    query: "berapa rata-rata daily active users per produk bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_unique_users]
+    notes: "DAU metric"
+
+  # ── Single-table: hourly_pattern_daily ───────────────────────────────────
+
+  - id: GS016
+    query: "bagaimana pola transaksi per jam untuk channel i1?"
+    intent: trend_analysis
+    expected_tables: [hourly_pattern_daily]
+    notes: "Intraday hourly pattern"
+
+  # ── Single-table: daily_user_partner ─────────────────────────────────────
+
+  - id: GS017
+    query: "berapa total pengguna unik yang transaksi via Dana bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_user_partner]
+    notes: "User count filtered by partner"
+
+  # ── Single-table: product_price_list ─────────────────────────────────────
+
+  - id: GS018
+    query: "berapa harga fee untuk produk pulsa Telkomsel?"
+    intent: filtered_lookup
+    expected_tables: [product_price_list]
+    notes: "Price/fee lookup, unique to this table"
+
+  # ── Single-table: daily_product_channel ──────────────────────────────────
+
+  - id: GS019
+    query: "breakdown produk per channel payment bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_product_channel]
+    notes: "Product × channel cross-tab"
+
+  - id: GS020
+    query: "transaksi OVO per produk bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_product_channel]
+    notes: "Partner × product filter"
+
+  # ── Multi-table ───────────────────────────────────────────────────────────
+
+  - id: GS021
+    query: "berapa total transaksi dan revenue Dana bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_master, financial_internal]
+    notes: "Multi-metric spanning two tables (trx from daily_master, revenue from financial_internal)"
+
+  - id: GS022
+    query: "bandingkan volume dan revenue GoPay vs OVO Q1 2026?"
+    intent: comparison
+    expected_tables: [daily_master, financial_internal]
+    notes: "Comparison requiring both tables"
+
+  - id: GS023
+    query: "berapa net gap untuk seluruh partner bulan April 2026?"
+    intent: aggregation
+    expected_tables: [daily_master, financial_internal]
+    notes: "net_gap exists in both tables; both are relevant"
+
+  # ── Root cause / recommendation ───────────────────────────────────────────
+
+  - id: GS024
+    query: "kenapa success rate turun minggu ini?"
+    intent: root_cause_analysis
+    expected_tables: [daily_master, anomalies]
+    notes: "Root cause: trend from daily_master + anomaly context"
+
+  - id: GS025
+    query: "partner mana yang perlu diperhatikan berdasarkan success rate dan revenue?"
+    intent: recommendation
+    expected_tables: [daily_master, financial_internal]
+    notes: "Recommendation combining SR and revenue"
