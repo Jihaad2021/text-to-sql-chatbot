@@ -1,9 +1,8 @@
 """
 FastAPI Application - Text-to-SQL Chatbot
-Complete 7-agent pipeline using AgentState.
+Complete 10-agent pipeline using AgentState.
 """
 
-import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Literal, Optional
@@ -87,11 +86,9 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-_allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8501").split(",")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_allowed_origins,
+    allow_origins=Config.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "Authorization"],

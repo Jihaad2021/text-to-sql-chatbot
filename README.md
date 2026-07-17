@@ -12,7 +12,7 @@ AI-powered chatbot that converts natural language questions (Indonesian or Engli
 ## Features
 
 - **Natural language queries** — Ask in Indonesian or English
-- **8-agent pipeline** — Parallel intent + planning, hybrid retrieval, SQL generation, validation, execution, insights
+- **10-agent pipeline** — Query rewriting, intent + planning (parallel), hybrid retrieval, SQL generation, validation, execution, response planning, insights
 - **Multi-step analytical queries** — Complex questions are automatically decomposed into sequential sub-queries
 - **Conversational memory** — Context from previous questions is carried into each new query
 - **Hybrid retrieval** — ChromaDB (semantic) + BM25 (keyword) + NetworkX graph, fused via Reciprocal Rank Fusion
@@ -30,99 +30,118 @@ AI-powered chatbot that converts natural language questions (Indonesian or Engli
 ```
 User Query
     │
-    ├─────────────────────────────────────────(parallel)──────────────┐
-    │                                                                  │
-    ▼                                                                  ▼
-┌────────────────────────┐                              ┌─────────────────────────┐
-│ 1. IntentClassifier    │                              │ 2. QueryPlanner         │
-│                        │                              │                         │
-│  Classifies query into │                              │  Decomposes complex     │
-│  aggregation/filter/   │                              │  questions into ordered │
-│  join/trend/ambiguous  │                              │  sub-queries (steps)    │
-│                        │                              │                         │
-│  ⚡ Early stop if       │                              │  Simple → 1 step        │
-│  ambiguous             │                              │  Complex → N steps      │
-└──────────┬─────────────┘                              └─────────────┬───────────┘
-           │                                                          │
-           └──────────────────────── merge ──────────────────────────┘
-                                        │
-                          (per step if multi-step)
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │ 3. SchemaRetriever             │
-                        │                               │
-                        │  Finds relevant tables using  │
-                        │  three fused retrievers:      │
-                        │  • ChromaDB — semantic search │
-                        │  • BM25     — keyword match   │
-                        │  • Graph    — FK traversal    │
-                        │  Combined via RRF (k=60)      │
-                        └────────────────┬──────────────┘
-                                         │
-                                         ▼
-                        ┌───────────────────────────────┐
-                        │ 4. RetrievalEvaluator          │
-                        │                               │
-                        │  LLM filters candidates into  │
-                        │  ESSENTIAL / OPTIONAL /       │
-                        │  EXCLUDED for this query      │
-                        └────────────────┬──────────────┘
-                                         │
-                             ┌───────────┴──────────────┐
-                             │  retry loop (max 2×)     │
-                             ▼                          │
-                        ┌───────────────────────────────┐  QueryExecutionError
-                        │ 5. SQLGenerator               │◄─── (error + failed SQL
-                        │                               │      fed back as context)
-                        │  Converts NL → SQL using:     │
-                        │  table schemas, column types, │
-                        │  FK relationships, few-shot   │
-                        │  examples, conversation       │
-                        │  history, and any prior error │
-                        └────────────────┬──────────────┘
-                                         │
-                                         ▼
-                        ┌───────────────────────────────┐
-                        │ 6. SQLValidator               │
-                        │                               │
-                        │  3-layer deterministic check: │
-                        │  1. Syntax  (sqlparse)        │
-                        │  2. Security (blocklist)      │
-                        │  3. Whitelist (allowed tables)│
-                        │  + optional LLM logic layer   │
-                        └────────────────┬──────────────┘
-                                         │
-                                         ▼
-                        ┌───────────────────────────────┐
-                        │ 7. QueryExecutor              │
-                        │                               │
-                        │  Executes SQL via SQLAlchemy  │
-                        │  connection pool with timeout │
-                        │  and row-count cap            │
-                        └────────────────┬──────────────┘
-                                         │
-                        (all step results collected)
-                                         │
-                                         ▼
-                        ┌───────────────────────────────┐
-                        │ 8. InsightGenerator           │
-                        │                               │
-                        │  Generates 2–4 sentence       │
-                        │  Indonesian summary with      │
-                        │  formatted numbers and        │
-                        │  business context             │
-                        └───────────────────────────────┘
-                                         │
-                                         ▼
-                            SQL + Data Table + Insights
+    ▼
+┌───────────────────────────────┐
+│ 0. QueryRewriter              │
+│                               │
+│  Normalises query: resolves   │
+│  ambiguous partner/channel    │
+│  names, expands abbreviations │
+│  Non-fatal — passes through   │
+│  unchanged if LLM fails       │
+└────────────────┬──────────────┘
+                 │
+    ┌────────────┴──────────(parallel)──────────────┐
+    │                                               │
+    ▼                                               ▼
+┌────────────────────────┐         ┌─────────────────────────┐
+│ 1. IntentClassifier    │         │ 2. QueryPlanner         │
+│                        │         │                         │
+│  Classifies query into │         │  Decomposes complex     │
+│  aggregation/filter/   │         │  questions into ordered │
+│  join/trend/ambiguous  │         │  sub-queries (steps)    │
+│                        │         │                         │
+│  ⚡ Early stop if       │         │  Simple → 1 step        │
+│  ambiguous             │         │  Complex → N steps      │
+└──────────┬─────────────┘         └─────────────┬───────────┘
+           │                                     │
+           └───────────────── merge ─────────────┘
+                                    │
+                      (per step if multi-step)
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │ 3. SchemaRetriever             │
+                    │                               │
+                    │  Finds relevant tables using  │
+                    │  three fused retrievers:      │
+                    │  • ChromaDB — semantic search │
+                    │  • BM25     — keyword match   │
+                    │  • Graph    — FK traversal    │
+                    │  Combined via RRF (k=60)      │
+                    └────────────────┬──────────────┘
+                                     │
+                                     ▼
+                    ┌───────────────────────────────┐
+                    │ 4. RetrievalEvaluator          │
+                    │                               │
+                    │  LLM filters candidates into  │
+                    │  ESSENTIAL / OPTIONAL /       │
+                    │  EXCLUDED for this query      │
+                    └────────────────┬──────────────┘
+                                     │
+                         ┌───────────┴──────────────┐
+                         │  retry loop (max 2×)     │
+                         ▼                          │
+                    ┌───────────────────────────────┐  QueryExecutionError
+                    │ 5. SQLGenerator               │◄─── (error + failed SQL
+                    │                               │      fed back as context)
+                    │  Converts NL → SQL using:     │
+                    │  table schemas, column types, │
+                    │  FK relationships, few-shot   │
+                    │  examples, conversation       │
+                    │  history, and any prior error │
+                    └────────────────┬──────────────┘
+                                     │
+                                     ▼
+                    ┌───────────────────────────────┐
+                    │ 6. SQLValidator               │
+                    │                               │
+                    │  3-layer deterministic check: │
+                    │  1. Syntax  (sqlparse)        │
+                    │  2. Security (blocklist)      │
+                    │  3. Whitelist (allowed tables)│
+                    │  + optional LLM logic layer   │
+                    └────────────────┬──────────────┘
+                                     │
+                                     ▼
+                    ┌───────────────────────────────┐
+                    │ 7. QueryExecutor              │
+                    │                               │
+                    │  Executes SQL via SQLAlchemy  │
+                    │  connection pool with timeout │
+                    │  and row-count cap            │
+                    └────────────────┬──────────────┘
+                                     │
+                    (all step results collected)
+                                     │
+                                     ▼
+                    ┌───────────────────────────────┐
+                    │ 8. ResponsePlanner            │
+                    │                               │
+                    │  Decides output format:       │
+                    │  table / chart / text / mixed │
+                    │  Selects chart type and axes  │
+                    └────────────────┬──────────────┘
+                                     │
+                                     ▼
+                    ┌───────────────────────────────┐
+                    │ 9. InsightGenerator           │
+                    │                               │
+                    │  Generates Indonesian summary │
+                    │  with formatted numbers and   │
+                    │  business context             │
+                    └───────────────────────────────┘
+                                     │
+                                     ▼
+                        SQL + Data Table + Insights
 ```
 
 ### Agent Classification
 
 | Type | Agents |
 |------|--------|
-| LLM | IntentClassifier, QueryPlanner, RetrievalEvaluator, SQLGenerator, InsightGenerator |
+| LLM | QueryRewriter, IntentClassifier, QueryPlanner, RetrievalEvaluator, SQLGenerator, ResponsePlanner, InsightGenerator |
 | Traditional | SchemaRetriever, QueryExecutor |
 | Hybrid (rules + optional LLM) | SQLValidator |
 
@@ -294,7 +313,7 @@ DB_POOL_RECYCLE=1800
 
 ### POST /query
 
-Run the full 8-agent pipeline.
+Run the full 10-agent pipeline.
 
 ```bash
 curl -X POST http://localhost:8000/query \
@@ -351,7 +370,8 @@ text-to-sql-chatbot/
 ├── src/
 │   ├── main.py                        # FastAPI app, lifespan, routes
 │   │
-│   ├── components/                    # 8 pipeline agents
+│   ├── agents/                        # 10 pipeline agents
+│   │   ├── query_rewriter.py          # Agent 0: query normalisation (non-fatal)
 │   │   ├── intent_classifier.py       # Agent 1: intent + ambiguity detection
 │   │   ├── query_planner.py           # Agent 2: multi-step query decomposition
 │   │   ├── schema_retriever.py        # Agent 3: hybrid retrieval (ChromaDB+BM25+Graph)
@@ -359,7 +379,8 @@ text-to-sql-chatbot/
 │   │   ├── sql_generator.py           # Agent 5: NL → SQL with error context
 │   │   ├── sql_validator.py           # Agent 6: 3-layer + optional LLM validation
 │   │   ├── query_executor.py          # Agent 7: safe SQL execution
-│   │   └── insight_generator.py       # Agent 8: natural language insights
+│   │   ├── response_planner.py        # Agent 8: output format + chart selection
+│   │   └── insight_generator.py       # Agent 9: natural language insights
 │   │
 │   ├── core/
 │   │   ├── pipeline.py                # TextToSQLPipeline orchestrator
@@ -476,10 +497,10 @@ ruff check src/ tests/
 
 | Layer | Tests | Requirements |
 |-------|-------|--------------|
-| Unit | ~110 | None (all mocked) |
-| Integration | ~12 | None (all mocked) |
+| Unit | ~690 | None (all mocked) |
+| Integration | ~11 | None (all mocked) |
 | E2E | ~10 | Real API + PostgreSQL + ChromaDB |
-| **Total** | **~132** | |
+| **Total** | **~711** | |
 
 Every push to `main` runs unit + integration tests and linting automatically via GitHub Actions.
 

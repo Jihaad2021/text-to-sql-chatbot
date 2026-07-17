@@ -74,10 +74,10 @@ text-to-sql-chatbot/
 
 | File | Fungsi |
 |------|--------|
-| `pipeline.py` | **`TextToSQLPipeline`** — orchestrator yang mengelola semua 7 agent. `main.py` hanya punya satu `pipeline.run(state)`. Berisi juga `check_health()`, `get_all_tables()`, `close()`. |
+| `pipeline.py` | **`TextToSQLPipeline`** — orchestrator yang mengelola semua 10 agent. `main.py` hanya punya satu `pipeline.run(state)`. Berisi juga `check_health()`, `get_all_tables()`, `close()`. |
 | `base_agent.py` | Abstract base class untuk semua agent. Berisi `execute()`, `run()` (dengan metrics + error wrapping), dan `log()`. **Semua agent wajib inherit class ini.** |
-| `llm_base_agent.py` | Extend BaseAgent dengan multi-LLM client (`_call_llm()`). Support Anthropic, OpenAI, Groq, Gemini — dikonfigurasi per-agent via `.env`. **Hanya agent yang pakai LLM yang inherit class ini.** |
-| `config.py` | Centralized configuration. **Semua** konstanta dan env vars ada di sini. Tidak ada `os.getenv()` di luar file ini. |
+| `llm_base_agent.py` | Extend BaseAgent dengan multi-LLM client (`_call_llm()`). Support Anthropic, OpenAI, Groq, Gemini — dikonfigurasi per-agent via `.env` dan dibaca melalui `Config`. **Hanya agent yang pakai LLM yang inherit class ini.** |
+| `config.py` | Centralized configuration — single source of truth untuk semua konstanta dan env vars. `startup.py` boleh baca `os.getenv()` langsung; semua file lain wajib lewat `Config`. |
 | `startup.py` | Validasi environment saat startup. Fail fast jika API key atau DB URL tidak ada — sebelum agent diinisialisasi. |
 
 ### `src/models/` — Data Models
@@ -87,17 +87,20 @@ text-to-sql-chatbot/
 | `agent_state.py` | **File terpenting.** Shared state yang mengalir dari agent ke agent. Semua input dan output agent disimpan di sini. |
 | `retrieved_table.py` | Dataclass untuk merepresentasikan satu tabel hasil retrieval dari ChromaDB. |
 
-### `src/agents/` — 7 Agent Pipeline
+### `src/agents/` — 10 Agent Pipeline
 
 | File | Agent | Type | Input dari State | Output ke State |
 |------|-------|------|-----------------|-----------------|
+| `query_rewriter.py` | Agent 0 | LLM | `state.query` | `state.query` (normalised, non-fatal) |
 | `intent_classifier.py` | Agent 1 | LLM | `state.query` | `state.intent`, `state.needs_clarification` |
-| `schema_retriever.py` | Agent 2 | Traditional | `state.query` | `state.retrieved_tables`, `state.database` |
-| `retrieval_evaluator.py` | Agent 3 | LLM | `state.query`, `state.retrieved_tables` | `state.evaluated_tables` |
-| `sql_generator.py` | Agent 4 | LLM | `state.query`, `state.evaluated_tables`, `state.intent` | `state.sql` |
-| `sql_validator.py` | Agent 5 | Hybrid | `state.sql`, `state.query` | `state.validated_sql` |
-| `query_executor.py` | Agent 6 | Traditional | `state.validated_sql`, `state.database` | `state.query_result`, `state.row_count` |
-| `insight_generator.py` | Agent 7 | LLM | `state.query`, `state.validated_sql`, `state.query_result`, `state.row_count` | `state.insights` |
+| `query_planner.py` | Agent 2 | LLM | `state.query` | `state.plan` |
+| `schema_retriever.py` | Agent 3 | Traditional | `state.query` | `state.retrieved_tables`, `state.database` |
+| `retrieval_evaluator.py` | Agent 4 | LLM | `state.query`, `state.retrieved_tables` | `state.evaluated_tables` |
+| `sql_generator.py` | Agent 5 | LLM | `state.query`, `state.evaluated_tables`, `state.intent` | `state.sql` |
+| `sql_validator.py` | Agent 6 | Hybrid | `state.sql`, `state.query` | `state.validated_sql` |
+| `query_executor.py` | Agent 7 | Traditional | `state.validated_sql`, `state.database` | `state.query_result`, `state.row_count` |
+| `response_planner.py` | Agent 8 | LLM | `state.query`, `state.query_result` | `state.response_plan` |
+| `insight_generator.py` | Agent 9 | LLM | `state.query`, `state.validated_sql`, `state.query_result`, `state.response_plan` | `state.insights` |
 
 ### `scripts/` — Schema Pipeline
 

@@ -1,12 +1,18 @@
 """
-TextToSQLPipeline — Orchestrator for the 8-agent pipeline.
+TextToSQLPipeline — Orchestrator for the 10-agent pipeline.
 
 Separates pipeline sequencing from the API layer.
 The pipeline owns the agents, runs them in order, and exposes
 health-check and resource-cleanup interfaces.
 
+Agent order:
+    QueryRewriter → IntentClassifier → QueryPlanner → SchemaRetriever
+    → RetrievalEvaluator → SQLGenerator → SQLValidator → QueryExecutor
+    → ResponsePlanner → InsightGenerator
+
 Usage:
     >>> pipeline = TextToSQLPipeline(
+    ...     query_rewriter=QueryRewriter(),
     ...     intent_classifier=IntentClassifier(),
     ...     query_planner=QueryPlanner(),
     ...     schema_retriever=SchemaRetriever(),
@@ -596,8 +602,13 @@ class TextToSQLPipeline:
         bm25_status  = "healthy" if self.schema_retriever.bm25  else "degraded (index not found)"
         graph_status = "healthy" if self.schema_retriever.graph else "degraded (graph not found)"
 
+        retrieval_healthy = all(
+            s.startswith("healthy") for s in (chroma_status, bm25_status, graph_status)
+        )
         return {
-            "overall_healthy": all(v == "healthy" for v in db_status.values()),
+            "overall_healthy": (
+                all(v == "healthy" for v in db_status.values()) and retrieval_healthy
+            ),
             "databases": db_status,
             "retrieval": {
                 "chromadb": chroma_status,

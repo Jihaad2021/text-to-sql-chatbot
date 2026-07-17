@@ -18,8 +18,9 @@ _ROOT = Path(__file__).parent.parent.parent
 
 class Config:
     # ── LLM ──────────────────────────────────────────────────────
-    MODEL = os.getenv("LLM_MODEL", None)
-    MAX_TOKENS = 1000
+    DEFAULT_LLM   = os.getenv("DEFAULT_LLM", "openai")
+    DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "")
+    MAX_TOKENS    = 1000
 
     # ── Query Executor ────────────────────────────────────────────
     TIMEOUT_SECONDS = int(os.getenv("QUERY_TIMEOUT_SECONDS", "30"))
@@ -52,6 +53,7 @@ class Config:
     CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "600"))
 
     # ── API ───────────────────────────────────────────────────────
+    ALLOWED_ORIGINS       = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000").split(",")
     # Max requests per minute per IP on the /query endpoint.
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
 

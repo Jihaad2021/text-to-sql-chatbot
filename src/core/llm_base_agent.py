@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from src.models.agent_state import AgentState
 
 from src.core.base_agent import BaseAgent
+from src.core.config import Config
 from src.utils.exceptions import LLMCallError
 
 load_dotenv()
@@ -141,7 +142,7 @@ class LLMBaseAgent(BaseAgent):
                 return agent_provider
 
         # Check DEFAULT_LLM
-        default_provider = os.getenv("DEFAULT_LLM", "").lower()
+        default_provider = Config.DEFAULT_LLM.lower()
         if default_provider and default_provider in DEFAULT_MODELS:
             return default_provider
 
@@ -166,9 +167,8 @@ class LLMBaseAgent(BaseAgent):
                 return agent_model
 
         # Check DEFAULT_MODEL
-        default_model = os.getenv("DEFAULT_MODEL", "")
-        if default_model:
-            return default_model
+        if Config.DEFAULT_MODEL:
+            return Config.DEFAULT_MODEL
 
         # Use provider default
         return DEFAULT_MODELS[provider]
