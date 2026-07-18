@@ -159,6 +159,17 @@ schemas:
             description: |
               The unique_users column holds the count of distinct users for a given day and is used in queries to aggregate user activity metrics, serving as a key metric (metrik) for analyzing user engagement in the financial database.
             type: "bigint"
+        foreign_keys:
+          - column: "partner"
+            references:
+              schema: "public"
+              table: "financial_internal"
+              column: "payment_provider"
+          - column: "partner"
+            references:
+              schema: "public"
+              table: "anomalies"
+              column: "partner"
       - table: "daily_unique_users"
         description: |
           The daily_unique_users table stores information about the number of unique users interacting with a system on a daily basis, with the primary key being the id and key attributes including date and unique_users. This table answers business questions related to user engagement trends and retention, with important synonyms users might search including "daily users," "unique users," "pengguna harian," and "pengguna unik."
@@ -231,6 +242,17 @@ schemas:
             description: |
               The total_admin_fee column holds the total administrative fees associated with transactions and is used in queries to filter or aggregate financial data, serving as a metric (biaya_admin).
             type: "double precision"
+        foreign_keys:
+          - column: "payment_provider"
+            references:
+              schema: "public"
+              table: "anomalies"
+              column: "payment_provider"
+          - column: "payment_provider"
+            references:
+              schema: "public"
+              table: "daily_master"
+              column: "partner"
       - table: "daily_user_partner"
         description: |
           The daily_user_partner table stores data about unique users interacting with various partners on specific dates, with the primary key being the id and key attributes including date, partner, and unique_users. This table answers business questions related to user engagement trends over time and partner performance, with important synonyms users might search including "daily users," "partner engagement," "pengguna unik," and "mitra."
@@ -339,6 +361,12 @@ schemas:
             description: |
               The purchase_mode column holds the method by which a product was purchased (e.g., online, in-store) and is used in queries to filter or group transactions, serving as a status indicator (mode pembelian).
             type: "text"
+        foreign_keys:
+          - column: "product_id"
+            references:
+              schema: "public"
+              table: "product_price_list"
+              column: "product_id"
       - table: "channel_payment"
         description: |
           The channel_payment table stores information about payment transactions made through various channels, with the primary key being id, and key attributes including date, partner, channel, purchase_mode, total_trx, total_revenue, and success_rate_pct. This table answers business questions related to payment performance and channel effectiveness, with important synonyms users might search including payment channel, transaksi pembayaran, saluran, and revenue.

@@ -255,11 +255,20 @@ class SchemaRetriever(BaseAgent):
                 if not self.graph.has_node(node):
                     continue
 
-                for neighbor in self.graph.neighbors(node):
+                # Traverse both outgoing (neighbors) and incoming (predecessors)
+                # so joins_with edges work regardless of which table the FK is on.
+                candidates: list[tuple[str, str, str]] = [
+                    (node, neighbor, "out") for neighbor in self.graph.neighbors(node)
+                ] + [
+                    (neighbor, node, "in") for neighbor in self.graph.predecessors(node)
+                ]
+
+                for src, dst, direction in candidates:
+                    neighbor = dst if direction == "out" else src
                     node_data = self.graph.nodes[neighbor]
                     if node_data.get("type") != "table":
                         continue
-                    edge_data = self.graph.edges[node, neighbor]
+                    edge_data = self.graph.edges[src, dst]
                     if edge_data.get("type") != "joins_with":
                         continue
                     if neighbor not in related:

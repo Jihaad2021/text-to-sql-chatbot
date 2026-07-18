@@ -19,7 +19,7 @@
       "name": "anomalies",
       "db": "financial_db",
       "schema": "public",
-      "description": "The anomalies table stores information about financial anomalies detected in transactions, with the primary key being the id, and key attributes including date, check_type, status, and anomaly_type. This table answers business questions related to identifying and managing financial discrepancies, and users might search for terms like anomalies, irregularities, or deviations (anomalies, ketidakteraturan, deviasi).",
+      "description": "The anomalies table stores detected anomalies in financial transactions, including success rate drops (penurunan success rate, success rate turun, SR turun), transaction volume drops (penurunan transaksi), and revenue anomalies. Use this table for root cause analysis (analisis penyebab, kenapa, mengapa, penyebab penurunan), anomaly investigation (investigasi anomali), and detecting when metrics deviate from expected values. Key attributes: date, check_type, status, anomaly_type, severity (tingkat keparahan), deviation_pct (persentase deviasi), actual_value, expected_value, recommended_action. This is the primary table for anomaly detection, root cause investigation, and understanding why success rate or transaction volume dropped. Important synonyms: anomali, ketidakteraturan, deviasi, penyebab, kenapa, mengapa, penurunan success rate, success rate anomali, SR drop, root cause, investigasi, deteksi anomali, anomali mingguan.",
       "columns": [
         "id",
         "date",
@@ -354,11 +354,21 @@
       "type": "column",
       "name": "partner",
       "data_type": "text",
-      "description": "The partner column holds the name of the business partner involved in transactions and is used in queries to filter results based on specific partners (mitra), serving as a foreign key (FK) to link to partner details in related tables.",
+      "description": "Sub-channel detail column — values include gopay_paybill, gopay_wec, dana_wec, linkaja_basic, etc. DO NOT use this column for partner-level GROUP BY or ranking queries — it will produce 25 fragmented rows mixing brands and sub-channels. Use partner_group instead for any partner analysis.",
       "table": "daily_master",
       "db": "financial_db",
       "schema": "public",
       "id": "financial_db.public.daily_master.partner"
+    },
+    {
+      "type": "column",
+      "name": "partner_group",
+      "data_type": "text",
+      "description": "PREFERRED column for all partner analysis (mitra). Consolidated brand name that groups all sub-channels: gopay, dana, ovo, qris, finnet, linkaja, shopeepay, indomaret, telkomsel_wallet (9 values). Always GROUP BY partner_group when the question asks about partner performance, ranking, share, MoM, or comparison. Only use the partner column when the question specifically asks about sub-channels (paybill, wec, basic variants).",
+      "table": "daily_master",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_master.partner_group"
     },
     {
       "type": "column",
@@ -458,9 +468,19 @@
     },
     {
       "type": "column",
+      "name": "month",
+      "data_type": "date",
+      "description": "The month column holds the first date of the month (e.g. 2026-06-01) and is used to group daily records into monthly periods for monthly user analysis.",
+      "table": "daily_unique_users",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_unique_users.month"
+    },
+    {
+      "type": "column",
       "name": "unique_users",
       "data_type": "bigint",
-      "description": "The unique_users column holds the count of distinct users for a given day and is used in queries to aggregate user activity metrics, serving as a key metric (metrik) in the daily_unique_users table.",
+      "description": "The unique_users column holds the count of distinct users for that day and is used in queries to aggregate daily user activity metrics (pengguna unik harian).",
       "table": "daily_unique_users",
       "db": "financial_db",
       "schema": "public",
@@ -468,20 +488,30 @@
     },
     {
       "type": "column",
-      "name": "daily_unique_users",
+      "name": "unique_users_monthly",
       "data_type": "bigint",
-      "description": "The daily_unique_users column holds the count of unique users for each day and is used in queries to aggregate user activity metrics (metrik) by date, serving as a key metric for analyzing user engagement.",
+      "description": "The unique_users_monthly column holds the cumulative count of unique users from the start of the month up to the given date and is used for monthly user engagement analysis (pengguna unik bulanan kumulatif).",
       "table": "daily_unique_users",
       "db": "financial_db",
       "schema": "public",
-      "id": "financial_db.public.daily_unique_users.daily_unique_users"
+      "id": "financial_db.public.daily_unique_users.unique_users_monthly"
+    },
+    {
+      "type": "column",
+      "name": "unique_users_daily",
+      "data_type": "bigint",
+      "description": "The unique_users_daily column holds the rolling daily unique user count and is used in queries to track day-over-day changes in user activity (pengguna harian).",
+      "table": "daily_unique_users",
+      "db": "financial_db",
+      "schema": "public",
+      "id": "financial_db.public.daily_unique_users.unique_users_daily"
     },
     {
       "type": "table",
       "name": "financial_internal",
       "db": "financial_db",
       "schema": "public",
-      "description": "The financial_internal table stores transaction records related to financial activities, with the primary key being id and key attributes including date, payment_provider, and total_net_revenue. This table answers business questions about revenue generation and transaction fees, with important synonyms users might search including \"financial transactions,\" \"pendapatan,\" \"biaya platform,\" and \"biaya admin.\"",
+      "description": "The financial_internal table stores detailed revenue and fee breakdown records per partner (payment_provider), with key attributes including date, payment_provider (partner/mitra: GoPay, OVO, Dana, LinkAja, ShopeePay, Telkomsel), total_net_revenue (pendapatan bersih, revenue bersih), total_platform_fee (biaya platform), total_admin_fee (biaya admin), and net_gap (selisih). Use this table for revenue analysis: revenue trend (tren revenue, tren pendapatan), revenue drop (penurunan revenue, revenue turun, pendapatan turun), revenue per partner (revenue per mitra, pendapatan per partner), partner revenue ranking (ranking revenue partner, partner revenue terbesar), revenue comparison between partners, fee analysis, net gap, and partner monitoring based on revenue (partner mana yang perlu diperhatikan berdasarkan revenue, partner kritis revenue, monitoring partner revenue, evaluasi partner berdasarkan revenue, rekomendasi partner revenue, partner yang perlu dipantau). This is the primary table for financial/revenue metrics, monthly partner revenue data, and identifying which partners need attention based on revenue performance. Important synonyms: pendapatan, revenue, penurunan pendapatan, tren pendapatan, tren revenue, biaya platform, biaya admin, selisih, net gap, partner revenue, mitra revenue, partner perlu diperhatikan, partner kritis, monitoring revenue.",
       "columns": [
         "id",
         "date",
@@ -520,7 +550,7 @@
       "type": "column",
       "name": "payment_provider",
       "data_type": "text",
-      "description": "The payment_provider column holds the name of the service used for processing payments and is utilized in queries to filter transactions by provider, serving as a status (status) indicator in the financial_internal table.",
+      "description": "The payment_provider column holds the name of the payment partner (mitra/partner: GoPay, OVO, Dana, LinkAja, ShopeePay, Telkomsel) and is used to filter or group revenue records by partner. Equivalent to partner or partner_group in other tables.",
       "table": "financial_internal",
       "db": "financial_db",
       "schema": "public",
@@ -1466,6 +1496,11 @@
     {
       "type": "contains",
       "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.daily_master.partner_group"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_master",
       "target": "financial_db.public.daily_master.total_trx"
     },
     {
@@ -1494,6 +1529,32 @@
       "target": "financial_db.public.daily_master.unique_users"
     },
     {
+      "type": "joins_with",
+      "via": "partner → payment_provider",
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.financial_internal"
+    },
+    {
+      "type": "joins_with",
+      "via": "partner → partner",
+      "source": "financial_db.public.daily_master",
+      "target": "financial_db.public.anomalies"
+    },
+    {
+      "type": "fk",
+      "from_table": "daily_master",
+      "to_table": "financial_internal",
+      "source": "financial_db.public.daily_master.partner",
+      "target": "financial_db.public.financial_internal.payment_provider"
+    },
+    {
+      "type": "fk",
+      "from_table": "daily_master",
+      "to_table": "anomalies",
+      "source": "financial_db.public.daily_master.partner",
+      "target": "financial_db.public.anomalies.partner"
+    },
+    {
       "type": "contains",
       "source": "financial_db.public.daily_unique_users",
       "target": "financial_db.public.daily_unique_users.id"
@@ -1506,12 +1567,22 @@
     {
       "type": "contains",
       "source": "financial_db.public.daily_unique_users",
+      "target": "financial_db.public.daily_unique_users.month"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_unique_users",
       "target": "financial_db.public.daily_unique_users.unique_users"
     },
     {
       "type": "contains",
       "source": "financial_db.public.daily_unique_users",
-      "target": "financial_db.public.daily_unique_users.daily_unique_users"
+      "target": "financial_db.public.daily_unique_users.unique_users_monthly"
+    },
+    {
+      "type": "contains",
+      "source": "financial_db.public.daily_unique_users",
+      "target": "financial_db.public.daily_unique_users.unique_users_daily"
     },
     {
       "type": "contains",
@@ -1562,6 +1633,32 @@
       "type": "contains",
       "source": "financial_db.public.financial_internal",
       "target": "financial_db.public.financial_internal.total_admin_fee"
+    },
+    {
+      "type": "joins_with",
+      "via": "payment_provider → payment_provider",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.anomalies"
+    },
+    {
+      "type": "joins_with",
+      "via": "payment_provider → partner",
+      "source": "financial_db.public.financial_internal",
+      "target": "financial_db.public.daily_master"
+    },
+    {
+      "type": "fk",
+      "from_table": "financial_internal",
+      "to_table": "anomalies",
+      "source": "financial_db.public.financial_internal.payment_provider",
+      "target": "financial_db.public.anomalies.payment_provider"
+    },
+    {
+      "type": "fk",
+      "from_table": "financial_internal",
+      "to_table": "daily_master",
+      "source": "financial_db.public.financial_internal.payment_provider",
+      "target": "financial_db.public.daily_master.partner"
     },
     {
       "type": "contains",
@@ -1682,6 +1779,19 @@
       "type": "contains",
       "source": "financial_db.public.product_summary",
       "target": "financial_db.public.product_summary.purchase_mode"
+    },
+    {
+      "type": "joins_with",
+      "via": "product_id → product_id",
+      "source": "financial_db.public.product_summary",
+      "target": "financial_db.public.product_price_list"
+    },
+    {
+      "type": "fk",
+      "from_table": "product_summary",
+      "to_table": "product_price_list",
+      "source": "financial_db.public.product_summary.product_id",
+      "target": "financial_db.public.product_price_list.product_id"
     },
     {
       "type": "contains",

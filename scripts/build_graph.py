@@ -68,11 +68,11 @@ def build_graph(metadata: dict) -> nx.DiGraph:
         G.add_node(schema_node, type="schema", name=schema_name, db=db_name)
         G.add_edge(db_node, schema_node, type="contains")
 
+        # Pass 1: create all table and column nodes first
         for table in schema.get("tables", []):
             table_name = table["table"]
             table_node = f"{db_name}.{schema_name}.{table_name}"
 
-            # Add table node
             G.add_node(
                 table_node,
                 type="table",
@@ -84,7 +84,6 @@ def build_graph(metadata: dict) -> nx.DiGraph:
             )
             G.add_edge(schema_node, table_node, type="contains")
 
-            # Add column nodes
             for col in table.get("columns", []):
                 col_node = f"{table_node}.{col['name']}"
                 G.add_node(
@@ -99,38 +98,40 @@ def build_graph(metadata: dict) -> nx.DiGraph:
                 )
                 G.add_edge(table_node, col_node, type="contains")
 
-            # Add FK edges
+            print(f"  ✓ {db_name}.{table_name} "
+                  f"({len(table.get('columns', []))} columns, "
+                  f"{len(table.get('foreign_keys', []))} FKs)")
+
+        # Pass 2: add FK and joins_with edges (all nodes now exist)
+        for table in schema.get("tables", []):
+            table_name = table["table"]
+            table_node = f"{db_name}.{schema_name}.{table_name}"
+
             for fk in table.get("foreign_keys", []):
                 ref = fk.get("references", {})
                 if not ref:
                     continue
 
-                src_col_node = f"{table_node}.{fk['column']}"
+                src_col_node   = f"{table_node}.{fk['column']}"
                 ref_table_node = f"{db_name}.{ref['schema']}.{ref['table']}"
-                ref_col_node = f"{ref_table_node}.{ref['column']}"
+                ref_col_node   = f"{ref_table_node}.{ref['column']}"
 
-                # FK edge between columns
                 if G.has_node(src_col_node) and G.has_node(ref_col_node):
                     G.add_edge(
                         src_col_node,
                         ref_col_node,
                         type="fk",
                         from_table=table_name,
-                        to_table=ref["table"]
+                        to_table=ref["table"],
                     )
 
-                # joins_with edge between tables (for quick lookup)
                 if G.has_node(table_node) and G.has_node(ref_table_node):
                     G.add_edge(
                         table_node,
                         ref_table_node,
                         type="joins_with",
-                        via=f"{fk['column']} → {ref['column']}"
+                        via=f"{fk['column']} → {ref['column']}",
                     )
-
-            print(f"  ✓ {db_name}.{table_name} "
-                  f"({len(table.get('columns', []))} columns, "
-                  f"{len(table.get('foreign_keys', []))} FKs)")
 
     return G
 
