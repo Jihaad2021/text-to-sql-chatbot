@@ -374,7 +374,6 @@ class TestRRFFusion:
         bm25   = [self._table("daily_master", source="bm25")]
 
         fused = retriever_for_rrf._rrf_fusion([chroma, bm25])
-        ids = [t["id"] for t in fused]
 
         daily_score   = next(t["rrf_score"] for t in fused if t["table_name"] == "daily_master")
         anomaly_score = next(t["rrf_score"] for t in fused if t["table_name"] == "anomalies")
