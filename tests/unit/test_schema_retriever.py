@@ -404,3 +404,85 @@ class TestRRFFusion:
         fused = retriever_for_rrf._rrf_fusion([chroma, bm25, graph])
         names = {t["table_name"] for t in fused}
         assert names == {"t1", "t2", "t3"}
+
+
+# ========================================
+# Test: Recall Mode (intent-based top_k boost)
+# ========================================
+
+class TestRecallMode:
+    """
+    For complex / multi-table / root-cause intents, SchemaRetriever retrieves
+    top_k + 2 tables so RetrievalEvaluator has a wider candidate pool.
+    Simple intents keep the default top_k.
+    """
+
+    @pytest.fixture
+    def retriever_with_many_tables(self):
+        """Retriever seeded with 8 ChromaDB results so top_k cut is observable."""
+        collection = MagicMock()
+        collection.count.return_value = 8
+        collection.query.return_value = {
+            "ids":       [[ f"fin_db.t{i}" for i in range(8)]],
+            "distances": [[ 0.05 + i * 0.02 for i in range(8)]],
+            "metadatas": [[{
+                "db_name":    "fin_db",
+                "table_name": f"t{i}",
+                "columns":    "id",
+                "description": f"table {i}",
+                "relationships": "",
+            } for i in range(8)]],
+        }
+
+        with patch.object(SchemaRetriever, "__init__", lambda self, *a, **kw: None):
+            r = SchemaRetriever.__new__(SchemaRetriever)
+            r.name      = "schema_retriever"
+            r.version   = "2.0.0"
+            r.top_k     = 5
+            r.collection = collection
+            r.bm25      = None
+            r.bm25_corpus = []
+            r.graph     = None
+            r.metrics   = {
+                "total_calls": 0, "successful_calls": 0, "failed_calls": 0,
+                "total_time_seconds": 0.0, "average_time_seconds": 0.0,
+                "last_execution_time": None, "created_at": "2024-01-01",
+            }
+            import logging
+            r.logger = logging.getLogger("agent.schema_retriever")
+            return r
+
+    def test_complex_analytics_intent_retrieves_extra_tables(self, retriever_with_many_tables):
+        state = AgentState(query="analisis tren per partner", database="fin_db")
+        state.intent = {"category": "complex_analytics", "confidence": 0.9,
+                        "reason": "complex", "sql_strategy": "..."}
+        result = retriever_with_many_tables.execute(state)
+        assert len(result.retrieved_tables) == 7  # top_k(5) + boost(2)
+
+    def test_multi_table_join_intent_retrieves_extra_tables(self, retriever_with_many_tables):
+        state = AgentState(query="join partner dan anomalies", database="fin_db")
+        state.intent = {"category": "multi_table_join", "confidence": 0.9,
+                        "reason": "join", "sql_strategy": "..."}
+        result = retriever_with_many_tables.execute(state)
+        assert len(result.retrieved_tables) == 7
+
+    def test_root_cause_intent_retrieves_extra_tables(self, retriever_with_many_tables):
+        state = AgentState(query="kenapa SR turun?", database="fin_db")
+        state.intent = {"category": "root_cause_analysis", "confidence": 0.9,
+                        "reason": "why", "sql_strategy": "..."}
+        result = retriever_with_many_tables.execute(state)
+        assert len(result.retrieved_tables) == 7
+
+    def test_simple_intent_keeps_default_top_k(self, retriever_with_many_tables):
+        state = AgentState(query="berapa total transaksi?", database="fin_db")
+        state.intent = {"category": "aggregation", "confidence": 0.95,
+                        "reason": "simple count", "sql_strategy": "..."}
+        result = retriever_with_many_tables.execute(state)
+        assert len(result.retrieved_tables) == 5  # default top_k, no boost
+
+    def test_no_intent_keeps_default_top_k(self, retriever_with_many_tables):
+        """No intent set (None) → no boost, default top_k."""
+        state = AgentState(query="berapa total?", database="fin_db")
+        state.intent = None
+        result = retriever_with_many_tables.execute(state)
+        assert len(result.retrieved_tables) == 5

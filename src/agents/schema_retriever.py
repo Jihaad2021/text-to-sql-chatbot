@@ -44,6 +44,12 @@ from src.utils.exceptions import SchemaRetrievalError
 
 load_dotenv()
 
+# For complex / multi-table / root-cause queries, retrieve extra candidates so
+# RetrievalEvaluator has a wider pool to filter from without increasing noise for
+# simple queries.
+_RECALL_BOOST   = 2
+_RECALL_INTENTS = frozenset({"multi_table_join", "complex_analytics", "root_cause_analysis"})
+
 
 class SchemaRetriever(BaseAgent):
     """
@@ -147,7 +153,9 @@ class SchemaRetriever(BaseAgent):
         graph_results  = self._retrieve_graph(chroma_results)
 
         fused = self._rrf_fusion([chroma_results, bm25_results, graph_results])
-        retrieved_tables = self._to_retrieved_tables(fused[:self.top_k])
+        intent_cat = state.intent.get("category", "") if isinstance(state.intent, dict) else ""
+        effective_top_k = self.top_k + _RECALL_BOOST if intent_cat in _RECALL_INTENTS else self.top_k
+        retrieved_tables = self._to_retrieved_tables(fused[:effective_top_k])
 
         if not retrieved_tables:
             raise SchemaRetrievalError(
