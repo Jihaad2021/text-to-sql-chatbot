@@ -115,6 +115,18 @@ class TestAmbiguousIntents:
         assert state.intent["category"] == "ambiguous"
         assert state.needs_clarification is True
 
+    def test_medium_confidence_with_clear_intent_does_not_trigger_clarification(self, classifier, sample_state):
+        """Confidence in [0.5, 0.7) with a non-ambiguous category must NOT trigger clarification.
+        Previously confidence < 0.7 triggered needs_clarification even when intent was clear.
+        """
+        mock_response = "INTENT: aggregation\nCONFIDENCE: 0.6\nSEGMENT: transactions\nREASON: Probably aggregation"
+
+        with patch.object(classifier, "_call_llm", return_value=mock_response):
+            state = classifier.run(sample_state)
+
+        assert state.intent["category"] == "aggregation"
+        assert state.needs_clarification is False
+
     def test_unknown_category_falls_back_to_ambiguous(self, classifier, sample_state):
         """Unknown intent category should fall back to ambiguous."""
         mock_response = "INTENT: unknown_category\nCONFIDENCE: 0.9\nREASON: Something"

@@ -200,9 +200,7 @@ class IntentClassifier(LLMBaseAgent):
         state.intent = intent
         # out_of_scope is NOT ambiguous — it's a clear query that we can't answer.
         # The pipeline handles it with an early return + informative message.
-        state.needs_clarification = (
-            intent["category"] == "ambiguous" or intent["confidence"] < 0.7
-        )
+        state.needs_clarification = intent["category"] == "ambiguous"
 
         if state.needs_clarification:
             state.clarification_reason = intent["reason"]
